@@ -1,4 +1,4 @@
-module github.com/hiro8ma/agent
+module github.com/hiro8ma/agent/genkit-go
 
 go 1.24.7
 

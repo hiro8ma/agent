@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 
-	"github.com/hiro8ma/agent/genkit"
+	"github.com/hiro8ma/agent/genkit-go/genkit"
 )
 
 func main() {
