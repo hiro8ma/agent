@@ -60,3 +60,31 @@ app.Run(ctx)            // MODE=demo or MODE=server
 | POST | `/api/chat` | チャット | `{"message":"こんにちは"}` |
 | POST | `/api/rag` | RAG 質問応答 | `{"question":"Genkitとは？"}` |
 | GET | `/health` | ヘルスチェック | — |
+
+## RAG Search Characteristics
+
+This agent implements **vector search** for RAG.
+
+| Aspect | Detail |
+|---|---|
+| **Engine** | In-memory vector store with Google AI Embedder (text-embedding-004) |
+| **Matching** | Cosine similarity between query and document embeddings |
+| **Strengths** | Semantic similarity, handles natural language queries, no keyword engineering needed |
+| **Weaknesses** | In-memory only (lost on restart), no persistence, may miss exact term matches |
+| **Query style** | Natural language questions |
+| **Top-K** | 3 (hardcoded) |
+
+### How It Works
+
+```
+1. Documents → Embedding (text-embedding-004) → Vectors stored in memory
+2. User query → Embedding → Cosine similarity with all stored vectors
+3. Top-K most similar documents → Injected as context → LLM generates answer
+```
+
+### Limitations
+
+- No full-text search fallback (pure vector search)
+- No persistence (documents re-indexed on every restart)
+- No chunking for large documents
+- Ollama mode has no RAG support (no embedder available)
