@@ -1,0 +1,37 @@
+# 3 実装をサービスとして立ち上げ、同一 API キー・ネットワーク環境で比較する。
+# 現在はどれも CLI デモのため起動すると一度実行して終了する。
+
+x-common: &common
+  build:
+    context: ..
+    dockerfile: build/Dockerfile
+  env_file:
+    - ../.env
+  environment:
+    GEMINI_API_KEY: ${GEMINI_API_KEY}
+    GOOGLE_API_KEY: ${GOOGLE_API_KEY}
+
+services:
+  genai:
+    <<: *common
+    build:
+      context: ..
+      dockerfile: build/Dockerfile
+      args:
+        TARGET: genai
+
+  genkit:
+    <<: *common
+    build:
+      context: ..
+      dockerfile: build/Dockerfile
+      args:
+        TARGET: genkit
+
+  adk:
+    <<: *common
+    build:
+      context: ..
+      dockerfile: build/Dockerfile
+      args:
+        TARGET: adk

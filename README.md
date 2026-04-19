@@ -1,59 +1,19 @@
-# AI Agent — Go + Genkit / Google ADK
+# AI Agent
 
-AI agent implementations in Go, demonstrating Text Generation, Tool Calling, Structured Output, Flows, and RAG.
+AI エージェントの実装を複数言語・複数フレームワークで並べて比較するモノレポ
 
 ## Implementations
 
-### genkit-go/
-
-Full-featured AI agent built with [Firebase Genkit](https://firebase.google.com/docs/genkit).
-
-**Features:**
-- Text Generation (Gemini / Ollama)
-- Tool Calling (Calculator with 4 arithmetic operations)
-- Structured Output (Sentiment Analysis, Joke Generation)
-- REST API Server (5 endpoints)
-- RAG with in-memory vector store (cosine similarity search)
-- Dual model support: Google AI Gemini + Ollama (llama3.2)
-
-**API Endpoints:**
-| Endpoint | Method | Description |
+| 言語 | ディレクトリ | 状態 |
 |---|---|---|
-| `/api/chat` | POST | Free-form chat with tool access |
-| `/api/rag` | POST | RAG-based Q&A |
-| `/api/tellJoke` | POST | Structured joke generation |
-| `/api/analyzeSentiment` | POST | Sentiment analysis |
-| `/health` | GET | Health check |
+| Go | [`go/`](./go) | 実装済み（genai / Genkit / ADK） |
+| TypeScript | `typescript/` | 追加予定 |
+| Python | `python/` | 追加予定 |
 
-### adk-go/
+各言語ディレクトリに README と実装を置く。ルート README は言語をまたぐ一覧に留める
 
-ReAct-pattern agent built with [Google ADK](https://google.github.io/adk-go/).
+## 構成指針
 
-**Features:**
-- ReAct loop (Reasoning + Acting)
-- AI knowledge search tool (connects to mcp/ai_knowledge)
-- Web search tool (connects to mcp/external_api)
-- Gemini 2.0 Flash for planning and generation
-
-## Quick Start
-
-```bash
-# genkit-go
-cd genkit-go
-cp .env.example .env  # Set GEMINI_API_KEY
-make demo              # Run demo mode
-make server            # Run API server
-
-# adk-go
-cd adk-go
-cp .env.example .env   # Set GEMINI_API_KEY
-make run               # Run CLI mode
-```
-
-## Tech Stack
-
-- **Language:** Go
-- **Frameworks:** Firebase Genkit, Google ADK
-- **Models:** Gemini 2.0 Flash, Ollama (llama3.2)
-- **Embedding:** text-embedding-004
-- **Vector Search:** In-memory cosine similarity
+- 同一ユースケース（Tool Calling + 会話履歴 + 知識検索）を各言語・各フレームワークで実装して横並び比較
+- 各言語ディレクトリはヘキサゴナル / クリーンアーキテクチャで構成
+- ドメイン層と Tool 実装は各言語ディレクトリ内で共有、SDK / フレームワーク依存は adapter 層に閉じ込める
