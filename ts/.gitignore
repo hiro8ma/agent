@@ -4,6 +4,9 @@ dist/
 .env.local
 *.log
 bun.lockb
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
 
 .DS_Store
 .idea/
