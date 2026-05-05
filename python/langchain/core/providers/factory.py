@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import os
 
+from langchain_core.embeddings import Embeddings
 from langchain_core.language_models import BaseChatModel
 
+from .embeddings import select_embeddings as _select_embeddings
 from .openai import build_openai_chat_model
 
 SUPPORTED_PROVIDERS = ("openai",)
@@ -26,3 +28,9 @@ def select_provider() -> BaseChatModel:
         f"Unsupported LLM_PROVIDER: {provider!r}. "
         f"Supported providers: {', '.join(SUPPORTED_PROVIDERS)}."
     )
+
+
+def select_embeddings() -> Embeddings:
+    """Re-export from .embeddings for symmetry with select_provider()."""
+
+    return _select_embeddings()
