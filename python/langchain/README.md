@@ -35,10 +35,9 @@ LangChain は批判もある（重い抽象化、頻繁な breaking change）が
 │   Issue → コード修正 → PR 作成                   │
 ├─────────────────────────────────────────────────┤
 │ CLI 層 — ローカル実行環境                        │
-│   LangGraph の StateGraph / create_react_agent   │
-│   Tool 群（readFile / listFiles / grep / 等）    │
-│   Memory（MemorySaver / SqliteSaver）            │
-│   HITL（interrupt API）                          │
+│   LangGraph の create_react_agent                │
+│   Tool 群（read_file / search_documents / 等）   │
+│   Memory / HITL は py-phase3 候補                │
 ├─────────────────────────────────────────────────┤
 │ Core 層 — LLM API 抽象化                         │
 │   LangChain ChatModel SPI                        │

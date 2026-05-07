@@ -1,5 +1,5 @@
-# Binaries
-bin/
+# Binaries (Go build output at root only)
+/bin/
 /agent
 *.exe
 
