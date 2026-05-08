@@ -1,10 +1,11 @@
 import type { LanguageModel } from "../types";
 import { createAnthropic } from "./anthropic";
 import { createOpenAI } from "./openai";
+import { createGoogle } from "./google";
 
 // 環境変数から Provider + Model を 1 発で得るユーティリティ。
-//   LLM_PROVIDER=anthropic | openai
-//   LLM_MODEL=claude-haiku-4-5-20251001 | gpt-5-mini
+//   LLM_PROVIDER=anthropic | openai | google
+//   LLM_MODEL=claude-haiku-4-5-20251001 | gpt-5-mini | gemini-2.5-flash
 //
 // より細かく制御したい場合は createAnthropic() / createOpenAI() / createGoogle() を直接呼ぶ。
 export function selectProvider(): LanguageModel {
@@ -19,9 +20,13 @@ export function selectProvider(): LanguageModel {
       const model = process.env.LLM_MODEL ?? "gpt-5-mini";
       return createOpenAI()(model);
     }
+    case "google": {
+      const model = process.env.LLM_MODEL ?? "gemini-2.5-flash";
+      return createGoogle()(model);
+    }
     default:
       throw new Error(
-        `Unsupported LLM_PROVIDER: ${provider}. Supported providers: anthropic, openai`,
+        `Unsupported LLM_PROVIDER: ${provider}. Supported providers: anthropic, openai, google`,
       );
   }
 }

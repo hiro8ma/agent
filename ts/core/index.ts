@@ -17,3 +17,5 @@ export { createAnthropic } from "./providers/anthropic";
 export type { AnthropicConfig } from "./providers/anthropic";
 export { createOpenAI } from "./providers/openai";
 export type { OpenAIConfig } from "./providers/openai";
+export { createGoogle } from "./providers/google";
+export type { GoogleConfig } from "./providers/google";
