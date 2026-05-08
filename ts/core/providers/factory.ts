@@ -3,7 +3,7 @@ import { AnthropicLanguageModel } from "./anthropic";
 
 export function selectProvider(): LanguageModel {
   const provider = (process.env.LLM_PROVIDER ?? "anthropic").toLowerCase();
-  const model = process.env.LLM_MODEL ?? "claude-sonnet-4-5-20250929";
+  const model = process.env.LLM_MODEL ?? "claude-haiku-4-5-20251001";
 
   switch (provider) {
     case "anthropic":
