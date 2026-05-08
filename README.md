@@ -36,6 +36,12 @@ Node.js エコシステムは歴史的に各層で選択が乱立してきた（
 
 Python はパッケージマネージャ（`pip` / `poetry` / `pipenv`）と仮想環境ツール（`venv` / `virtualenv` / `pyenv`）が分離していて運用が分裂しがち。uv はこれらを統合し、Rust 製の高速 resolver で `poetry install` 比 10 倍以上の速度を実現する。pyproject.toml を SSoT とする現代的な書き方を維持しつつ、ツールは集約する。
 
+## 開発環境（Devcontainer）
+
+`.devcontainer/devcontainer.json` で開発環境をコードとして定義している。VS Code / Cursor / GitHub Codespaces で `agent/` を開くとコンテナが自動構築され、Bun / Go 1.23 / Python 3.12 + uv / GitHub CLI が揃った状態で起動する。詳細は [`.devcontainer/README.md`](./.devcontainer/README.md) を参照。
+
+ホスト OS / 個人マシンの状態に依存しない再現性を確保し、ルート README で示した「標準ツールチェーン体験を全言語で揃える」方針を開発環境レベルでも担保する。
+
 ## 構成指針
 
 - 同一ユースケース（Tool Calling + 会話履歴 + 知識検索）を各言語・各フレームワークで実装して横並び比較
