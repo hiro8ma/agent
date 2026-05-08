@@ -1,19 +1,17 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { zodToJsonSchema } from "zod-to-json-schema";
 import type {
-  GenerateInput,
-  GenerateResult,
+  GenerateParams,
+  GenerateTextResult,
   LanguageModel,
   Message,
   ToolCall,
-  FinishReason,
+  Usage,
 } from "../types";
 import { LLMApiError } from "../types";
 
 export type AnthropicConfig = {
   apiKey?: string;
   baseURL?: string;
-  model: string;
   maxRetries?: number;
 };
 
@@ -21,7 +19,7 @@ type NonSystemMessage = Exclude<Message, { role: "system" }>;
 
 function mapFinishReason(
   stopReason: string | null | undefined,
-): FinishReason {
+): GenerateTextResult["finishReason"] {
   switch (stopReason) {
     case "end_turn":
     case "stop_sequence":
@@ -46,7 +44,7 @@ function mapMessages(messages: NonSystemMessage[]): Anthropic.MessageParam[] {
         for (const call of msg.toolCalls) {
           blocks.push({
             type: "tool_use",
-            id: call.id,
+            id: call.toolCallId,
             name: call.name,
             input: call.args,
           });
@@ -70,26 +68,15 @@ function mapMessages(messages: NonSystemMessage[]): Anthropic.MessageParam[] {
   });
 }
 
-export class AnthropicLanguageModel implements LanguageModel {
-  private readonly client: Anthropic;
-  private readonly model: string;
+class AnthropicLanguageModel implements LanguageModel {
+  constructor(
+    private readonly client: Anthropic,
+    private readonly model: string,
+  ) {}
 
-  constructor(config: AnthropicConfig) {
-    const apiKey = config.apiKey ?? process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) {
-      throw new Error("ANTHROPIC_API_KEY is not set");
-    }
-    this.client = new Anthropic({
-      apiKey,
-      ...(config.baseURL ? { baseURL: config.baseURL } : {}),
-      maxRetries: config.maxRetries ?? 0,
-    });
-    this.model = config.model;
-  }
-
-  async doGenerate(input: GenerateInput): Promise<GenerateResult> {
-    const systemMessages = input.messages.filter((m) => m.role === "system");
-    const rest = input.messages.filter(
+  async doGenerate(params: GenerateParams): Promise<GenerateTextResult> {
+    const systemMessages = params.messages.filter((m) => m.role === "system");
+    const rest = params.messages.filter(
       (m): m is NonSystemMessage => m.role !== "system",
     );
 
@@ -102,14 +89,11 @@ export class AnthropicLanguageModel implements LanguageModel {
         : undefined;
 
     const tools =
-      input.tools && input.tools.length > 0
-        ? input.tools.map((tool) => ({
+      params.tools && params.tools.length > 0
+        ? params.tools.map((tool) => ({
             name: tool.name,
             description: tool.description,
-            input_schema: zodToJsonSchema(tool.parameters, {
-              target: "openApi3",
-              $refStrategy: "none",
-            }) as Anthropic.Tool.InputSchema,
+            input_schema: tool.parameters as Anthropic.Tool.InputSchema,
           }))
         : undefined;
 
@@ -117,15 +101,15 @@ export class AnthropicLanguageModel implements LanguageModel {
       const response = await this.client.messages.create(
         {
           model: this.model,
-          max_tokens: input.maxTokens ?? 4096,
+          max_tokens: params.maxTokens ?? 4096,
           ...(system ? { system } : {}),
           messages: mapMessages(rest),
-          ...(input.temperature !== undefined
-            ? { temperature: input.temperature }
+          ...(params.temperature !== undefined
+            ? { temperature: params.temperature }
             : {}),
           ...(tools ? { tools } : {}),
         },
-        input.signal ? { signal: input.signal } : undefined,
+        params.signal ? { signal: params.signal } : undefined,
       );
 
       let text = "";
@@ -135,31 +119,61 @@ export class AnthropicLanguageModel implements LanguageModel {
           text += block.text;
         } else if (block.type === "tool_use") {
           toolCalls.push({
-            id: block.id,
+            toolCallId: block.id,
             name: block.name,
             args: (block.input ?? {}) as Record<string, unknown>,
           });
         }
       }
 
-      const result: GenerateResult = {
-        finishReason: mapFinishReason(response.stop_reason),
+      const usage: Usage = {
+        promptTokens: response.usage?.input_tokens,
+        completionTokens: response.usage?.output_tokens,
+        totalTokens:
+          response.usage?.input_tokens !== undefined &&
+          response.usage?.output_tokens !== undefined
+            ? response.usage.input_tokens + response.usage.output_tokens
+            : undefined,
       };
-      if (text) result.text = text;
+
+      const result: GenerateTextResult = {
+        text,
+        finishReason: mapFinishReason(response.stop_reason),
+        usage,
+      };
       if (toolCalls.length > 0) result.toolCalls = toolCalls;
       return result;
     } catch (error) {
       if (error instanceof Anthropic.APIError) {
-        throw new LLMApiError({
-          status: error.status ?? 500,
-          provider: "anthropic",
-          message: error.message,
-          retryable:
-            (error.status ?? 500) === 429 || (error.status ?? 500) >= 500,
-          raw: error.error,
-        });
+        throw new LLMApiError(
+          error.status ?? 500,
+          "anthropic",
+          undefined,
+          error.message,
+          error.error,
+        );
       }
       throw error;
     }
   }
+}
+
+// Factory パターン。createAnthropic() は config を保持したクロージャを返し、
+// model 名を渡すと LanguageModel が得られる。
+//
+//   const anthropic = createAnthropic();
+//   const haiku = anthropic("claude-haiku-4-5-20251001");
+//   const sonnet = anthropic("claude-sonnet-4-6");
+export function createAnthropic(config: AnthropicConfig = {}) {
+  const apiKey = config.apiKey ?? process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    throw new Error("ANTHROPIC_API_KEY is not set");
+  }
+  const client = new Anthropic({
+    apiKey,
+    ...(config.baseURL ? { baseURL: config.baseURL } : {}),
+    maxRetries: config.maxRetries ?? 0,
+  });
+  return (modelId: string): LanguageModel =>
+    new AnthropicLanguageModel(client, modelId);
 }

@@ -1,6 +1,5 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import { z } from "zod";
 import type { Tool } from "@core/types";
 
 const EXCLUDED = new Set([
@@ -17,16 +16,6 @@ const EXCLUDED = new Set([
 ]);
 
 const MAX_ENTRIES = 500;
-
-const parameters = z.object({
-  path: z
-    .string()
-    .describe("Directory path relative to WORKSPACE_ROOT (use '.' for root)"),
-  recursive: z
-    .boolean()
-    .optional()
-    .describe("If true, walk subdirectories. Default false."),
-});
 
 function workspaceRoot(): string {
   return path.resolve(process.env.WORKSPACE_ROOT ?? process.cwd());
@@ -58,18 +47,37 @@ async function walk(
   }
 }
 
-export const listFiles: Tool<typeof parameters> = {
+export const listFiles: Tool = {
   name: "listFiles",
   description:
     "List files and directories under WORKSPACE_ROOT. Directories end with '/'. Skips node_modules, .git, dist and similar. Up to 500 entries.",
-  parameters,
+  parameters: {
+    type: "object",
+    properties: {
+      path: {
+        type: "string",
+        description: "Directory path relative to WORKSPACE_ROOT (use '.' for root)",
+      },
+      recursive: {
+        type: "boolean",
+        description: "If true, walk subdirectories. Default false.",
+      },
+    },
+    required: ["path"],
+  },
   needsApproval: false,
   async execute(args) {
+    const dirPath = args.path;
+    if (typeof dirPath !== "string") {
+      throw new Error("listFiles: 'path' must be a string");
+    }
+    const recursive = args.recursive === true;
+
     const root = workspaceRoot();
-    const target = path.resolve(root, args.path);
+    const target = path.resolve(root, dirPath);
     const allowedPrefix = root + path.sep;
     if (target !== root && !target.startsWith(allowedPrefix)) {
-      throw new Error(`access denied: ${args.path} is outside workspace`);
+      throw new Error(`access denied: ${dirPath} is outside workspace`);
     }
 
     let stat: Awaited<ReturnType<typeof fs.stat>>;
@@ -78,16 +86,16 @@ export const listFiles: Tool<typeof parameters> = {
     } catch (err) {
       const e = err as NodeJS.ErrnoException;
       if (e.code === "ENOENT") {
-        throw new Error(`directory not found: ${args.path}`);
+        throw new Error(`directory not found: ${dirPath}`);
       }
       throw err;
     }
     if (!stat.isDirectory()) {
-      throw new Error(`not a directory: ${args.path}`);
+      throw new Error(`not a directory: ${dirPath}`);
     }
 
     const entries: string[] = [];
-    await walk(target, root, args.recursive ?? false, entries);
+    await walk(target, root, recursive, entries);
     if (entries.length === 0) {
       return "(empty directory)";
     }

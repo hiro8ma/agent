@@ -1,14 +1,14 @@
 import type {
-  AnyTool,
   LanguageModel,
   Message,
+  Tool,
   ToolCall,
 } from "@core/types";
 
 export type AgentConfig = {
   provider: LanguageModel;
   systemPrompt: string;
-  tools: AnyTool[];
+  tools: Tool[];
   maxSteps?: number;
   verbose?: boolean;
 };
@@ -16,7 +16,7 @@ export type AgentConfig = {
 export class Agent {
   private readonly provider: LanguageModel;
   private readonly systemPrompt: string;
-  private readonly tools: AnyTool[];
+  private readonly tools: Tool[];
   private readonly maxSteps: number;
   private readonly verbose: boolean;
 
@@ -64,7 +64,7 @@ export class Agent {
 
       messages.push({
         role: "assistant",
-        content: result.text ?? "",
+        content: result.text,
         toolCalls,
       });
 
@@ -72,7 +72,7 @@ export class Agent {
         const toolResult = await this.executeTool(call);
         messages.push({
           role: "tool",
-          toolCallId: call.id,
+          toolCallId: call.toolCallId,
           name: call.name,
           content: toolResult,
         });
@@ -99,11 +99,7 @@ export class Agent {
       console.error(`[tool] ${call.name}(${JSON.stringify(call.args)})`);
     }
     try {
-      const parsed = tool.parameters.safeParse(call.args);
-      if (!parsed.success) {
-        return `error: invalid arguments: ${parsed.error.message}`;
-      }
-      const out = await tool.execute(parsed.data);
+      const out = await tool.execute(call.args);
       return out;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
