@@ -1,25 +1,13 @@
 {
-  "name": "agent monorepo",
-  "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
-  "features": {
-    "ghcr.io/devcontainers/features/common-utils:2": {
-      "configureZshAsDefaultShell": true,
-      "username": "vscode"
-    },
-    "ghcr.io/devcontainers/features/github-cli:1": {},
-    "ghcr.io/devcontainers/features/node:1": {
-      "version": "lts"
-    },
-    "ghcr.io/shyim/devcontainers-features/bun:0": {},
-    "ghcr.io/devcontainers/features/go:1": {
-      "version": "1.23"
-    },
-    "ghcr.io/devcontainers/features/python:1": {
-      "version": "3.12",
-      "installTools": false
-    },
-    "ghcr.io/va-h/devcontainers-features/uv:1": {}
+  "name": "agent-monorepo",
+  "build": {
+    "dockerfile": "Dockerfile"
   },
+  "workspaceFolder": "/workspaces/agent",
+  "remoteUser": "vscode",
+  "mounts": [
+    "source=${localWorkspaceFolder},target=/workspaces/agent,type=bind"
+  ],
   "customizations": {
     "vscode": {
       "extensions": [
@@ -54,10 +42,5 @@
       }
     }
   },
-  "postCreateCommand": "bash .devcontainer/post-create.sh",
-  "remoteEnv": {
-    "BUN_INSTALL": "/home/vscode/.bun",
-    "PATH": "${containerEnv:PATH}:/home/vscode/.bun/bin"
-  },
-  "containerUser": "vscode"
+  "postCreateCommand": "bash .devcontainer/post-create.sh"
 }
