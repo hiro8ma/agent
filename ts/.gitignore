@@ -1,13 +1,25 @@
 node_modules/
 dist/
-.env
-.env.local
+build/
 *.log
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Lockfiles (Bun を SSoT、他の lockfile は誤コミット防止)
 bun.lockb
 package-lock.json
 yarn.lock
 pnpm-lock.yaml
 
-.DS_Store
+# IDE / Editor
 .idea/
 .vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db

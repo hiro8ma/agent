@@ -3,10 +3,22 @@
 /agent
 *.exe
 
-# IDE
-.idea/
-.vscode/
+# Build artifacts
+dist/
+build/
 
 # Environment
 .env
+.env.*
+!.env.example
 settings.local.json
+
+# IDE / Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
