@@ -15,3 +15,5 @@ export { generateText } from "./generate";
 export { selectProvider } from "./providers/factory";
 export { createAnthropic } from "./providers/anthropic";
 export type { AnthropicConfig } from "./providers/anthropic";
+export { createOpenAI } from "./providers/openai";
+export type { OpenAIConfig } from "./providers/openai";
