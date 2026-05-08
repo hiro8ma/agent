@@ -107,7 +107,9 @@ export GOOGLE_GENAI_API_KEY=...
 
 ## ステータス
 
-開発中。最初のエージェントとして `repo-reader` を実装予定（ts-phase1）。
+- ts-phase1 完了 — Core 層（types + Anthropic provider + factory）、CLI 層（Agent クラス + readFile / listFiles tool）、agents/repo-reader、bin/repo-reader が動作可能
+- ts-phase2 候補（未着手）— OpenAI / Gemini provider 追加、AsyncIterable streaming、zod による構造化出力、grep / exec / write tool 拡充
+- ts-phase3 候補（未着手）— Action 層実装（GitHub Actions ワークフロー / Issue → PR）、HITL 承認、Sandbox（bwrap / Docker）
 
 ## 参考
 
