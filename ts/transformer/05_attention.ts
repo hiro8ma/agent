@@ -23,22 +23,32 @@
 //   - Step 3-4 で「どの Key に注目するか（weights）」を決め
 //   - Step 5 で「実際に取り込む情報（V を加重平均）」を作る
 
-import type { Matrix } from "./types";
+import type { Mask, Matrix } from "./types";
 import { matmul, transpose } from "./03_qk_similarity";
 import { scale, softmaxRows } from "./04_scaled_dot_product";
 
 export type AttentionTrace = {
   rawScores: Matrix; // Q K^T
   scaledScores: Matrix; // (Q K^T) / √d_k
-  weights: Matrix; // softmax(scaled)
+  maskedScores: Matrix; // mask 適用後（mask なしなら scaledScores と同じ）
+  weights: Matrix; // softmax(masked)
   output: Matrix; // weights V
 };
+
+// マスク適用: mask[i][j] が true なら scores[i][j] = -Infinity
+//   softmax 後にその位置の重みが 0 になる（exp(-∞) = 0）
+function applyMask(scores: Matrix, mask: Mask): Matrix {
+  return scores.map((row, i) =>
+    row.map((v, j) => (mask[i]?.[j] ? -Infinity : v)),
+  );
+}
 
 // トレース付き版（学習用）。各段階の中間結果を返す。
 export function scaledDotProductAttentionTrace(
   Q: Matrix,
   K: Matrix,
   V: Matrix,
+  mask?: Mask,
 ): AttentionTrace {
   const dK = K[0]?.length ?? 0;
 
@@ -48,18 +58,26 @@ export function scaledDotProductAttentionTrace(
   // Step 2: √d_k で割る（極端化防止）
   const scaledScores = scale(rawScores, 1 / Math.sqrt(dK));
 
-  // Step 3: softmax で行ごとに重み化
-  const weights = softmaxRows(scaledScores);
+  // Step 3: mask があれば適用（指定位置を -∞ に）
+  const maskedScores = mask ? applyMask(scaledScores, mask) : scaledScores;
 
-  // Step 4: 重み × Value で加重平均
+  // Step 4: softmax で行ごとに重み化
+  const weights = softmaxRows(maskedScores);
+
+  // Step 5: 重み × Value で加重平均
   const output = matmul(weights, V);
 
-  return { rawScores, scaledScores, weights, output };
+  return { rawScores, scaledScores, maskedScores, weights, output };
 }
 
 // 出力だけ返す版（プロダクション利用想定）
-export function scaledDotProductAttention(Q: Matrix, K: Matrix, V: Matrix): Matrix {
-  return scaledDotProductAttentionTrace(Q, K, V).output;
+export function scaledDotProductAttention(
+  Q: Matrix,
+  K: Matrix,
+  V: Matrix,
+  mask?: Mask,
+): Matrix {
+  return scaledDotProductAttentionTrace(Q, K, V, mask).output;
 }
 
 // 計算過程を全部出すヘルパー

@@ -29,7 +29,7 @@
 //   - 結果として、各 Head は異なる関係性（主語/述語、修飾、距離等）を捉える
 //   - concat + W^O で全 Head の知識を 1 つの表現に統合する
 
-import type { Matrix } from "./types";
+import type { Mask, Matrix } from "./types";
 import { matmul, transpose } from "./03_qk_similarity";
 import { scale, softmaxRows } from "./04_scaled_dot_product";
 import { scaledDotProductAttention } from "./05_attention";
@@ -63,13 +63,15 @@ export function multiHeadAttention(
   V: Matrix,
   heads: Head[],
   WO: Matrix,
+  mask?: Mask,
 ): Matrix {
   // 各 Head で Q, K, V を射影してから attention
+  // mask は全 Head で共通（同じ位置を見ない / 見るは Head によらず決まる）
   const headOutputs = heads.map((h) => {
     const Qi = linearProjection(Q, h.WQ);
     const Ki = linearProjection(K, h.WK);
     const Vi = linearProjection(V, h.WV);
-    return scaledDotProductAttention(Qi, Ki, Vi);
+    return scaledDotProductAttention(Qi, Ki, Vi, mask);
   });
 
   // concat（横結合）
