@@ -39,12 +39,28 @@ export function dot(a: Vector, b: Vector): number {
   return sum;
 }
 
+// 内部 step を全部出すデモ用 verbose 版
+function dotVerbose(a: Vector, b: Vector): number {
+  const products: number[] = [];
+  let sum = 0;
+  for (let i = 0; i < a.length; i++) {
+    const p = a[i]! * b[i]!;
+    products.push(p);
+    sum += p;
+  }
+  const expr = a.map((ai, i) => `${ai}*${b[i]}`).join(" + ");
+  console.log(`    Step 1: 要素ごとの積 = ${JSON.stringify(products)}`);
+  console.log(`    Step 2: 合計 = ${expr} = ${sum}`);
+  return sum;
+}
+
 // === 動作確認 ===
 // 直接実行: bun run transformer/02_dot_product.ts
 if (import.meta.main) {
-  console.log("=== 内積の動作確認 ===\n");
+  console.log("=== 内積の動作確認（計算過程を全部出す版）===\n");
 
   const q: Vector = [1, 0]; // Query: 右向き
+  console.log(`Query q = [${q.join(", ")}]   （右向き）\n`);
 
   const examples: { name: string; k: Vector }[] = [
     { name: "k1（同じ向き）", k: [1, 0] },
@@ -54,15 +70,23 @@ if (import.meta.main) {
     { name: "k5（より大きい同じ向き）", k: [3, 0] },
   ];
 
-  console.log(`Query q = [${q.join(", ")}]\n`);
   for (const { name, k } of examples) {
-    const score = dot(q, k);
-    console.log(`${name}: k = [${k.join(", ")}] → ⟨q, k⟩ = ${score}`);
+    console.log(`▼ ${name}: k = [${k.join(", ")}]`);
+    const score = dotVerbose(q, k);
+    console.log(`    → ⟨q, k⟩ = ${score}`);
+    console.log("");
   }
 
-  console.log("\n観察ポイント");
+  console.log("=== まとめ ===");
+  console.log(`  q = [${q.join(", ")}]`);
+  for (const { name, k } of examples) {
+    const s = dot(q, k);
+    console.log(`  ${name.padEnd(28)} ⟨q, ${JSON.stringify(k).padEnd(12)}⟩ = ${s}`);
+  }
+
+  console.log("\n=== 観察ポイント ===");
   console.log("  - 同じ向き（k1, k4, k5）ほど内積が大きい");
   console.log("  - 直交（k2）すると 0、反対（k3）だと負");
-  console.log("  - 大きさも影響する（k5 のほうが k1 より内積が大きい）");
+  console.log("  - 大きさも影響する（k5=[3,0] は k1=[1,0] より内積が 3 倍）");
   console.log("    → これが後で √d_k で割る理由（次元 / 大きさで補正したい）");
 }

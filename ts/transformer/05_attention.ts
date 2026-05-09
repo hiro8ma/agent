@@ -62,15 +62,91 @@ export function scaledDotProductAttention(Q: Matrix, K: Matrix, V: Matrix): Matr
   return scaledDotProductAttentionTrace(Q, K, V).output;
 }
 
+// 計算過程を全部出すヘルパー
+function fmt(v: number, digits = 4) {
+  return v.toFixed(digits);
+}
+function fmtVec(v: number[], digits = 4) {
+  return `[${v.map((x) => x.toFixed(digits)).join(", ")}]`;
+}
+
+// 1 つの Query について計算過程を全部出す
+function attentionVerboseSingle(Q: Matrix, K: Matrix, V: Matrix, label = "") {
+  console.log(`\n=== Attention 計算過程 ${label} ===`);
+  console.log(`Q = ${JSON.stringify(Q)}   形 ${Q.length} × ${Q[0]!.length}`);
+  console.log(`K = ${JSON.stringify(K)}   形 ${K.length} × ${K[0]!.length}`);
+  console.log(`V = ${JSON.stringify(V)}   形 ${V.length} × ${V[0]!.length}`);
+
+  const dK = K[0]!.length;
+  const KT = transpose(K);
+
+  console.log(`\n▼ Step 1: K を転置`);
+  console.log(`  K^T = ${JSON.stringify(KT)}   形 ${KT.length} × ${KT[0]!.length}`);
+
+  console.log(`\n▼ Step 2: 生スコア Q K^T を計算`);
+  const rawScores = matmul(Q, KT);
+  for (let i = 0; i < Q.length; i++) {
+    for (let j = 0; j < KT[0]!.length; j++) {
+      const aRow = Q[i]!;
+      const bCol = KT.map((row) => row[j]!);
+      const expr = aRow.map((a, k) => `${a}*${bCol[k]}`).join(" + ");
+      console.log(`  (${i},${j}) = ${expr} = ${rawScores[i]![j]}`);
+    }
+  }
+  console.log(`  生スコア = ${JSON.stringify(rawScores)}`);
+
+  console.log(`\n▼ Step 3: √d_k で割る`);
+  const sqrtDk = Math.sqrt(dK);
+  console.log(`  √d_k = √${dK} = ${fmt(sqrtDk)}`);
+  const scaledScores = scale(rawScores, 1 / sqrtDk);
+  for (let i = 0; i < rawScores.length; i++) {
+    for (let j = 0; j < rawScores[0]!.length; j++) {
+      console.log(
+        `  (${i},${j}): ${rawScores[i]![j]} / ${fmt(sqrtDk)} = ${fmt(scaledScores[i]![j]!)}`,
+      );
+    }
+  }
+
+  console.log(`\n▼ Step 4: 各行に softmax を適用（重み化）`);
+  const weights: Matrix = [];
+  for (let i = 0; i < scaledScores.length; i++) {
+    console.log(`  行 ${i}（Query ${i} の重み）の計算:`);
+    const row = scaledScores[i]!;
+    const max = Math.max(...row);
+    console.log(`    max = ${fmt(max)}`);
+    const shifted = row.map((a) => a - max);
+    console.log(`    a_i - max = ${fmtVec(shifted)}`);
+    const exps = shifted.map((s) => Math.exp(s));
+    console.log(`    exp(a_i - max) = ${fmtVec(exps)}`);
+    const sum = exps.reduce((a, b) => a + b, 0);
+    console.log(`    Σ exp = ${fmt(sum)}`);
+    const w = exps.map((v) => v / sum);
+    console.log(`    重み = ${fmtVec(w)}   合計 = ${fmt(w.reduce((a, b) => a + b, 0))}`);
+    weights.push(w);
+  }
+
+  console.log(`\n▼ Step 5: 重み × V で加重平均`);
+  const output = matmul(weights, V);
+  for (let i = 0; i < weights.length; i++) {
+    console.log(`  Query ${i} の出力:`);
+    const w = weights[i]!;
+    for (let j = 0; j < V[0]!.length; j++) {
+      const terms = w.map((wk, k) => `${fmt(wk)}*${V[k]![j]}`).join(" + ");
+      console.log(`    output[${i}][${j}] = ${terms} = ${fmt(output[i]![j]!)}`);
+    }
+  }
+
+  console.log(`\n▼ 最終出力`);
+  console.log(`  output = ${JSON.stringify(output.map((row) => row.map((v) => Number(fmt(v)))))}`);
+  return output;
+}
+
 // === 動作確認 ===
 // 直接実行: bun run transformer/05_attention.ts
 if (import.meta.main) {
-  console.log("=== Scaled Dot-Product Attention 完全版 ===\n");
+  console.log("=== Scaled Dot-Product Attention 完全版（計算過程を全部出す）===");
 
   // 「猫っぽいクエリ」が、猫 / 犬 / 魚 という 3 つの Key に注目する例
-  const Q: Matrix = [
-    [1, 0], // Query: 「猫っぽい」
-  ];
   const K: Matrix = [
     [1, 0], // Key 1: 「猫」     ← Q と同じ向き
     [0, 1], // Key 2: 「犬」     ← Q と直交
@@ -82,53 +158,27 @@ if (import.meta.main) {
     [0, 0, 10], // Value 3: 魚の情報
   ];
 
-  const trace = scaledDotProductAttentionTrace(Q, K, V);
+  // ケース 1: 猫っぽい Query
+  attentionVerboseSingle([[1, 0]], K, V, "ケース 1: Q=[1,0] 猫っぽい");
 
-  console.log(`Q = ${JSON.stringify(Q)}   形 ${Q.length} × ${Q[0]!.length}`);
-  console.log(`K = ${JSON.stringify(K)}   形 ${K.length} × ${K[0]!.length}`);
-  console.log(`V = ${JSON.stringify(V)}   形 ${V.length} × ${V[0]!.length}`);
+  // ケース 2: 猫と犬の中間
+  attentionVerboseSingle([[0.5, 0.5]], K, V, "ケース 2: Q=[0.5,0.5] 猫と犬の中間");
 
-  console.log(`\nStep 1: 生スコア Q K^T`);
-  console.log(`  ${JSON.stringify(trace.rawScores[0]!.map((v) => Number(v.toFixed(4))))}`);
-  console.log("  → 同じ向き=1, 直交=0, 反対=-1");
-
-  console.log(`\nStep 2: / √d_k （d_k = ${K[0]!.length}, √d_k = ${Math.sqrt(K[0]!.length).toFixed(4)}）`);
-  console.log(
-    `  ${JSON.stringify(trace.scaledScores[0]!.map((v) => Number(v.toFixed(4))))}`,
+  // ケース 3: 複数 Query を一気に処理
+  attentionVerboseSingle(
+    [
+      [1, 0],
+      [0, 1],
+      [0.5, 0.5],
+    ],
+    K,
+    V,
+    "ケース 3: 3 つの Query を同時に",
   );
 
-  console.log(`\nStep 3: softmax で重み化`);
-  console.log(`  ${JSON.stringify(trace.weights[0]!.map((v) => Number(v.toFixed(4))))}`);
-  console.log(`  合計 = ${trace.weights[0]!.reduce((a, b) => a + b, 0).toFixed(4)} （必ず 1）`);
-  console.log("  → Key 1（猫）に最大の重み、Key 2（犬）と Key 3（魚）にも一部");
-
-  console.log(`\nStep 4: 重み × V`);
-  console.log(`  ${JSON.stringify(trace.output[0]!.map((v) => Number(v.toFixed(4))))}`);
-  console.log("  → Value 1（猫の情報）が大半、Value 2/3 が少し混じった結果");
-  console.log("    これが「Query に近い Key の Value を強く取り込む」結果");
-
-  console.log("\n--- 別の Query で試す ---");
-  const Q2: Matrix = [
-    [0.5, 0.5], // 「猫と犬の中間っぽい」
-  ];
-  const trace2 = scaledDotProductAttentionTrace(Q2, K, V);
-  console.log(`Q = [0.5, 0.5]（猫と犬の中間）`);
-  console.log(
-    `weights = ${JSON.stringify(trace2.weights[0]!.map((v) => Number(v.toFixed(4))))}`,
-  );
-  console.log(
-    `output  = ${JSON.stringify(trace2.output[0]!.map((v) => Number(v.toFixed(4))))}`,
-  );
-  console.log("  → 猫(K1)と犬(K2)に近い重み、出力も猫情報と犬情報が混ざる");
-
-  console.log("\n--- 複数 Query を一気に処理 ---");
-  const Q3: Matrix = [
-    [1, 0], // 猫っぽい
-    [0, 1], // 犬っぽい
-    [0.5, 0.5], // 中間
-  ];
-  const result3 = scaledDotProductAttention(Q3, K, V);
-  console.log(`Q（3 × 2）`);
-  console.log(`output = ${JSON.stringify(result3.map((row) => row.map((v) => Number(v.toFixed(2)))))}`);
-  console.log("  各行が 各 Query の Attention 結果");
+  console.log("\n=== 観察ポイント ===");
+  console.log("  - Q=[1,0] のとき重みは Key 1（猫）に集中、出力は猫の Value が支配");
+  console.log("  - Q=[0.5,0.5] のとき重みは猫と犬に近い、出力も両者の混合");
+  console.log("  - 複数 Query を渡すと各 Query 独立に注意分布が計算される");
+  console.log("  - これが Transformer の「全部との関連度計算」の最小単位");
 }

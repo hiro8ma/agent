@@ -53,10 +53,41 @@ export function softmax(input: Vector): Vector {
   return expValues.map((v) => v / sum);
 }
 
+// 内部 step を全部出すデモ用 verbose 版
+// （結果は softmax() と同じ、途中経過を console.log するだけ）
+function softmaxVerbose(input: Vector): Vector {
+  const fmt = (v: number) => v.toFixed(4);
+  const fmtVec = (vs: number[]) => `[${vs.map(fmt).join(", ")}]`;
+
+  console.log(`  入力 a = ${fmtVec(input)}`);
+
+  // Step 1: max を見つける
+  const max = Math.max(...input);
+  console.log(`  Step 1: max = ${fmt(max)}`);
+
+  // Step 2: a_i - max （必ず 0 以下、最大値だけ 0）
+  const shifted = input.map((a) => a - max);
+  console.log(`  Step 2: a_i - max = ${fmtVec(shifted)}   （0 以下、最大値だけ 0）`);
+
+  // Step 3: exp(a_i - max)
+  const expValues = shifted.map((s) => Math.exp(s));
+  console.log(`  Step 3: exp(a_i - max) = ${fmtVec(expValues)}   （0 < x ≤ 1、最大値だけ exactly 1）`);
+
+  // Step 4: 合計
+  const sum = expValues.reduce((acc, v) => acc + v, 0);
+  console.log(`  Step 4: Σ exp(a_i - max) = ${fmt(sum)}`);
+
+  // Step 5: 正規化
+  const result = expValues.map((v) => v / sum);
+  console.log(`  Step 5: 正規化 = ${fmtVec(result)}   （合計 ${fmt(result.reduce((a, b) => a + b, 0))}）`);
+
+  return result;
+}
+
 // === 動作確認 ===
 // 直接実行: bun run transformer/01_softmax.ts
 if (import.meta.main) {
-  console.log("=== softmax の動作確認 ===\n");
+  console.log("=== softmax の動作確認（計算過程を全部出す版）===\n");
 
   const examples = [
     [1, 2, 3],
@@ -66,20 +97,24 @@ if (import.meta.main) {
   ];
 
   for (const input of examples) {
-    const output = softmax(input);
-    const sum = output.reduce((a, b) => a + b, 0);
-    console.log(`入力: [${input.join(", ")}]`);
-    console.log(`出力: [${output.map((v) => v.toFixed(4)).join(", ")}]`);
-    console.log(`合計: ${sum.toFixed(6)} （必ず 1 になる）`);
+    console.log(`▼ 入力: [${input.join(", ")}]`);
+    softmaxVerbose(input);
     console.log("");
   }
 
-  console.log("観察ポイント");
-  console.log("  - 入力 [1,2,10] のように差が大きいと、最大値の重みがほぼ 1 に集中");
-  console.log("  - 入力 [1,2,3] のように差が小さいと、重みが分散する");
+  console.log("=== exp の挙動（参考）===");
+  for (const x of [-10, -2, -1, 0, 1, 2, 3, 10]) {
+    console.log(`  exp(${x.toString().padStart(3)}) = ${Math.exp(x).toExponential(4)}`);
+  }
+  console.log("  - x=0 で exp=1、それより大きいと急成長、小さいと 0 に近づく");
+  console.log("  - 必ず正、単調増加、x が 1 増えると約 e (≈2.72) 倍");
+
+  console.log("\n=== 観察ポイント ===");
+  console.log("  - 入力 [1,2,10] は差が大きい（=9）→ 最大値が exp で圧倒的に伸びる → 重み 0.9995");
+  console.log("  - 入力 [1,2,3] は差が小さい（=2）→ exp の差も穏やか → 重み 0.66");
   console.log("  - 入力 [-1,0,1] は [1,2,3] と完全一致 → shift invariance（平行移動不変性）");
-  console.log("    全要素から同じ値を引いても結果が変わらない。これが max 引き trick の根拠");
-  console.log("  - 入力 [100,200,300] は差が極大（=200）なのでほぼ one-hot に集中");
-  console.log("    → 大きい値でも overflow しない（max 引きで [-200,-100,0] に変換される）");
-  console.log("    → ただし結果は [1,2,3] と異なる（差の大きさが違うため）");
+  console.log("    Step 2 の出力 [-2,-1,0] が両方同じになるため");
+  console.log("  - 入力 [100,200,300] は差が極大（=200）→ ほぼ one-hot");
+  console.log("    Step 2 で [-200,-100,0] になり overflow せず計算できる");
+  console.log("    結果は [1,2,3] と異なる（差の大きさが違う）");
 }

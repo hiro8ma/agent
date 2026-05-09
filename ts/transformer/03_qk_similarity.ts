@@ -66,10 +66,41 @@ export function matmul(A: Matrix, B: Matrix): Matrix {
   return result;
 }
 
+// 計算過程を全部出す verbose 版
+function transposeVerbose(A: Matrix): Matrix {
+  const rows = A.length;
+  const cols = A[0]?.length ?? 0;
+  console.log(`    入力 A は ${rows} × ${cols}`);
+  const T = transpose(A);
+  console.log(`    出力 A^T は ${T.length} × ${T[0]!.length}`);
+  for (let i = 0; i < A.length; i++) {
+    console.log(`    A の行 ${i} = ${JSON.stringify(A[i])} → A^T の列 ${i}`);
+  }
+  return T;
+}
+
+function matmulVerbose(A: Matrix, B: Matrix): Matrix {
+  const n = A.length;
+  const d = A[0]?.length ?? 0;
+  const m = B[0]?.length ?? 0;
+  console.log(`    A は ${n} × ${d}, B は ${B.length} × ${m} → 結果は ${n} × ${m}`);
+  const result = matmul(A, B);
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j < m; j++) {
+      const aRow = A[i]!;
+      const bCol = B.map((row) => row[j]!);
+      const expr = aRow.map((a, k) => `${a}*${bCol[k]}`).join(" + ");
+      const val = result[i]![j]!;
+      console.log(`    (${i},${j}) = A[${i}] · B[:,${j}] = ${expr} = ${val}`);
+    }
+  }
+  return result;
+}
+
 // === 動作確認 ===
 // 直接実行: bun run transformer/03_qk_similarity.ts
 if (import.meta.main) {
-  console.log("=== Query × Keys の類似度（行列積）===\n");
+  console.log("=== Query × Keys の類似度（計算過程を全部出す版）===\n");
 
   // Query 1 つ、Key 3 つ、d_k = 2
   const Q: Matrix = [
@@ -84,27 +115,28 @@ if (import.meta.main) {
   console.log(`Q（${Q.length} × ${Q[0]!.length}）= ${JSON.stringify(Q)}`);
   console.log(`K（${K.length} × ${K[0]!.length}）= ${JSON.stringify(K)}`);
 
-  console.log("\n--- 転置 ---");
-  const KT = transpose(K);
-  console.log(`K^T（${KT.length} × ${KT[0]!.length}）= ${JSON.stringify(KT)}`);
+  console.log("\n▼ Step 1: K を転置（K^T）");
+  const KT = transposeVerbose(K);
+  console.log(`    K^T = ${JSON.stringify(KT)}`);
 
-  console.log("\n--- 行列積 Q K^T ---");
-  const scores = matmul(Q, KT);
-  console.log(`Q K^T（${scores.length} × ${scores[0]!.length}）= ${JSON.stringify(scores)}`);
+  console.log("\n▼ Step 2: 行列積 Q K^T");
+  const scores = matmulVerbose(Q, KT);
+  console.log(`    Q K^T = ${JSON.stringify(scores)}`);
 
   console.log("\n観察ポイント");
   console.log("  - 結果は (1 × 3) 行列、各セルが「Query i と Key j の類似度」");
   console.log("  - [1, 0, -1] になる: Q と同じ向き(1) / 直交(0) / 反対(-1)");
   console.log("  - これが「生スコア」。次の Step でスケーリング + softmax で重み化する");
 
-  console.log("\n--- 複数 Query の場合 ---");
+  console.log("\n▼ 複数 Query の場合（2 × 3 になる）");
   const Q2: Matrix = [
     [1, 0],
     [0, 1],
   ];
-  const scores2 = matmul(Q2, transpose(K));
-  console.log(`Q（2 × 2）= ${JSON.stringify(Q2)}`);
-  console.log(`Q K^T（2 × 3）= ${JSON.stringify(scores2)}`);
+  console.log(`Q = ${JSON.stringify(Q2)}`);
+  console.log("計算過程");
+  const scores2 = matmulVerbose(Q2, transpose(K));
+  console.log(`    Q K^T = ${JSON.stringify(scores2)}`);
   console.log("  - 1 行目: Q1=[1,0] 視点での K1/K2/K3 の類似度");
   console.log("  - 2 行目: Q2=[0,1] 視点での K1/K2/K3 の類似度");
 }
