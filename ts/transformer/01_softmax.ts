@@ -19,9 +19,24 @@
 //   素直に exp(a_i) を計算すると、a_i が大きいと overflow する。
 //   例: e^1000 → Infinity
 //   そこで「全要素から max を引いてから exp」する。
-//   結果は数学的に等価（分子分母で同じ定数を掛けても比は変わらないため）。
+//   結果は数学的に等価（shift invariance、後述）。
 //
 //   softmax(a_i) = e^{a_i - max} / Σ_j e^{a_j - max}
+//
+// shift invariance（平行移動不変性）
+//   softmax は「全要素から同じ定数 c を引いても結果が変わらない」性質を持つ。
+//
+//   softmax(a_i - c)
+//     = e^{a_i - c} / Σ_j e^{a_j - c}
+//     = (e^{a_i} / e^c) / (Σ_j e^{a_j} / e^c)
+//     = e^{a_i} / Σ_j e^{a_j}      ← e^c が分子分母で打ち消される
+//     = softmax(a_i)
+//
+//   なので「max を引く」操作は結果に影響を与えず、純粋に overflow 対策。
+//   注意: shift invariance は「全体の平行移動」に対する不変性であって、
+//   「差の絶対値」が変われば結果は変わる。
+//   例: [1,2,3] と [-1,0,1] は同じ結果（差は両方 (2,1,0)）
+//       [1,2,3] と [100,200,300] は違う結果（差が (2,1,0) vs (200,100,0)）
 
 import type { Vector } from "./types";
 
@@ -62,6 +77,9 @@ if (import.meta.main) {
   console.log("観察ポイント");
   console.log("  - 入力 [1,2,10] のように差が大きいと、最大値の重みがほぼ 1 に集中");
   console.log("  - 入力 [1,2,3] のように差が小さいと、重みが分散する");
-  console.log("  - 入力 [100,200,300] でも overflow せず、[1,2,3] と同じ結果になる");
-  console.log("    （max 引きで a_i-max が同じになるため）");
+  console.log("  - 入力 [-1,0,1] は [1,2,3] と完全一致 → shift invariance（平行移動不変性）");
+  console.log("    全要素から同じ値を引いても結果が変わらない。これが max 引き trick の根拠");
+  console.log("  - 入力 [100,200,300] は差が極大（=200）なのでほぼ one-hot に集中");
+  console.log("    → 大きい値でも overflow しない（max 引きで [-200,-100,0] に変換される）");
+  console.log("    → ただし結果は [1,2,3] と異なる（差の大きさが違うため）");
 }
