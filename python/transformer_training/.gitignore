@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+
+# uv
+.uv/
+
+# データとチェックポイント（再生成可能なので git 管理しない）
+data/*.txt
+checkpoints/*.pt
+checkpoints/*.bin
+
+# 学習中の生成サンプル
+samples/
+
+# notebooks
+.ipynb_checkpoints/

@@ -1,0 +1,22 @@
+[project]
+name = "transformer-training"
+version = "0.0.1"
+description = "Transformer を 0 から学習する mini-GPT 教育用実装（Karpathy 式）"
+requires-python = ">=3.11"
+dependencies = [
+    "torch>=2.5.0",
+    "numpy>=2.0.0",
+    "requests>=2.31.0",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.6.0",
+    "mypy>=1.10.0",
+]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]
