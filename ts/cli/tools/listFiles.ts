@@ -1,25 +1,9 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import type { Tool } from "@core/types";
-
-const EXCLUDED = new Set([
-  "node_modules",
-  ".git",
-  "dist",
-  "build",
-  ".next",
-  ".turbo",
-  ".cache",
-  "vendor",
-  ".venv",
-  "__pycache__",
-]);
+import { EXCLUDED, resolveInWorkspace, workspaceRoot } from "./workspace";
 
 const MAX_ENTRIES = 500;
-
-function workspaceRoot(): string {
-  return path.resolve(process.env.WORKSPACE_ROOT ?? process.cwd());
-}
 
 async function walk(
   dir: string,
@@ -74,11 +58,7 @@ export const listFiles: Tool = {
     const recursive = args.recursive === true;
 
     const root = workspaceRoot();
-    const target = path.resolve(root, dirPath);
-    const allowedPrefix = root + path.sep;
-    if (target !== root && !target.startsWith(allowedPrefix)) {
-      throw new Error(`access denied: ${dirPath} is outside workspace`);
-    }
+    const target = resolveInWorkspace(dirPath);
 
     let stat: Awaited<ReturnType<typeof fs.stat>>;
     try {

@@ -36,10 +36,12 @@ export type Message =
   | { role: "tool"; toolCallId: string; name: string; content: string };
 
 // トークン使用量のメタデータ（プロバイダーによって欠損する場合がある）
+// 各フィールドは省略可かつ明示 undefined 可。プロバイダー adapter が値の有無を
+// そのまま渡せるよう exactOptionalPropertyTypes 下でも undefined を許容する。
 export type Usage = {
-  promptTokens?: number;
-  completionTokens?: number;
-  totalTokens?: number;
+  promptTokens?: number | undefined;
+  completionTokens?: number | undefined;
+  totalTokens?: number | undefined;
 };
 
 // 統一された出力形式

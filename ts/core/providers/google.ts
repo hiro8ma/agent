@@ -99,10 +99,9 @@ function mapMessages(messages: Message[]): {
   }
 
   return {
-    systemInstruction:
-      systemTexts.length > 0
-        ? { parts: [{ text: systemTexts.join("\n") }] }
-        : undefined,
+    ...(systemTexts.length > 0
+      ? { systemInstruction: { parts: [{ text: systemTexts.join("\n") }] } }
+      : {}),
     contents,
   };
 }

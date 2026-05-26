@@ -1,12 +1,10 @@
 import * as fs from "node:fs/promises";
-import * as path from "node:path";
 import type { Tool } from "@core/types";
-
-const MAX_FILE_SIZE = 1024 * 1024;
-
-function workspaceRoot(): string {
-  return path.resolve(process.env.WORKSPACE_ROOT ?? process.cwd());
-}
+import {
+  MAX_FILE_SIZE,
+  realpathInWorkspace,
+  resolveInWorkspace,
+} from "./workspace";
 
 export const readFile: Tool = {
   name: "readFile",
@@ -29,27 +27,17 @@ export const readFile: Tool = {
       throw new Error("readFile: 'path' must be a string");
     }
 
-    const root = workspaceRoot();
-    const target = path.resolve(root, filePath);
-    const allowedPrefix = root + path.sep;
-    if (target !== root && !target.startsWith(allowedPrefix)) {
-      throw new Error(`access denied: ${filePath} is outside workspace`);
-    }
+    const target = resolveInWorkspace(filePath);
 
     let realTarget: string;
     try {
-      realTarget = await fs.realpath(target);
+      realTarget = await realpathInWorkspace(target, filePath);
     } catch (err) {
       const e = err as NodeJS.ErrnoException;
       if (e.code === "ENOENT") {
         throw new Error(`file not found: ${filePath}`);
       }
       throw err;
-    }
-    if (realTarget !== root && !realTarget.startsWith(allowedPrefix)) {
-      throw new Error(
-        `access denied: ${filePath} resolves outside workspace via symlink`,
-      );
     }
 
     const stat = await fs.stat(realTarget);
