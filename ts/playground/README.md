@@ -31,12 +31,12 @@ bun run playground/simple-call.ts google
 
 ### モデル選択
 
-書籍に倣ってデフォルトは軽量モデル。
+実運用ではモデル ID をコードに散らさず、論理名（model tier）でマッピングする。`core/providers/models.ts` が `fast` / `default` / `smart` の 3 tier を各プロバイダーの具体モデル ID に解決する。
 
-| プロバイダー | 軽量（デフォルト）| 高性能 |
-|---|---|---|
-| Anthropic | `claude-haiku-4-5-20251001` | `claude-sonnet-4-6` / `claude-opus-4-7` |
-| OpenAI | `gpt-5-mini` | `gpt-5` |
-| Google | `gemini-2.5-flash` | `gemini-2.5-pro` |
+| プロバイダー | `fast`（軽量） | `default`（標準） | `smart`（高性能） |
+|---|---|---|---|
+| Anthropic | `claude-haiku-4-5-20251001` | `claude-sonnet-4-6` | `claude-opus-4-7` |
+| OpenAI | `gpt-5-mini` | `gpt-5` | `gpt-5` |
+| Google | `gemini-2.5-flash` | `gemini-2.5-flash` | `gemini-2.5-pro` |
 
-ハンズオンや動作確認は軽量で十分。複雑なリファクタや複数ファイル横断の推論が必要なときだけ高性能モデルへ切り替える。
+`selectProvider()` の解決順は `LLM_MODEL`（生 ID 明示・後方互換）> `LLM_MODEL_TIER`（`fast` / `default` / `smart`）> tier=`default`。動作確認は `fast`、複数ファイル横断の推論が必要なときだけ `smart` に切り替える。
