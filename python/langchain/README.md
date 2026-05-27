@@ -36,8 +36,8 @@ LangChain は批判もある（重い抽象化、頻繁な breaking change）が
 ├─────────────────────────────────────────────────┤
 │ CLI 層 — ローカル実行環境                        │
 │   LangGraph の create_react_agent                │
-│   Tool 群（read_file / search_documents / 等）   │
-│   Memory / HITL は py-phase3 候補                │
+│   Tool 群（search_documents / web_search / 等）  │
+│   HITL（interrupt + MemorySaver）実装済          │
 ├─────────────────────────────────────────────────┤
 │ Core 層 — LLM API 抽象化                         │
 │   LangChain ChatModel SPI                        │
@@ -83,13 +83,33 @@ python/
 
 新しいエージェントを足す時は `agents/{name}/` にディレクトリを作る。Core / CLI / Action 層は触らない。詳細は `agents/README.md` を参照。
 
-## 計画中のエージェント
+## エージェント
 
-| エージェント | 用途 |
-|---|---|
-| repo_reader | OSS リポを読み解いて要約を生成 |
-| dev_digest | URL / PDF を要約してナレッジ化 |
-| memory_curator | `.claude/memory/` の重複検出・整理 |
+| エージェント | 用途 | 状態 |
+|---|---|---|
+| search_agent | PDF を Chroma に索引して検索 Tool で回答 | 実装済 |
+| web_researcher | Web を Tavily で調べ HTML レポートを書き出す（書き込みは HITL 承認） | 実装済 |
+| repo_reader | OSS リポを読み解いて要約を生成 | 計画中 |
+| dev_digest | URL / PDF を要約してナレッジ化 | アイデア段階 |
+| memory_curator | `.claude/memory/` の重複検出・整理 | アイデア段階 |
+
+### web_researcher（HITL）
+
+破壊的操作に人間の承認を挟む哲学を体現するエージェント。`web_search`（Tavily）で調べ、結果を HTML レポートにまとめ、`write_file` でワークスペースに保存する。`write_file` は実行前に LangGraph の `interrupt()` で停止し、承認（`Command(resume="approve")`）で書き込み、拒否でスキップする。ファイル書き込みはワークスペース配下に閉じ込め、絶対パスと `..` での脱出を拒否する。
+
+CLI（ターミナルで承認）
+
+```bash
+export OPENAI_API_KEY=...
+export TAVILY_API_KEY=...
+uv run python bin/web_researcher.py --topic "2026 年の AI エージェント動向"
+```
+
+Streamlit GUI（ボタンで APPROVE / DENY）
+
+```bash
+uv run streamlit run bin/web_researcher_app.py
+```
 
 ts/ と同じエージェントを Python / LangChain で実装することで、エコシステム比較の素材になる。
 
@@ -111,7 +131,7 @@ export GOOGLE_API_KEY=...
 
 ## ステータス
 
-開発中。最初のエージェントとして `repo_reader` を実装予定（py-phase1）。
+開発中。`search_agent`（RAG）と `web_researcher`（HITL Web リサーチ + Streamlit GUI）を実装済。HITL は LangGraph の `interrupt()` + `MemorySaver` で実現し、破壊的操作（ファイル書き込み）の前に人間の承認を挟む。
 
 ## 参考
 

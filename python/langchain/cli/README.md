@@ -5,12 +5,19 @@
 ## 責務
 
 - Agent 構築（LangGraph `create_react_agent`）
-- 標準 Tool 群（read_file / list_files / grep / search_documents 等）
+  - `build_agent` — checkpointer なしの素の ReAct ループ
+  - `build_hitl_agent` — `MemorySaver` を組み込み、Tool 内の `interrupt()` で人間承認を挟める版
+- 標準 Tool 群（search_documents / web_search / write_file 等）
+  - `write_file` は破壊的操作。実行前に `interrupt()` で停止し、ワークスペース配下に書き込みを閉じ込める
 
-## py-phase3 候補（未実装）
+## 実装済（旧 py-phase3 候補）
 
-- Memory（`MemorySaver` / `SqliteSaver` で checkpoint）
-- HITL（LangGraph の `interrupt` API）
+- Memory（`MemorySaver` で checkpoint）— `build_hitl_agent`
+- HITL（LangGraph の `interrupt()` + `Command(resume=...)`）— `cli.tools.write_file` + `agents.web_researcher`
+
+## 未実装（候補）
+
+- `SqliteSaver` での永続 checkpoint
 - 独自 `StateGraph` への置き換え
 
 ## 依存

@@ -45,8 +45,12 @@ CLI / Action の両方から `run` 関数を呼び出す。エントリ側は引
 
 | 名前 | 用途 | 状態 |
 |---|---|---|
-| repo_reader | OSS リポを読み解いて要約を生成 | 設計中（最初の実装対象） |
+| search_agent | PDF を Chroma に索引して検索 Tool で回答 | 実装済 |
+| web_researcher | Web を Tavily で調べ HTML レポートを書き出す（書き込みは HITL 承認） | 実装済 |
+| repo_reader | OSS リポを読み解いて要約を生成 | 設計中 |
 | dev_digest | URL / PDF を要約してナレッジ化 | アイデア段階 |
 | memory_curator | `.claude/memory/` の重複検出・整理 | アイデア段階 |
+
+`web_researcher` は HITL の参考実装。`runner.run(topic, approve, ...)` が承認コールバックを受け取り、`build_web_researcher()` がコンパイル済みグラフを返す（CLI と Streamlit GUI で共有）。
 
 ts/ と同じエージェント名で実装することで、エコシステム比較ができる。
