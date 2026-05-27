@@ -1,0 +1,29 @@
+node_modules/
+dist/
+build/
+*.log
+
+# Mastra build / dev artifacts
+.mastra/
+pino-detection.js
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Lockfiles（誤コミット防止。SSoT は package.json の range 指定）
+package-lock.json
+bun.lockb
+yarn.lock
+pnpm-lock.yaml
+
+# IDE / Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
