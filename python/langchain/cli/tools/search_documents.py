@@ -30,8 +30,9 @@ def build_search_documents_tool(
 ) -> BaseTool:
     """Wrap a retriever as a StructuredTool with a pydantic input schema.
 
-    Unlike the loose Tool wrapper in cli.retriever.wrap_as_tool, this version
-    advertises a typed argument schema so the LLM emits structured tool calls.
+    Preferred over the schema-less cli.retriever.wrap_as_tool: this version
+    advertises a typed args_schema (SearchDocumentsInput) so the LLM emits
+    structured tool calls with a named, validated query field.
     """
 
     def _run(query: str) -> str:

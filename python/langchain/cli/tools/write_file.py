@@ -19,7 +19,14 @@ class WriteFileInput(BaseModel):
             "Absolute paths and parent-directory escapes ('..') are rejected."
         ),
     )
-    content: str = Field(..., description="Full text or HTML content to write.")
+    content: str = Field(
+        ...,
+        description=(
+            "Complete file contents to write, as UTF-8 text. "
+            "Pass the entire final document; the write overwrites the target, "
+            "it does not append."
+        ),
+    )
 
 
 def _resolve_within_workspace(workspace: Path, relative_path: str) -> Path:

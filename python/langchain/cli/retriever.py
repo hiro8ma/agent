@@ -36,7 +36,14 @@ def wrap_as_tool(
         "Returns the top matching chunks with page metadata when available."
     ),
 ) -> BaseTool:
-    """Wrap a retriever as a LangChain Tool that returns a formatted string."""
+    """Wrap a retriever as a single-input LangChain Tool returning a formatted string.
+
+    This is the schema-less variant: Tool advertises only one freeform string
+    argument, so the LLM cannot rely on a named, typed field. Prefer
+    cli.tools.search_documents.build_search_documents_tool, which exposes a typed
+    pydantic args_schema for structured tool calls. Both share the name
+    "search_documents"; never register both in one agent.
+    """
 
     def _run(query: str) -> str:
         docs = retriever.invoke(query)
