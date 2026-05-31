@@ -16,6 +16,7 @@ build/
 *.log
 
 workspace/
+.feedback/
 
 uv.lock
 

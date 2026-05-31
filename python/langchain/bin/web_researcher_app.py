@@ -24,6 +24,7 @@ import streamlit as st  # noqa: E402
 from langchain_core.runnables import Runnable, RunnableConfig  # noqa: E402
 from langgraph.types import Command  # noqa: E402
 
+from agents.web_researcher.feedback import record_feedback  # noqa: E402
 from agents.web_researcher.runner import build_web_researcher  # noqa: E402
 
 
@@ -34,6 +35,8 @@ def init_session_state() -> None:
     st.session_state.setdefault("waiting_for_approval", None)
     st.session_state.setdefault("thread_id", str(uuid.uuid4()))
     st.session_state.setdefault("agent", None)
+    st.session_state.setdefault("last_topic", None)
+    st.session_state.setdefault("feedback_sent", False)
 
 
 def reset_session() -> None:
@@ -42,6 +45,8 @@ def reset_session() -> None:
     st.session_state["messages"] = []
     st.session_state["waiting_for_approval"] = None
     st.session_state["thread_id"] = str(uuid.uuid4())
+    st.session_state["last_topic"] = None
+    st.session_state["feedback_sent"] = False
 
 
 def _get_agent() -> Runnable[Any, Any]:
@@ -91,6 +96,8 @@ def run_agent(topic: str) -> None:
     """Start a research run for the given topic."""
 
     st.session_state["messages"].append({"role": "user", "content": topic})
+    st.session_state["last_topic"] = topic
+    st.session_state["feedback_sent"] = False
     agent = _get_agent()
     config: RunnableConfig = {"configurable": {"thread_id": st.session_state["thread_id"]}}
     _consume_stream(agent, {"messages": [{"role": "user", "content": topic}]}, config)
@@ -121,6 +128,45 @@ def _message_text(msg: Any) -> str:
         ]
         return "\n".join(p for p in parts if p)
     return ""
+
+
+def _last_assistant_answer() -> str | None:
+    """Return the most recent assistant message text, if any."""
+
+    for message in reversed(st.session_state["messages"]):
+        if message["role"] == "assistant" and message["content"]:
+            return message["content"]
+    return None
+
+
+def render_feedback() -> None:
+    """Render the Good/Bad feedback widget under the latest agent answer.
+
+    Captures the 正確さ&品質 / 満足度 axes: a thumbs verdict plus an optional
+    note is appended to .feedback/feedback.jsonl via record_feedback.
+    """
+
+    answer = _last_assistant_answer()
+    topic = st.session_state["last_topic"]
+    if answer is None or topic is None:
+        return
+
+    st.divider()
+    if st.session_state["feedback_sent"]:
+        st.success("フィードバックを記録しました。ありがとうございます。")
+        return
+
+    st.caption("この回答は役に立ちましたか？")
+    comment = st.text_input("コメント（任意）", key="feedback_comment")
+    col_good, col_bad = st.columns(2)
+    if col_good.button("👍 Good"):
+        record_feedback(query=topic, answer=answer, rating="good", comment=comment)
+        st.session_state["feedback_sent"] = True
+        st.rerun()
+    if col_bad.button("👎 Bad"):
+        record_feedback(query=topic, answer=answer, rating="bad", comment=comment)
+        st.session_state["feedback_sent"] = True
+        st.rerun()
 
 
 def app() -> None:
@@ -164,6 +210,8 @@ def app() -> None:
             feedback("deny")
             st.rerun()
         return
+
+    render_feedback()
 
     topic = st.chat_input("調べたいトピックを入力")
     if topic:
