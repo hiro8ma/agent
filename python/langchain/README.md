@@ -89,6 +89,7 @@ python/
 |---|---|---|
 | search_agent | PDF を Chroma に索引して検索 Tool で回答 | 実装済 |
 | web_researcher | Web を Tavily で調べ HTML レポートを書き出す（書き込みは HITL 承認） | 実装済 |
+| mcp_client | 自作 [`mcp/`](../../../mcp/) サーバーに接続し tool を動的取得して実行 | 実装済 |
 | repo_reader | OSS リポを読み解いて要約を生成 | 計画中 |
 | dev_digest | URL / PDF を要約してナレッジ化 | アイデア段階 |
 | memory_curator | `.claude/memory/` の重複検出・整理 | アイデア段階 |
@@ -112,6 +113,31 @@ uv run streamlit run bin/web_researcher_app.py
 ```
 
 ts/ と同じエージェントを Python / LangChain で実装することで、エコシステム比較の素材になる。
+
+### mcp_client（agent/ ↔ mcp/ 連携）
+
+自作 MCP サーバー群 [`mcp/`](../../../mcp/) に `MultiServerMCPClient`（`langchain-mcp-adapters`）で接続し、`get_tools()` で tool を動的取得して LangGraph の `create_react_agent` にバインドして実行する。この 2 リポを繋ぐ初の統合。
+
+接続先は read 系で副作用がなく API キー不要の `calc` サーバー（FastMCP, stdio）。各サーバーは独立した uv プロジェクトなので、`uv run --directory <server_dir> python <entrypoint>` で子プロセス起動する。`mcp/` の場所は `agent/` の隣を自動検出し、`.env` の `MCP_REPO_PATH` で上書きできる。
+
+tool 一覧の表示（LLM 不要。stdio 接続と `get_tools()` の動作確認に使える）
+
+```bash
+uv run python bin/mcp_client.py --list
+```
+
+tool を使って回答（`OPENAI_API_KEY` が必要）
+
+```bash
+export OPENAI_API_KEY=...
+uv run python bin/mcp_client.py --question "半径 7 の円の面積を求めて"
+```
+
+| 接続先サーバー | 起動コマンド | tool |
+|---|---|---|
+| `calc` | `uv run --directory <mcp>/calc python calculator_server.py` | `add`, `subtract`, `multiply`, `divide`, `power`, `square_root`, `circle_area` |
+
+mcp/ 側のコードには手を入れていない。接続するだけで tool を取り込める点が MCP の要点。サーバーを足すときは `agents/mcp_client/runner.py` の `MultiServerMCPClient` 設定に 1 エントリ追加する。
 
 ## セットアップ
 

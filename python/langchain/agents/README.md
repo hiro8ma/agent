@@ -47,6 +47,7 @@ CLI / Action の両方から `run` 関数を呼び出す。エントリ側は引
 |---|---|---|
 | search_agent | PDF を Chroma に索引して検索 Tool で回答 | 実装済 |
 | web_researcher | Web を Tavily で調べ HTML レポートを書き出す（書き込みは HITL 承認） | 実装済 |
+| mcp_client | 自作 mcp/ サーバーに MultiServerMCPClient で接続し tool を動的取得して実行 | 実装済 |
 | repo_reader | OSS リポを読み解いて要約を生成 | 設計中 |
 | dev_digest | URL / PDF を要約してナレッジ化 | アイデア段階 |
 | memory_curator | `.claude/memory/` の重複検出・整理 | アイデア段階 |
