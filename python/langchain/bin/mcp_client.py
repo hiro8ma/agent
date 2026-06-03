@@ -35,11 +35,17 @@ def main() -> int:
         default=None,
         help="Path to the mcp/ repo. Defaults to MCP_REPO_PATH or sibling autodetect.",
     )
+    parser.add_argument(
+        "--server",
+        action="append",
+        choices=["calc", "memory"],
+        help="MCP server(s) to wire. Repeatable. Defaults to calc.",
+    )
     args = parser.parse_args()
 
     try:
         if args.list:
-            tools = asyncio.run(list_tools(args.mcp_repo))
+            tools = asyncio.run(list_tools(args.mcp_repo, args.server))
             print("MCP tools:")
             for name, description in tools:
                 first_line = description.strip().splitlines()[0] if description else ""
@@ -57,7 +63,7 @@ def main() -> int:
             )
             return 1
 
-        print(asyncio.run(run(args.question, args.mcp_repo)))
+        print(asyncio.run(run(args.question, args.mcp_repo, args.server)))
         return 0
     except (RuntimeError, ValueError) as exc:
         print(f"error: {exc}", file=sys.stderr)

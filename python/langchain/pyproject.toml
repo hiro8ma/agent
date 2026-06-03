@@ -19,6 +19,7 @@ dependencies = [
     "pypdf>=5.0.0",
     "streamlit>=1.40.0",
     "langchain-mcp-adapters>=0.2.2",
+    "fastembed>=0.8.0",
 ]
 
 [dependency-groups]

@@ -12,6 +12,7 @@ from cli.agent import build_agent
 from core.providers.factory import select_provider
 
 from .prompt import MCP_CLIENT_SYSTEM_PROMPT
+from .semantic import ToolMatch, select_tools_semantically
 
 
 def _default_mcp_repo_path() -> str:
@@ -50,15 +51,27 @@ def resolve_mcp_repo(mcp_repo_path: str | None = None) -> Path:
     return path
 
 
-def build_mcp_client(mcp_repo_path: str | None = None) -> MultiServerMCPClient:
+# Registry of wired mcp/ servers: name -> (server_dir, entrypoint).
+# Each is its own uv project, launched with `uv run --directory <dir> python <entry>`.
+_SERVERS: dict[str, tuple[str, str]] = {
+    "calc": ("calc", "calculator_server.py"),
+    "memory": ("memory", "memory_server.py"),
+}
+
+
+def build_mcp_client(
+    mcp_repo_path: str | None = None,
+    servers: list[str] | None = None,
+) -> MultiServerMCPClient:
     """Build a MultiServerMCPClient wired to selected mcp/ servers over stdio.
 
-    Each server is its own uv project, so it is launched with
-    `uv run --directory <server_dir> python <entrypoint>`. Only read-only,
-    key-free servers are wired here to keep the integration side-effect free.
+    ``servers`` selects which entries of ``_SERVERS`` to wire (default: calc).
+    Tools from every wired server share one namespace, so the agent picks tools
+    by name (e.g. ``remember`` / ``recall`` from memory, arithmetic from calc).
     """
 
     repo = resolve_mcp_repo(mcp_repo_path)
+    selected = servers or ["calc"]
 
     def uv_stdio(server_dir: str, entrypoint: str) -> dict[str, Any]:
         return {
@@ -67,35 +80,128 @@ def build_mcp_client(mcp_repo_path: str | None = None) -> MultiServerMCPClient:
             "transport": "stdio",
         }
 
-    return MultiServerMCPClient(
-        {
-            "calc": uv_stdio("calc", "calculator_server.py"),
-        }
-    )
+    connections: dict[str, dict[str, Any]] = {}
+    for name in selected:
+        if name not in _SERVERS:
+            raise ValueError(
+                f"unknown mcp server '{name}'. known: {sorted(_SERVERS)}"
+            )
+        server_dir, entrypoint = _SERVERS[name]
+        connections[name] = uv_stdio(server_dir, entrypoint)
+
+    return MultiServerMCPClient(connections)
 
 
-async def list_tools(mcp_repo_path: str | None = None) -> list[tuple[str, str]]:
+async def call_tool(
+    tool_name: str,
+    args: dict[str, Any],
+    mcp_repo_path: str | None = None,
+    servers: list[str] | None = None,
+) -> str:
+    """Invoke a single MCP tool by name and return its string output.
+
+    Lets callers drive the remember/recall loop without an LLM (key-free path).
+    """
+
+    client = build_mcp_client(mcp_repo_path, servers)
+    tools: list[BaseTool] = await client.get_tools()
+    for tool in tools:
+        if tool.name == tool_name:
+            return _stringify_tool_result(await tool.ainvoke(args))
+    available = ", ".join(sorted(t.name for t in tools))
+    raise ValueError(f"tool '{tool_name}' not found. available: {available}")
+
+
+def _stringify_tool_result(result: Any) -> str:
+    """Flatten an MCP tool result (str or list of content blocks) to text."""
+
+    if isinstance(result, str):
+        return result
+    if isinstance(result, list):
+        parts: list[str] = []
+        for part in result:
+            if isinstance(part, str):
+                parts.append(part)
+            elif isinstance(part, dict) and isinstance(part.get("text"), str):
+                parts.append(part["text"])
+        if parts:
+            return "\n".join(parts)
+    return str(result)
+
+
+async def list_tools(
+    mcp_repo_path: str | None = None, servers: list[str] | None = None
+) -> list[tuple[str, str]]:
     """Return (name, description) for every tool exposed by the MCP servers."""
 
-    client = build_mcp_client(mcp_repo_path)
+    client = build_mcp_client(mcp_repo_path, servers)
     tools = await client.get_tools()
     return [(t.name, t.description or "") for t in tools]
 
 
-async def run(question: str, mcp_repo_path: str | None = None) -> str:
+async def run(
+    question: str,
+    mcp_repo_path: str | None = None,
+    servers: list[str] | None = None,
+) -> str:
     """Answer a question, letting the LLM call MCP tools as needed.
 
     Pipeline: connect to mcp/ servers over stdio -> get_tools() -> bind tools to a
     LangGraph create_react_agent -> invoke -> extract final assistant message.
     """
 
-    client = build_mcp_client(mcp_repo_path)
+    client = build_mcp_client(mcp_repo_path, servers)
     tools: list[BaseTool] = await client.get_tools()
 
     agent = build_agent(
         provider=select_provider(),
         system_prompt=MCP_CLIENT_SYSTEM_PROMPT,
         tools=tools,
+    )
+
+    result: dict[str, Any] = await agent.ainvoke(
+        {"messages": [{"role": "user", "content": question}]}
+    )
+    return _extract_final_answer(result)
+
+
+async def select_tools_for_query(
+    question: str,
+    k: int = 3,
+    mcp_repo_path: str | None = None,
+    servers: list[str] | None = None,
+) -> tuple[list[BaseTool], list[ToolMatch]]:
+    """Fetch all MCP tools, then semantically narrow to the top-k for a query.
+
+    Returns ``(all_tools, matches)`` so callers can show the tool-RAG reduction
+    (``len(all_tools)`` -> ``len(matches)``) before binding.
+    """
+
+    client = build_mcp_client(mcp_repo_path, servers)
+    all_tools: list[BaseTool] = await client.get_tools()
+    matches = select_tools_semantically(question, all_tools, k=k)
+    return all_tools, matches
+
+
+async def run_semantic(
+    question: str,
+    k: int = 3,
+    mcp_repo_path: str | None = None,
+    servers: list[str] | None = None,
+) -> str:
+    """Answer a question after binding only the top-k semantically selected tools.
+
+    Same pipeline as ``run`` but with a tool-RAG retrieval step in front, so the
+    LLM sees ``k`` tools instead of every tool the servers expose.
+    """
+
+    _, matches = await select_tools_for_query(question, k, mcp_repo_path, servers)
+    selected = [m.tool for m in matches]
+
+    agent = build_agent(
+        provider=select_provider(),
+        system_prompt=MCP_CLIENT_SYSTEM_PROMPT,
+        tools=selected,
     )
 
     result: dict[str, Any] = await agent.ainvoke(
