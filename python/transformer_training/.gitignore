@@ -9,6 +9,8 @@ __pycache__/
 
 # データとチェックポイント（再生成可能なので git 管理しない）
 data/*.txt
+data/*.bin
+data/*.json
 checkpoints/*.pt
 checkpoints/*.bin
 
