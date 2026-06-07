@@ -12,6 +12,10 @@ export type Vector = number[];
 //   V: [n_k, d_v]   n_k 個の Value、各 Value は d_v 次元
 export type Matrix = number[][];
 
+// token ID = tokenizer が割り当てる整数 1 個
+// 例: byte tokenizer なら 0..255、BPE なら 0..vocab_size-1
+export type TokenId = number;
+
 // Attention のマスク
 //   形 (n_q × n_k)、true なら「その位置を見ない」（softmax 前に -∞ にする）
 //   - causal mask:  下三角以外を true（未来 token を見ない）
