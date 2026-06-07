@@ -37,8 +37,10 @@ mastra/
 │   └── mastra/
 │       ├── index.ts          Mastra インスタンス（agents / logger を登録）
 │       ├── providers.ts      provider セレクタ（LLM_PROVIDER で切替え）
-│       └── agents/
-│           └── assistant.ts  最小エージェント（instructions のみ）
+│       ├── agents/
+│       │   └── assistant.ts  エージェント（instructions + Confluence ツール）
+│       └── tools/
+│           └── confluenceTool.ts  Confluence 連携ツール（検索 / ページ取得）
 ├── package.json
 ├── tsconfig.json
 ├── .env.example
@@ -85,12 +87,43 @@ npm run build      # mastra build（.mastra/output に成果物を出力）
 npm run typecheck  # tsc --noEmit
 ```
 
+## Tool トラック（外部システム連携）
+
+`createTool`（`@mastra/core/tools`）で Confluence Cloud REST API に繋ぐツールを 2 本実装し、`assistant` に持たせている。
+
+| ツール | id | 役割 |
+|---|---|---|
+| `confluenceSearchPagesTool` | `confluence-search-pages` | CQL でページ検索。`pages` / `total` を返す |
+| `confluenceGetPageTool` | `confluence-get-page` | `pageId` 指定で本文 HTML（`body.storage`）を取得 |
+
+設計のポイント
+
+- `execute` は `try/catch` で例外を握り、失敗時は `outputSchema` の `error` フィールドに構造化して返す（エージェントループを落とさない）
+- 認証は Basic（`email:token` を base64）。接続情報は環境変数から読む
+- provider は他トラックと同じ `selectModel()` を使う（ツール側で provider を直書きしない）
+
+ツールは Agent の `tools` プロパティにキー付きオブジェクトで渡す（インストール版 Mastra の記法）。
+
+```ts
+new Agent({
+  // ...
+  tools: { confluenceSearchPagesTool, confluenceGetPageTool },
+});
+```
+
+実行（`mastra dev` の playground でツール呼び出しを確認）
+
+```bash
+cp .env.example .env   # CONFLUENCE_* を設定
+npm run dev            # playground でエージェント経由 / ツール単体実行を試す
+```
+
 ## ステータス
 
-環境構築のみ完了。
+Tool トラック（外部システム連携）まで完了。
 
-- 完了 — Mastra プロジェクト scaffold、provider セレクタ（OpenAI / Gemini）、最小エージェント 1 本（instructions のみ）、型チェック / `mastra build` 通過
-- 後続 — ツール（外部システム連携）、Memory（`@mastra/memory` + `@mastra/libsql`）、Workflow、Eval
+- 完了 — Mastra プロジェクト scaffold、provider セレクタ（OpenAI / Gemini）、エージェント 1 本、Confluence ツール 2 本（検索 / ページ取得）、型チェック / `mastra build` 通過
+- 後続 — Memory（`@mastra/memory` + `@mastra/libsql`）、Workflow、Eval
 
 ## 参考
 
