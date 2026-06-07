@@ -4,10 +4,12 @@ import type {
   GenerateTextResult,
   LanguageModel,
   Message,
+  StructuredParams,
+  StructuredRawResult,
   ToolCall,
   Usage,
 } from "../types";
-import { LLMApiError } from "../types";
+import { LLMApiError, StructuredOutputError } from "../types";
 
 export type AnthropicConfig = {
   apiKey?: string;
@@ -68,6 +70,37 @@ function mapMessages(messages: NonSystemMessage[]): Anthropic.MessageParam[] {
   });
 }
 
+// Anthropic usage を共通 Usage に正規化する。
+// Anthropic は cache_read_input_tokens を input_tokens と別建てで返すため、
+// promptTokens は両者の合算（実際にモデルが読んだ prompt 量）として扱い、
+// cachedInputTokens にキャッシュヒット分を入れてコスト計算側で割引する。
+function mapUsage(usage: Anthropic.Usage | undefined): Usage {
+  if (!usage) return {};
+  const cacheRead = usage.cache_read_input_tokens ?? 0;
+  const cacheCreate = usage.cache_creation_input_tokens ?? 0;
+  const promptTokens =
+    usage.input_tokens + cacheRead + cacheCreate;
+  return {
+    promptTokens,
+    completionTokens: usage.output_tokens,
+    totalTokens: promptTokens + usage.output_tokens,
+    cachedInputTokens: cacheRead,
+  };
+}
+
+function toLLMApiError(error: unknown): unknown {
+  if (error instanceof Anthropic.APIError) {
+    return new LLMApiError(
+      error.status ?? 500,
+      "anthropic",
+      undefined,
+      error.message,
+      error.error,
+    );
+  }
+  return error;
+}
+
 class AnthropicLanguageModel implements LanguageModel {
   constructor(
     private readonly client: Anthropic,
@@ -126,34 +159,75 @@ class AnthropicLanguageModel implements LanguageModel {
         }
       }
 
-      const usage: Usage = {
-        promptTokens: response.usage?.input_tokens,
-        completionTokens: response.usage?.output_tokens,
-        totalTokens:
-          response.usage?.input_tokens !== undefined &&
-          response.usage?.output_tokens !== undefined
-            ? response.usage.input_tokens + response.usage.output_tokens
-            : undefined,
-      };
-
       const result: GenerateTextResult = {
         text,
         finishReason: mapFinishReason(response.stop_reason),
-        usage,
+        usage: mapUsage(response.usage),
       };
       if (toolCalls.length > 0) result.toolCalls = toolCalls;
       return result;
     } catch (error) {
-      if (error instanceof Anthropic.APIError) {
-        throw new LLMApiError(
-          error.status ?? 500,
-          "anthropic",
-          undefined,
-          error.message,
-          error.error,
-        );
+      throw toLLMApiError(error);
+    }
+  }
+
+  // Anthropic にネイティブの JSON Schema 強制は無いため、forced tool-use で構造化する。
+  // 単一の "respond" tool を定義し tool_choice で強制、tool_use.input を生データとして返す。
+  async doGenerateStructured(
+    params: StructuredParams,
+  ): Promise<StructuredRawResult> {
+    const toolName = params.schemaName ?? "respond";
+    const systemMessages = params.messages.filter((m) => m.role === "system");
+    const rest = params.messages.filter(
+      (m): m is NonSystemMessage => m.role !== "system",
+    );
+    const system =
+      systemMessages.length > 0
+        ? systemMessages.map((m) => ({ type: "text" as const, text: m.content }))
+        : undefined;
+
+    try {
+      const response = await this.client.messages.create(
+        {
+          model: this.model,
+          max_tokens: params.maxTokens ?? 4096,
+          ...(system ? { system } : {}),
+          messages: mapMessages(rest),
+          ...(params.temperature !== undefined
+            ? { temperature: params.temperature }
+            : {}),
+          tools: [
+            {
+              name: toolName,
+              description:
+                params.schemaDescription ??
+                "Return the structured response using this schema.",
+              input_schema: params.jsonSchema as Anthropic.Tool.InputSchema,
+            },
+          ],
+          tool_choice: { type: "tool", name: toolName },
+        },
+        params.signal ? { signal: params.signal } : undefined,
+      );
+
+      for (const block of response.content) {
+        if (block.type === "tool_use" && block.name === toolName) {
+          return {
+            data: block.input,
+            finishReason: mapFinishReason(response.stop_reason),
+            usage: mapUsage(response.usage),
+          };
+        }
       }
-      throw error;
+
+      throw new StructuredOutputError(
+        "parse",
+        "Anthropic structured output returned no tool_use block",
+        response.content,
+      );
+    } catch (error) {
+      if (error instanceof StructuredOutputError) throw error;
+      throw toLLMApiError(error);
     }
   }
 }

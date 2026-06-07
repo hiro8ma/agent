@@ -4,10 +4,12 @@ import type {
   GenerateTextResult,
   LanguageModel,
   Message,
+  StructuredParams,
+  StructuredRawResult,
   ToolCall,
   Usage,
 } from "../types";
-import { LLMApiError } from "../types";
+import { LLMApiError, StructuredOutputError } from "../types";
 
 export type GoogleConfig = {
   apiKey?: string;
@@ -106,6 +108,39 @@ function mapMessages(messages: Message[]): {
   };
 }
 
+type GoogleUsageMeta = {
+  promptTokenCount?: number;
+  candidatesTokenCount?: number;
+  totalTokenCount?: number;
+  cachedContentTokenCount?: number;
+  thoughtsTokenCount?: number;
+};
+
+// Gemini usageMetadata を共通 Usage に正規化する。
+// promptTokenCount は cachedContentTokenCount を内包するため promptTokens にそのまま入れ、
+// cachedInputTokens に内訳を入れてコスト計算側で割引する。thoughts は reasoning に対応。
+function mapUsage(meta: GoogleUsageMeta | undefined): Usage {
+  return {
+    promptTokens: meta?.promptTokenCount,
+    completionTokens: meta?.candidatesTokenCount,
+    totalTokens: meta?.totalTokenCount,
+    cachedInputTokens: meta?.cachedContentTokenCount,
+    reasoningTokens: meta?.thoughtsTokenCount,
+  };
+}
+
+function toLLMApiError(error: unknown): unknown {
+  if (error instanceof LLMApiError) return error;
+  const e = error as { status?: number; message?: string; code?: string };
+  return new LLMApiError(
+    e.status ?? 500,
+    "google",
+    e.code,
+    e.message ?? String(error),
+    error,
+  );
+}
+
 class GoogleLanguageModel implements LanguageModel {
   constructor(
     private readonly client: GoogleGenAI,
@@ -177,30 +212,83 @@ class GoogleLanguageModel implements LanguageModel {
         }
       }
 
-      const usageMeta = response.usageMetadata;
-      const usage: Usage = {
-        promptTokens: usageMeta?.promptTokenCount,
-        completionTokens: usageMeta?.candidatesTokenCount,
-        totalTokens: usageMeta?.totalTokenCount,
-      };
-
       const result: GenerateTextResult = {
         text,
         finishReason: mapFinishReason(candidate.finishReason),
-        usage,
+        usage: mapUsage(response.usageMetadata),
       };
       if (toolCalls.length > 0) result.toolCalls = toolCalls;
       return result;
     } catch (error) {
-      if (error instanceof LLMApiError) throw error;
-      const e = error as { status?: number; message?: string; code?: string };
-      throw new LLMApiError(
-        e.status ?? 500,
-        "google",
-        e.code,
-        e.message ?? String(error),
-        error,
-      );
+      throw toLLMApiError(error);
+    }
+  }
+
+  // Gemini は responseMimeType + responseSchema で JSON 出力を強制できる。
+  // 返ってきた JSON 文字列を parse して生データを返す。zod 検証は上位で行う。
+  async doGenerateStructured(
+    params: StructuredParams,
+  ): Promise<StructuredRawResult> {
+    const { systemInstruction, contents } = mapMessages(params.messages);
+
+    const generationConfig: Record<string, unknown> = {
+      responseMimeType: "application/json",
+      responseJsonSchema: params.jsonSchema,
+    };
+    if (params.temperature !== undefined) {
+      generationConfig.temperature = params.temperature;
+    }
+    if (params.maxTokens !== undefined) {
+      generationConfig.maxOutputTokens = params.maxTokens;
+    }
+
+    try {
+      const response = await this.client.models.generateContent({
+        model: this.model,
+        contents,
+        config: {
+          ...(systemInstruction ? { systemInstruction } : {}),
+          ...generationConfig,
+          ...(params.signal ? { abortSignal: params.signal } : {}),
+        },
+      });
+
+      const candidate = response.candidates?.[0];
+      if (!candidate) {
+        throw new LLMApiError(
+          500,
+          "google",
+          "no_candidate",
+          "Google response had no candidates",
+          response,
+        );
+      }
+
+      let text = "";
+      const parts = (candidate.content?.parts ?? []) as GooglePart[];
+      for (const part of parts) {
+        if ("text" in part && typeof part.text === "string") text += part.text;
+      }
+
+      let data: unknown;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        throw new StructuredOutputError(
+          "parse",
+          `Google structured output was not valid JSON: ${text.slice(0, 200)}`,
+          text,
+        );
+      }
+
+      return {
+        data,
+        finishReason: mapFinishReason(candidate.finishReason),
+        usage: mapUsage(response.usageMetadata),
+      };
+    } catch (error) {
+      if (error instanceof StructuredOutputError) throw error;
+      throw toLLMApiError(error);
     }
   }
 }
