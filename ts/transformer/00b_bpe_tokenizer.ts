@@ -14,6 +14,11 @@
 //   学習で得られるのは「merge ルールの順序付きリスト」。
 //   encode はこのルールを学習時と同じ順序で適用し、decode は逆引きする。
 //
+// 特殊トークン（<|endoftext|>）
+//   会話・文書の区切りを 1 つの token ID で表す。byte 列には現れない予約 ID を割り当てる。
+//   学習: テキストを end_token で分割し、断片ごとにペアを数える（断片をまたぐペアを作らない）。
+//   encode: end_token はそのまま 1 ID に置換し、間のテキストだけ BPE にかける。
+//
 // 決定的なタイブレーク（再現性のため）
 //   同じ出現回数のペアが複数ある場合、結果が実行ごとに変わると再現できない。
 //   そこで「頻度が大きい順 → 同点なら token ID が小さいペア順」で一意に決める。
@@ -38,8 +43,11 @@ function pairKey(a: TokenId, b: TokenId): string {
 
 // 隣接ペアの出現回数を数える
 //   [1, 2, 2, 3] → {"1,2":1, "2,2":1, "2,3":1}
-export function countPairs(ids: TokenId[]): Map<string, number> {
-  const counts = new Map<string, number>();
+//   counts を渡すと累積する（特殊トークンで分割した複数断片の統計を 1 つに集約するため）
+export function countPairs(
+  ids: TokenId[],
+  counts: Map<string, number> = new Map(),
+): Map<string, number> {
   for (let i = 0; i < ids.length - 1; i++) {
     const key = pairKey(ids[i]!, ids[i + 1]!);
     counts.set(key, (counts.get(key) ?? 0) + 1);
@@ -90,37 +98,50 @@ function selectBestPair(
   return best;
 }
 
+// 文書区切りを表す特殊トークン（GPT 系と同じ表記）
+export const END_TOKEN = "<|endoftext|>";
+
 export class BPETokenizer {
   private byteTok = new ByteTokenizer();
   merges: MergeRule[] = [];
   vocabSize = 256;
+  endToken: string;
+  endTokenId = -1; // train 後に 256 + merges.length が入る
+
+  constructor(endToken: string = END_TOKEN) {
+    this.endToken = endToken;
+  }
 
   // BPE 学習: テキストから merge ルールを獲得する
-  //   targetVocabSize: 256 を超えた分が merge 回数（例 300 なら 44 回マージ）
+  //   targetVocabSize: 256（byte）+ merge 回数 + 1（特殊トークン分を予約）
+  //   テキストは end_token で分割し、断片ごとにペアを数える（断片をまたぐペアを作らない）
   train(text: string, targetVocabSize: number): void {
-    if (targetVocabSize < 256) {
-      throw new Error("targetVocabSize must be >= 256 (byte vocab)");
+    if (targetVocabSize < 257) {
+      throw new Error("targetVocabSize must be >= 257 (byte vocab + end token)");
     }
-    let ids = this.byteTok.encode(text);
+    const segments = text.split(this.endToken);
+    let idSegments = segments.map((seg) => this.byteTok.encode(seg));
     this.merges = [];
     let nextId = 256;
 
-    const numMerges = targetVocabSize - 256;
+    const numMerges = targetVocabSize - 256 - 1; // -1 は特殊トークン分
     for (let step = 0; step < numMerges; step++) {
-      const counts = countPairs(ids);
+      const counts = new Map<string, number>();
+      for (const ids of idSegments) countPairs(ids, counts);
       const best = selectBestPair(counts);
       if (best === null || best.count < 2) {
         break; // これ以上まとめる価値のあるペアが無い
       }
       const newId = nextId++;
       this.merges.push({ pair: best.pair, newId });
-      ids = merge(ids, best.pair, newId);
+      idSegments = idSegments.map((ids) => merge(ids, best.pair, newId));
     }
-    this.vocabSize = nextId;
+    this.endTokenId = nextId; // = 256 + merges.length
+    this.vocabSize = nextId + 1;
   }
 
-  // encode: 学習した merge を学習時と同じ順序で適用
-  encode(text: string): TokenId[] {
+  // 通常テキスト（特殊トークンを含まない断片）への BPE 適用
+  private encodeText(text: string): TokenId[] {
     let ids = this.byteTok.encode(text);
     for (const rule of this.merges) {
       ids = merge(ids, rule.pair, rule.newId);
@@ -128,7 +149,32 @@ export class BPETokenizer {
     return ids;
   }
 
-  // decode: 新 token を再帰的にバイト列へ展開してから UTF-8 復元
+  // encode: end_token を 1 ID に置換し、間のテキストだけ BPE にかける
+  //   allowSpecial=false なら end_token 文字列もただのテキストとして byte 化する。
+  //   WHY: 信頼できない入力中の特殊トークン文字列を ID 化すると role 境界偽装になりうるため、
+  //        特殊トークンの解釈は信頼できる入力に限定できるよう分離する。
+  encode(text: string, allowSpecial = true): TokenId[] {
+    if (this.endTokenId < 0) {
+      throw new Error("call train() before encode()");
+    }
+    if (!allowSpecial) {
+      return this.encodeText(text);
+    }
+    // キャプチャグループで end_token を残したまま分割する
+    const escaped = this.endToken.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const parts = text.split(new RegExp(`(${escaped})`));
+    const out: TokenId[] = [];
+    for (const part of parts) {
+      if (part === this.endToken) {
+        out.push(this.endTokenId);
+      } else if (part.length > 0) {
+        out.push(...this.encodeText(part));
+      }
+    }
+    return out;
+  }
+
+  // decode: 新 token を再帰的にバイト列へ展開してから UTF-8 復元。end_token は文字列で挟む
   decode(ids: TokenId[]): string {
     // newId → [a, b] の逆引き表
     const expand = new Map<TokenId, [TokenId, TokenId]>();
@@ -136,7 +182,14 @@ export class BPETokenizer {
       expand.set(rule.newId, rule.pair);
     }
 
-    const bytes: TokenId[] = [];
+    let out = "";
+    let bytes: TokenId[] = [];
+    const flush = (): void => {
+      if (bytes.length > 0) {
+        out += this.byteTok.decode(bytes);
+        bytes = [];
+      }
+    };
     const emit = (id: TokenId): void => {
       const pair = expand.get(id);
       if (pair === undefined) {
@@ -146,8 +199,16 @@ export class BPETokenizer {
         emit(pair[1]);
       }
     };
-    for (const id of ids) emit(id);
-    return this.byteTok.decode(bytes);
+    for (const id of ids) {
+      if (id === this.endTokenId) {
+        flush();
+        out += this.endToken;
+      } else {
+        emit(id);
+      }
+    }
+    flush();
+    return out;
   }
 }
 
@@ -168,8 +229,8 @@ if (import.meta.main) {
   console.log(`▼ 学習テキスト: ${JSON.stringify(text)}`);
 
   const bpe = new BPETokenizer();
-  const beforeLen = bpe.encode(text).length; // 学習前 = byte 列の長さ
-  bpe.train(text, 270); // 256 + 最大 14 マージ
+  bpe.train(text, 271); // 256 + 最大 14 マージ + 1（特殊トークン）
+  const beforeLen = new ByteTokenizer().encode(text).length; // 学習前 = byte 列の長さ
   const afterLen = bpe.encode(text).length;
 
   console.log(`\n学習で獲得した merge ルール（${bpe.merges.length} 個）:`);
@@ -182,6 +243,7 @@ if (import.meta.main) {
   }
 
   console.log(`\nvocab_size = ${bpe.vocabSize}`);
+  console.log(`end_token_id = ${bpe.endTokenId}（= 256 + ${bpe.merges.length} merges）`);
   console.log(`列の長さ: byte 単位 ${beforeLen} → BPE ${afterLen}（短くなった）`);
 
   // === Step C: encode / decode の往復 ===
@@ -196,9 +258,29 @@ if (import.meta.main) {
   }
   void byteTok;
 
+  // === Step D: 特殊トークン ===
+  console.log("\n▼ 特殊トークン <|endoftext|> の扱い");
+  const special = "abc<|endoftext|>def";
+  const sIds = bpe.encode(special);
+  const sBack = bpe.decode(sIds);
+  const eotCount = sIds.filter((id) => id === bpe.endTokenId).length;
+  console.log(`  入力 ${JSON.stringify(special)}`);
+  console.log(`    encode → [${sIds.join(", ")}]`);
+  console.log(`    end_token_id(${bpe.endTokenId}) の出現回数: ${eotCount}（1 ID に圧縮）`);
+  console.log(`    decode → ${JSON.stringify(sBack)}  往復一致: ${special === sBack}`);
+
+  // allowSpecial=false: 特殊トークンを解釈せずテキストとして byte 化（信頼できない入力向け）
+  const noSpecial = bpe.encode(special, false);
+  const leaks = noSpecial.includes(bpe.endTokenId);
+  console.log(
+    `\n  allowSpecial=false → [${noSpecial.join(", ")}]  end_token_id を含まない: ${!leaks}`,
+  );
+
   console.log("\n=== 観察ポイント ===");
   console.log('  - "the " のような頻出パターンが 1 token にまとまる');
   console.log("  - 学習に無い文字（😊）も byte に分解されるので必ず往復できる");
+  console.log("  - <|endoftext|> は学習で分割境界になり、encode で 1 ID に圧縮される");
+  console.log("  - allowSpecial=false なら特殊トークンを解釈しない（role 境界偽装の防御）");
   console.log("  - merge 順序が再現性の鍵。同じテキスト + 同じ vocab_size で常に同じ結果");
   console.log("  - この ID 列が 08_embedding.ts でベクトルになる");
 }
