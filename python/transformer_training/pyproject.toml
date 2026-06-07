@@ -7,12 +7,15 @@ dependencies = [
     "torch>=2.5.0",
     "numpy>=2.0.0",
     "requests>=2.31.0",
+    # 標準 re は \p{L} \p{N} 非対応。GPT-2 の pre-tokenization パターンに必要
+    "regex>=2024.5.15",
 ]
 
 [dependency-groups]
 dev = [
     "ruff>=0.6.0",
     "mypy>=1.10.0",
+    "types-regex>=2026.5.9.20260518",
 ]
 
 [tool.ruff]

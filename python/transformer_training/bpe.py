@@ -19,6 +19,11 @@ train.py / generate.py からそのまま差し替えられる。
 
 特殊トークン: <|endoftext|> を 1 token ID で表す。学習は end_token で分割し断片
 ごとにペアを数える。encode は end_token を 1 ID に置換し、間だけ BPE にかける。
+
+事前トークン化（Pre-tokenization）: 学習前にテキストを「単語 / 数字 / 句読点 /
+短縮形 / 空白」へ GPT-2 の正規表現で区切り、マージをその単位（pretoken）内部に
+閉じ込める。結果 "Say hello!" は "Say" / " hello" / "!" の独立トークンになる。
+標準 re は \\p{L} \\p{N} を扱えないので regex ライブラリを使う。
 """
 
 from __future__ import annotations
@@ -27,6 +32,24 @@ import json
 import re
 from collections import Counter
 from pathlib import Path
+
+try:
+    import regex  # regex は正式依存
+except ModuleNotFoundError:  # 未導入でも import 時に即落ちさせない（利用時に案内する）
+    regex = None  # type: ignore[assignment]
+
+# GPT-2 の pre-tokenization パターン。短縮形 / 単語 / 数字 / 句読点 / 空白を分割する
+_GPT2_PRETOKEN_PATTERN = (
+    r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
+)
+_GPT2_PRETOKEN_RE = regex.compile(_GPT2_PRETOKEN_PATTERN) if regex else None
+
+
+def pretokenize(text: str) -> list[str]:
+    """テキストを pretoken（マージを閉じ込める単位）のリストへ分割する"""
+    if _GPT2_PRETOKEN_RE is None:
+        raise RuntimeError("regex ライブラリが必要です: uv add regex")
+    return _GPT2_PRETOKEN_RE.findall(text)
 
 # 文書区切りを表す特殊トークン（GPT 系と同じ表記）
 END_TOKEN = "<|endoftext|>"
@@ -105,7 +128,12 @@ class BPETokenizer:
         if target_vocab_size < 257:
             raise ValueError("target_vocab_size must be >= 257 (byte vocab + end token)")
 
-        segments = [self._byte.encode(seg) for seg in text.split(self.end_token)]
+        # 特殊トークンで分割 → 各片を pretoken へ分割 → 各 pretoken を byte 列にする。
+        # ペアは pretoken の内部でのみ数えるので、マージが単語境界をまたがない。
+        segments: list[list[int]] = []
+        for seg in text.split(self.end_token):
+            for pretoken in pretokenize(seg):
+                segments.append(self._byte.encode(pretoken))
         self.merges = []
         next_id = 256
         num_merges = target_vocab_size - 256 - 1  # -1 は特殊トークン分
@@ -132,11 +160,21 @@ class BPETokenizer:
         self.vocab_size = next_id + 1
 
     def _encode_text(self, text: str) -> list[int]:
-        """通常テキスト（特殊トークンを含まない断片）への BPE 適用"""
+        """1 つの pretoken への BPE 適用"""
         ids = self._byte.encode(text)
         for pair, new_id in self.merges:
             ids = merge(ids, pair, new_id)
         return ids
+
+    def _encode_plain(self, text: str) -> list[int]:
+        """通常テキストを pretoken へ分割し、各 pretoken を個別に BPE して連結する。
+
+        学習時と同じ単位でマージするので、語境界をまたいだ ID が生まれない。
+        """
+        out: list[int] = []
+        for pretoken in pretokenize(text):
+            out.extend(self._encode_text(pretoken))
+        return out
 
     def encode(self, text: str, *, allow_special: bool = True) -> list[int]:
         """end_token を 1 ID に置換し、間のテキストだけ BPE にかける
@@ -148,14 +186,14 @@ class BPETokenizer:
         if self.end_token_id < 0:
             raise RuntimeError("call train() before encode()")
         if not allow_special:
-            return self._encode_text(text)
+            return self._encode_plain(text)
         # キャプチャグループで end_token を残したまま分割する
         out: list[int] = []
         for part in re.split(f"({re.escape(self.end_token)})", text):
             if part == self.end_token:
                 out.append(self.end_token_id)
             elif part:
-                out.extend(self._encode_text(part))
+                out.extend(self._encode_plain(part))
         return out
 
     def decode(self, ids: list[int]) -> str:
@@ -189,7 +227,11 @@ class BPETokenizer:
         return out
 
     def save(self, path: str | Path) -> None:
-        """merge ルールを JSON 保存（再現性のため）"""
+        """merge ルールを JSON 保存（再現性のため）
+
+        書籍は pickle を使うが、pickle.load は信頼できないファイルで RCE になりうるため
+        JSON を使う。
+        """
         data = {
             "vocab_size": self.vocab_size,
             "merges": [[list(pair), new_id] for pair, new_id in self.merges],
@@ -264,6 +306,28 @@ if __name__ == "__main__":
     print(f"  保存先: {tmp.name}")
     print(f"  load 後の encode 一致: {same}")
     tmp.unlink()
+
+    print("\n=== 事前トークン化（Pre-tokenization）===")
+    print(f"  pretokenize('Say hello!') = {pretokenize('Say hello!')}")
+
+    print("\n=== 書籍の確認例（pre-tokenization 後の独立トークン）===")
+    pt_sample = "Say hello! Why hello? Just hello.<|endoftext|>Good morning!"
+    pt_bpe = BPETokenizer()
+    pt_bpe.train(pt_sample, target_vocab_size=300)
+    say_ids = pt_bpe.encode("Say hello!")
+    print(f"  学習テキスト: {pt_sample!r}")
+    print(f"  'Say hello!' encode -> {say_ids}  ({len(say_ids)} token)")
+    for tid in say_ids:
+        print(f"    id {tid} -> {pt_bpe.decode([tid])!r}")
+    # pre-tokenization の本質: どの ID も pretoken の境界をまたがない
+    pretokens = pretokenize("Say hello!")  # ['Say', ' hello', '!']
+    pieces = [pt_bpe.decode([tid]) for tid in say_ids]
+    no_cross = all(any(p in pt for pt in pretokens) for p in pieces)
+    print(
+        f"  pretoken: {pretokens}  境界をまたぐ token なし: {no_cross}  "
+        f"' hello' 独立: {' hello' in pieces}  '!' 独立: {'!' in pieces}  "
+        f"往復一致: {pt_bpe.decode(say_ids) == 'Say hello!'}"
+    )
 
     print("\n=== 観察ポイント ===")
     print("  - 'the ' のような頻出パターンが 1 token にまとまり、列が短くなる")

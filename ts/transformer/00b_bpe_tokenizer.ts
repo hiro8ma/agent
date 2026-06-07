@@ -19,6 +19,14 @@
 //   学習: テキストを end_token で分割し、断片ごとにペアを数える（断片をまたぐペアを作らない）。
 //   encode: end_token はそのまま 1 ID に置換し、間のテキストだけ BPE にかける。
 //
+// 事前トークン化（Pre-tokenization）
+//   生バイト列のままだと " hello" と "hello!" の "!" のように、単語と句読点・空白が
+//   1 ペアにマージされ得る。GPT-2 は学習前にテキストを「単語 / 数字 / 句読点 / 短縮形 /
+//   空白」の単位へ正規表現で区切り、マージをその単位（pretoken）の内部に閉じ込める。
+//   結果 "Say hello!" は "Say" / " hello" / "!" の独立トークンになり、語彙が安定する。
+//   JS の RegExp は u フラグで Unicode property escape（\p{L} 文字・\p{N} 数字）を
+//   ネイティブサポートするので外部ライブラリ不要。
+//
 // 決定的なタイブレーク（再現性のため）
 //   同じ出現回数のペアが複数ある場合、結果が実行ごとに変わると再現できない。
 //   そこで「頻度が大きい順 → 同点なら token ID が小さいペア順」で一意に決める。
@@ -101,6 +109,16 @@ function selectBestPair(
 // 文書区切りを表す特殊トークン（GPT 系と同じ表記）
 export const END_TOKEN = "<|endoftext|>";
 
+// GPT-2 の pre-tokenization パターン。短縮形 / 単語 / 数字 / 句読点 / 空白を分割する。
+//   u フラグで \p{L}（文字）\p{N}（数字）が使える。g フラグで全マッチを列挙する。
+const GPT2_PRETOKEN_RE =
+  /'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+/gu;
+
+// テキストを pretoken（マージを閉じ込める単位）の配列へ分割する
+export function pretokenize(text: string): string[] {
+  return text.match(GPT2_PRETOKEN_RE) ?? [];
+}
+
 export class BPETokenizer {
   private byteTok = new ByteTokenizer();
   merges: MergeRule[] = [];
@@ -119,8 +137,15 @@ export class BPETokenizer {
     if (targetVocabSize < 257) {
       throw new Error("targetVocabSize must be >= 257 (byte vocab + end token)");
     }
+    // 特殊トークンで分割 → 各片を pretoken へ分割 → 各 pretoken を byte 列にする。
+    // ペアは pretoken の内部でのみ数えるので、マージが単語境界をまたがない。
     const segments = text.split(this.endToken);
-    let idSegments = segments.map((seg) => this.byteTok.encode(seg));
+    let idSegments: TokenId[][] = [];
+    for (const seg of segments) {
+      for (const pretoken of pretokenize(seg)) {
+        idSegments.push(this.byteTok.encode(pretoken));
+      }
+    }
     this.merges = [];
     let nextId = 256;
 
@@ -158,7 +183,7 @@ export class BPETokenizer {
       throw new Error("call train() before encode()");
     }
     if (!allowSpecial) {
-      return this.encodeText(text);
+      return this.encodePlain(text);
     }
     // キャプチャグループで end_token を残したまま分割する
     const escaped = this.endToken.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -168,8 +193,18 @@ export class BPETokenizer {
       if (part === this.endToken) {
         out.push(this.endTokenId);
       } else if (part.length > 0) {
-        out.push(...this.encodeText(part));
+        out.push(...this.encodePlain(part));
       }
+    }
+    return out;
+  }
+
+  // 通常テキストを pretoken へ分割し、各 pretoken を個別に BPE にかけて連結する。
+  // 学習時と同じ単位でマージするので、語境界をまたいだ ID が生まれない。
+  private encodePlain(text: string): TokenId[] {
+    const out: TokenId[] = [];
+    for (const pretoken of pretokenize(text)) {
+      out.push(...this.encodeText(pretoken));
     }
     return out;
   }
@@ -274,6 +309,42 @@ if (import.meta.main) {
   const leaks = noSpecial.includes(bpe.endTokenId);
   console.log(
     `\n  allowSpecial=false → [${noSpecial.join(", ")}]  end_token_id を含まない: ${!leaks}`,
+  );
+
+  // === Step E: 事前トークン化（Pre-tokenization）===
+  console.log("\n▼ 事前トークン化 pretokenize()");
+  console.log(
+    `  ${JSON.stringify("Say hello!")} → ${JSON.stringify(pretokenize("Say hello!"))}`,
+  );
+
+  console.log("\n▼ 書籍の確認例（pre-tokenization 後の独立トークン）");
+  const sample = "Say hello! Why hello? Just hello.<|endoftext|>Good morning!";
+  const ptBpe = new BPETokenizer();
+  ptBpe.train(sample, 300);
+  const sayIds = ptBpe.encode("Say hello!");
+  console.log(`  学習テキスト: ${JSON.stringify(sample)}`);
+  console.log(`  "Say hello!" encode → [${sayIds.join(", ")}]  (${sayIds.length} token)`);
+  for (const id of sayIds) {
+    console.log(`    id ${id} → ${JSON.stringify(ptBpe.decode([id]))}`);
+  }
+  // pre-tokenization の本質: どの ID も "Say" / " hello" / "!" の境界をまたがない。
+  // 各 ID を decode した断片が 1 つの pretoken 内に収まることを確認する。
+  const pretokens = pretokenize("Say hello!"); // ["Say", " hello", "!"]
+  const pieces = sayIds.map((id) => ptBpe.decode([id]));
+  const noBoundaryCross = pieces.every((p) =>
+    pretokens.some((pt) => pt.includes(p)),
+  );
+  const helloIsOneToken = pieces.includes(" hello");
+  const bangIsOneToken = pieces.includes("!");
+  console.log(
+    `  境界をまたぐ token なし: ${noBoundaryCross}` +
+      `  ' hello' が独立 1 token: ${helloIsOneToken}` +
+      `  '!' が独立 1 token: ${bangIsOneToken}`,
+  );
+  console.log(
+    `  pretoken への分割: ${JSON.stringify(pretokens)}  往復一致: ${
+      ptBpe.decode(sayIds) === "Say hello!"
+    }`,
   );
 
   console.log("\n=== 観察ポイント ===");
