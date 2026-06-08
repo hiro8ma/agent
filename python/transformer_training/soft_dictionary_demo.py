@@ -83,7 +83,7 @@ if __name__ == "__main__":
     for q, o in zip(queries, out):
         print(f"  映画 {q.astype(int)} の予測評価: {o[0]:.2f} 点")
     # 単一クエリ版と一致することを確認（行ごとに独立=並列の証拠）
-    single, _ = soft_dictionary((6, 4, 5), MOVIE_PREFERENCES)
+    single, _single_w = soft_dictionary((6, 4, 5), MOVIE_PREFERENCES)
     matrix_first = float(out[0, 0])
     match = abs(matrix_first - single) < 1e-6
     print(f"  整合性チェック: 行列版[0]={matrix_first:.2f} == 単一版={single:.2f} -> {match}")
