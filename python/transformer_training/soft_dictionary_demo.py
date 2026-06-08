@@ -42,6 +42,24 @@ def soft_dictionary(
     return float(weights @ vals), weights               # 重み付き和
 
 
+def attention(
+    q_mat: np.ndarray, k_mat: np.ndarray, v_mat: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
+    """複数クエリの行列版 Attention = softmax(QK^T)V。
+
+    行列積は行単位で独立に計算されるため、m 個のクエリを 1 回の行列積で並列処理できる
+    （GPU 並列化の根拠）。model.py の CausalSelfAttention のバッチ版と同一構造。
+      Q (m,d) @ K^T (d,n) -> sims (m,n)   各クエリ×各キーの類似度
+      softmax は各行（axis=1）に独立適用 -> weights (m,n)
+      weights (m,n) @ V (n,d_v) -> out (m,d_v)
+    """
+    sims = q_mat @ k_mat.T                               # (m, n)
+    sims = sims - sims.max(axis=1, keepdims=True)        # 行ごとの数値安定化
+    exp = np.exp(sims)
+    weights = exp / exp.sum(axis=1, keepdims=True)       # 行単位 softmax
+    return weights @ v_mat, weights                     # (m, d_v)
+
+
 if __name__ == "__main__":
     new_movie = (6, 4, 5)
     print(f"=== Attention = ソフトディクショナリ（query={new_movie}） ===\n")
@@ -55,7 +73,23 @@ if __name__ == "__main__":
     for k, wi in zip(MOVIE_PREFERENCES, w):
         print(f"  {k}: {wi * 100:5.2f}% {'#' * int(wi * 40)}")
 
+    # 複数クエリの行列版（一括並列）
+    print("\n=== 複数クエリの行列版 Attention = softmax(QK^T)V ===")
+    keys = np.array(list(MOVIE_PREFERENCES), dtype=float)            # (7, 3)
+    vals = np.array(list(MOVIE_PREFERENCES.values()), dtype=float).reshape(-1, 1)  # (7, 1)
+    queries = np.array([(6, 4, 5), (2, 8, 3), (4, 3, 7)], dtype=float)            # (3, 3)
+    out, w_mat = attention(queries, keys, vals)
+    print(f"Q{queries.shape} @ K^T -> sims(3,7) -> softmax(行単位) -> W@V -> out{out.shape}")
+    for q, o in zip(queries, out):
+        print(f"  映画 {q.astype(int)} の予測評価: {o[0]:.2f} 点")
+    # 単一クエリ版と一致することを確認（行ごとに独立=並列の証拠）
+    single, _ = soft_dictionary((6, 4, 5), MOVIE_PREFERENCES)
+    matrix_first = float(out[0, 0])
+    match = abs(matrix_first - single) < 1e-6
+    print(f"  整合性チェック: 行列版[0]={matrix_first:.2f} == 単一版={single:.2f} -> {match}")
+
     print("\n観察ポイント")
     print("  - query に近い特徴の映画が高い重み、遠い映画はほぼ 0 = ソフトな lookup")
     print("  - T を上げると重みが平滑化（全映画を均等に混ぜる方向）")
-    print("  - 3 ステップは行列版 Attention（04/05, model.py）と同一構造")
+    print("  - 行列積は行単位で独立 → m 個のクエリを 1 回の matmul で並列処理できる")
+    print("  - 3 ステップは行列版 Attention（04/05, model.py の CausalSelfAttention）と同一構造")
