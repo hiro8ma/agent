@@ -241,18 +241,28 @@ class MiniGPT(nn.Module):
         max_new_tokens: int,
         temperature: float = 1.0,
         top_k: int | None = None,
+        frequency_penalty: float = 0.0,
+        presence_penalty: float = 0.0,
+        repetition_penalty: float = 1.0,
     ) -> torch.Tensor:
         """自己回帰生成 (greedy or sampling)
 
         Args:
-            idx:            (B, T) 開始 token 列（プロンプト）
-            max_new_tokens: 何トークン生成するか
-            temperature:    1.0=通常、低い→確実、高い→多様、0.0 は greedy 相当
-            top_k:          上位 k 個から sampling（None なら全候補）
+            idx:                (B, T) 開始 token 列（プロンプト）
+            max_new_tokens:     何トークン生成するか
+            temperature:        1.0=通常、低い→確実、高い→多様、0.0 は greedy 相当
+            top_k:              上位 k 個から sampling（None なら全候補）
+            frequency_penalty:  既出トークンを出現回数に比例して減算（連呼を抑制）
+            presence_penalty:   既出トークンを一律減算（再登場自体を抑制）
+            repetition_penalty: CTRL 流の除算ペナルティ（1.0 で無効）
+
+        ペナルティ系はデフォルト無効なので既存の呼び出しと完全に後方互換。
+        全ペナルティはプロンプト部分を除いた「生成済みトークン」のみを対象にする。
 
         Returns:
             (B, T + max_new_tokens) 生成された token 列
         """
+        prompt_len = idx.size(1)
         for _ in range(max_new_tokens):
             # block_size を超えないように context をトリム
             idx_cond = idx[:, -self.config.block_size :]
@@ -260,6 +270,16 @@ class MiniGPT(nn.Module):
             # forward → 最後の位置のロジットだけ取り出す
             logits, _ = self(idx_cond)
             logits = logits[:, -1, :] / max(temperature, 1e-8)  # (B, vocab_size)
+
+            # 反復ペナルティ（生成済みトークンが対象、batch ごとに適用）
+            if frequency_penalty != 0.0 or presence_penalty != 0.0 or repetition_penalty != 1.0:
+                logits = self._apply_repetition_penalties(
+                    logits,
+                    idx[:, prompt_len:],
+                    frequency_penalty=frequency_penalty,
+                    presence_penalty=presence_penalty,
+                    repetition_penalty=repetition_penalty,
+                )
 
             # top-k フィルタ
             if top_k is not None:
@@ -274,6 +294,38 @@ class MiniGPT(nn.Module):
             idx = torch.cat([idx, idx_next], dim=1)
 
         return idx
+
+    @staticmethod
+    def _apply_repetition_penalties(
+        logits: torch.Tensor,
+        generated: torch.Tensor,
+        *,
+        frequency_penalty: float,
+        presence_penalty: float,
+        repetition_penalty: float,
+    ) -> torch.Tensor:
+        """既出トークンのロジットを抑制した新しいロジットを返す（バッチ対応）。
+
+        logits:    (B, vocab) 各 batch の次トークンロジット
+        generated: (B, G)     これまでに生成したトークン ID（プロンプトは除く）
+        """
+        if generated.size(1) == 0:
+            return logits
+        out = logits.clone()
+        vocab = out.size(-1)
+        for b in range(out.size(0)):
+            counts = torch.bincount(generated[b], minlength=vocab).to(out.dtype)
+            seen = counts > 0
+            if frequency_penalty != 0.0:
+                out[b] = out[b] - frequency_penalty * counts
+            if presence_penalty != 0.0:
+                out[b] = out[b] - presence_penalty * seen.to(out.dtype)
+            if repetition_penalty != 1.0:
+                pos = out[b] > 0
+                lowered = out[b] / repetition_penalty
+                raised = out[b] * repetition_penalty
+                out[b] = torch.where(seen, torch.where(pos, lowered, raised), out[b])
+        return out
 
     def num_parameters(self) -> int:
         return sum(p.numel() for p in self.parameters())
