@@ -7,19 +7,26 @@ Two distinct ideas the agent world keeps separate:
 - *Memory*: the agent's own conversation / event history, written as the agent runs and
   read back later. This package is about memory, not knowledge.
 
-`graph.py`     — a one-node chat graph that shows why a LangGraph checkpointer is what
-                 turns a stateless call into cross-turn (and cross-session) memory.
-`retrieval.py` — how to *search* a memory store: lexical BM25 vs semantic embeddings,
-                 and why a production store blends both (hybrid).
+`graph.py`        — a one-node chat graph that shows why a LangGraph checkpointer is what
+                    turns a stateless call into cross-turn (and cross-session) memory.
+`retrieval.py`    — how to *search* a memory store: lexical BM25 vs semantic embeddings,
+                    and why a production store blends both (hybrid).
+`rag_pipeline.py` — knowledge, not memory: a full RAG pipeline (chunk → embed → index →
+                    retrieve → augment → generate) over static reference docs.
 """
 
 from .graph import build_chat_graph, reply_without_memory, run_session
+from .rag_pipeline import RagAnswer, RagIndex, answer_query, chunk_text
 from .retrieval import MemoryStore, bm25_search, semantic_search
 
 __all__ = [
     "MemoryStore",
+    "RagAnswer",
+    "RagIndex",
+    "answer_query",
     "bm25_search",
     "build_chat_graph",
+    "chunk_text",
     "reply_without_memory",
     "run_session",
     "semantic_search",
