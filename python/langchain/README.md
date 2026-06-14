@@ -90,6 +90,8 @@ python/
 | search_agent | PDF を Chroma に索引して検索 Tool で回答 | 実装済 |
 | web_researcher | Web を Tavily で調べ HTML レポートを書き出す（書き込みは HITL 承認） | 実装済 |
 | mcp_client | 自作 [`mcp/`](../../../mcp/) サーバーに接続し tool を動的取得して実行 | 実装済 |
+| reflection | Plan→Generate→Reflect を 1 試行内で回す LangGraph グラフ | 実装済 |
+| reflexion | 試行をまたいで失敗を言語化・蓄積し次試行に注入する自己改善ループ | 実装済 |
 | repo_reader | OSS リポを読み解いて要約を生成 | 計画中 |
 | dev_digest | URL / PDF を要約してナレッジ化 | アイデア段階 |
 | memory_curator | `.claude/memory/` の重複検出・整理 | アイデア段階 |
@@ -138,6 +140,26 @@ uv run python bin/mcp_client.py --question "半径 7 の円の面積を求めて
 | `calc` | `uv run --directory <mcp>/calc python calculator_server.py` | `add`, `subtract`, `multiply`, `divide`, `power`, `square_root`, `circle_area` |
 
 mcp/ 側のコードには手を入れていない。接続するだけで tool を取り込める点が MCP の要点。サーバーを足すときは `agents/mcp_client/runner.py` の `MultiServerMCPClient` 設定に 1 エントリ追加する。
+
+### reflexion（ノンパラメトリック学習＝自己改善ループ）
+
+重みを一切触らず、失敗から in-context で学ぶ Reflexion 風ループ。`reflection`（1 試行内の批評グラフ）と違い、こちらは**試行をまたいだエピソード記憶**が学習の主体になる。
+
+流れは act → evaluate → reflect → retry。タスクは「偶数だけ合計する `solve` 関数を書く」コード生成。判定は LLM ではなく**隠しテストケースの実行**で決まるため、成功/失敗のシグナルが決定的になる。失敗すると一行の自己批評を**リフレクション・バッファ**に追記し、次試行ではバッファ直近分をプロンプト先頭に注入して再挑戦する。試行上限が停止保証。
+
+API キー無しで動く（決定的なフェイク actor）。フェイク actor は**リフレクション注入が空のときは bug 版、注入があると修正版**を返すので、試行 1（記憶なし）で失敗・試行 2（記憶あり）で成功という「学習している」様子がログで見える。
+
+```bash
+# オフライン（フェイク actor、キー不要）
+uv run python bin/reflexion.py
+
+# 実 LLM で actor / reflector を動かす
+export OPENAI_API_KEY=...
+uv run python bin/reflexion.py --llm
+
+# リフレクションを JSONL に永続化（次の run が記憶を引き継ぐ。mcp/memory の SQLite 永続化に相当）
+uv run python bin/reflexion.py --memory-file /tmp/reflexion.jsonl --max-attempts 1
+```
 
 ## セットアップ
 
