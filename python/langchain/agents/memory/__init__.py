@@ -13,21 +13,37 @@ Two distinct ideas the agent world keeps separate:
                     and why a production store blends both (hybrid).
 `rag_pipeline.py` — knowledge, not memory: a full RAG pipeline (chunk → embed → index →
                     retrieve → augment → generate) over static reference docs.
+`graphrag.py`     — knowledge as a graph of (subject, predicate, object) triples; answers
+                    multi-hop / relational questions by BFS traversal, not chunk retrieval.
 """
 
 from .graph import build_chat_graph, reply_without_memory, run_session
+from .graphrag import (
+    KnowledgeGraph,
+    Triple,
+    default_graph,
+    extract_triples,
+    shortest_path,
+    subgraph,
+)
 from .rag_pipeline import RagAnswer, RagIndex, answer_query, chunk_text
 from .retrieval import MemoryStore, bm25_search, semantic_search
 
 __all__ = [
+    "KnowledgeGraph",
     "MemoryStore",
     "RagAnswer",
     "RagIndex",
+    "Triple",
     "answer_query",
     "bm25_search",
     "build_chat_graph",
     "chunk_text",
+    "default_graph",
+    "extract_triples",
     "reply_without_memory",
     "run_session",
     "semantic_search",
+    "shortest_path",
+    "subgraph",
 ]
