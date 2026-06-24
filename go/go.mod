@@ -5,7 +5,7 @@ go 1.25.0
 require (
 	github.com/firebase/genkit/go v1.4.0
 	google.golang.org/adk v0.6.0
-	google.golang.org/genai v1.51.0
+	google.golang.org/genai v1.62.0
 )
 
 require (
