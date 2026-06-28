@@ -3,3 +3,4 @@ export { listFiles } from "./listFiles";
 export { grep } from "./grep";
 export { writeFile } from "./writeFile";
 export { editFile } from "./editFile";
+export { execCommand } from "./execCommand";

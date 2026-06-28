@@ -2,7 +2,14 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
-import { editFile, grep, listFiles, readFile, writeFile } from "@cli/tools";
+import {
+  editFile,
+  execCommand,
+  grep,
+  listFiles,
+  readFile,
+  writeFile,
+} from "@cli/tools";
 
 let workspace: string;
 let prevRoot: string | undefined;
@@ -153,5 +160,61 @@ describe("editFile", () => {
     await expect(
       editFile.execute({ path: "../escape.txt", oldText: "a", newText: "b" }),
     ).rejects.toThrow(/outside workspace/);
+  });
+});
+
+describe("execCommand", () => {
+  test("is marked as requiring approval", () => {
+    expect(execCommand.needsApproval).toBe(true);
+  });
+
+  test("runs an allowlisted command", async () => {
+    const out = await execCommand.execute({
+      command: "echo",
+      args: ["hello"],
+    });
+    expect(out).toBe("hello");
+  });
+
+  test("rejects a command outside the allowlist", async () => {
+    await expect(
+      execCommand.execute({ command: "rm", args: ["-rf", "/"] }),
+    ).rejects.toThrow(/not allowed/);
+  });
+
+  test("passes args literally without shell expansion", async () => {
+    // shell:false なのでメタ文字は文字列として渡るだけ。echo がそのまま出力する。
+    const out = await execCommand.execute({
+      command: "echo",
+      args: ["; rm -rf /"],
+    });
+    expect(out).toBe("; rm -rf /");
+  });
+
+  test("rejects cwd outside the workspace", async () => {
+    await expect(
+      execCommand.execute({ command: "ls", cwd: "../.." }),
+    ).rejects.toThrow(/outside workspace/);
+  });
+
+  test("returns exit code and output on failure", async () => {
+    const out = await execCommand.execute({
+      command: "node",
+      args: ["-e", "process.exit(3)"],
+    });
+    expect(out).toContain("exit code 3");
+  });
+
+  test("does not leak parent environment secrets", async () => {
+    process.env.LEAK_TEST_SECRET = "topsecret";
+    try {
+      const out = await execCommand.execute({
+        command: "node",
+        args: ["-e", "process.stdout.write(process.env.LEAK_TEST_SECRET ?? 'none')"],
+      });
+      expect(out).toBe("none");
+    } finally {
+      delete process.env.LEAK_TEST_SECRET;
+    }
   });
 });

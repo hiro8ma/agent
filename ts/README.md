@@ -108,7 +108,7 @@ export GOOGLE_GENAI_API_KEY=...
 ## ステータス
 
 - ts-phase1 完了 — Core 層（types + Anthropic provider + factory）、CLI 層（Agent クラス + readFile / listFiles tool）、agents/repo-reader、bin/repo-reader が動作可能
-- ts-phase2 進行中 — OpenAI / Gemini provider 追加済、grep / writeFile / editFile tool 追加済（workspace 閉じ込め + symlink ガードを `tools/workspace.ts` に集約、tests/tools.test.ts でカバー。editFile は oldText の一意一致検査で曖昧な置換を拒否）。論理名（model tier）マッピング層を `core/providers/models.ts` に追加（`fast` / `default` / `smart` → 具体モデル ID。`LLM_MODEL` 生 ID 明示 > `LLM_MODEL_TIER` > `default` の順で解決）。残り — AsyncIterable streaming、zod による構造化出力、exec tool（sandbox 前提のため phase3 と同時）
+- ts-phase2 進行中 — OpenAI / Gemini provider 追加済、grep / writeFile / editFile / execCommand tool 追加済（workspace 閉じ込め + symlink ガードを `tools/workspace.ts` に集約、tests/tools.test.ts でカバー。editFile は oldText の一意一致検査で曖昧な置換を拒否。execCommand は allowlist + shell:false（argv 起動）+ cwd 制限 + timeout + 出力上限 + 最小 env で多層防御）。論理名（model tier）マッピング層を `core/providers/models.ts` に追加（`fast` / `default` / `smart` → 具体モデル ID。`LLM_MODEL` 生 ID 明示 > `LLM_MODEL_TIER` > `default` の順で解決）。残り — AsyncIterable streaming、zod による構造化出力
 - ts-phase3 候補（未着手）— Action 層実装（GitHub Actions ワークフロー / Issue → PR）、HITL 承認（writeFile の `needsApproval` を loop で強制）、Sandbox（bwrap / Docker）
 
 ## 参考
