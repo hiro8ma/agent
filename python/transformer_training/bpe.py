@@ -115,6 +115,7 @@ class BPETokenizer:
         self._byte = ByteTokenizer()
         # merge ルールを学習順に保持する。順序が encode の正しさを決める
         self.merges: list[tuple[tuple[int, int], int]] = []
+        self._merge_rank: dict[tuple[int, int], tuple[int, int]] | None = None
         self.vocab_size = 256
         self.end_token = end_token
         self.end_token_id = -1  # train 後に 256 + len(merges) が入る
@@ -158,11 +159,35 @@ class BPETokenizer:
 
         self.end_token_id = next_id  # = 256 + len(merges)
         self.vocab_size = next_id + 1
+        self._merge_rank = None
+
+    def _get_merge_rank(self) -> dict[tuple[int, int], tuple[int, int]]:
+        """pair -> (rank, new_id) の cache を返す。"""
+        if self._merge_rank is None:
+            self._merge_rank = {
+                pair: (rank, new_id)
+                for rank, (pair, new_id) in enumerate(self.merges)
+            }
+        return self._merge_rank
 
     def _encode_text(self, text: str) -> list[int]:
         """1 つの pretoken への BPE 適用"""
         ids = self._byte.encode(text)
-        for pair, new_id in self.merges:
+        if len(ids) < 2 or not self.merges:
+            return ids
+
+        # 学習済み merge の順位表。現在の token 列に存在する最優先ペアだけを反復適用する。
+        # 全 merge ルールを毎回なめるより、短い pretoken では大幅に速い。
+        merge_rank = self._get_merge_rank()
+        while True:
+            candidates = [
+                (merge_rank[pair][0], pair, merge_rank[pair][1])
+                for pair in zip(ids, ids[1:])
+                if pair in merge_rank
+            ]
+            if not candidates:
+                break
+            _, pair, new_id = min(candidates, key=lambda item: item[0])
             ids = merge(ids, pair, new_id)
         return ids
 
@@ -247,6 +272,7 @@ class BPETokenizer:
         tok.vocab_size = data["vocab_size"]
         tok.merges = [((p[0], p[1]), new_id) for p, new_id in data["merges"]]
         tok.end_token_id = data.get("end_token_id", 256 + len(tok.merges))
+        tok._merge_rank = None
         return tok
 
 

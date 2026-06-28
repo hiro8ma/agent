@@ -24,6 +24,9 @@ model: ## モデル構造の動作確認（学習前）
 train: ## mini-GPT を学習する
 	uv run python train.py
 
+train-bpe: ## BPE/bin pipeline で mini-GPT を学習する
+	uv run python train.py --tokenizer bpe
+
 generate: ## 学習済みモデルで文章を生成
 	uv run python generate.py
 

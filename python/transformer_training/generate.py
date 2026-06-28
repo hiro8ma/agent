@@ -16,6 +16,7 @@ from pathlib import Path
 
 import torch
 
+from bpe import BPETokenizer
 from data import CharTokenizer
 from model import GPTConfig, MiniGPT
 
@@ -27,13 +28,48 @@ def find_latest_checkpoint() -> Path:
         raise FileNotFoundError(f"{ckpt_dir} がない。先に train.py を実行してください")
     candidates = sorted(ckpt_dir.glob("mini_gpt_step*.pt"))
     if not candidates:
-        raise FileNotFoundError(f"{ckpt_dir} に checkpoint がない。先に train.py を実行してください")
+        raise FileNotFoundError(
+            f"{ckpt_dir} に checkpoint がない。先に train.py を実行してください"
+        )
     # step 番号でソート
     candidates.sort(key=lambda p: int(p.stem.replace("mini_gpt_step", "")))
     return candidates[-1]
 
 
-def load_model(checkpoint_path: Path, device: str) -> tuple[MiniGPT, CharTokenizer]:
+def _load_tokenizer(ckpt: dict) -> CharTokenizer | BPETokenizer:
+    """checkpoint から tokenizer を復元する。
+
+    旧 checkpoint は `char_to_id` だけを持つ。新 checkpoint は `tokenizer.type` で
+    char / bpe を切り替える。
+    """
+    tokenizer_state = ckpt.get("tokenizer")
+
+    if tokenizer_state is None or tokenizer_state.get("type") == "char":
+        char_to_id = (
+            ckpt["char_to_id"]
+            if tokenizer_state is None
+            else tokenizer_state["char_to_id"]
+        )
+        tokenizer = CharTokenizer.__new__(CharTokenizer)
+        tokenizer.char_to_id = char_to_id
+        tokenizer.id_to_char = {i: c for c, i in char_to_id.items()}
+        tokenizer.vocab_size = len(char_to_id)
+        return tokenizer
+
+    if tokenizer_state["type"] == "bpe":
+        bpe_tokenizer = BPETokenizer(end_token=tokenizer_state["end_token"])
+        bpe_tokenizer.vocab_size = tokenizer_state["vocab_size"]
+        bpe_tokenizer.merges = [
+            ((pair[0], pair[1]), new_id)
+            for pair, new_id in tokenizer_state["merges"]
+        ]
+        bpe_tokenizer.end_token_id = tokenizer_state["end_token_id"]
+        return bpe_tokenizer
+
+    raise ValueError(f"unsupported tokenizer type: {tokenizer_state['type']}")
+
+
+def load_model(checkpoint_path: Path, device: str) -> tuple[MiniGPT, CharTokenizer | BPETokenizer]:
     """checkpoint からモデルと tokenizer を復元"""
     ckpt = torch.load(checkpoint_path, map_location=device, weights_only=False)
     config: GPTConfig = ckpt["config"]
@@ -41,14 +77,13 @@ def load_model(checkpoint_path: Path, device: str) -> tuple[MiniGPT, CharTokeniz
     model.load_state_dict(ckpt["model_state"])
     model.eval()
 
-    # tokenizer を復元（char_to_id だけあれば再構築可能）
-    char_to_id = ckpt["char_to_id"]
-    tokenizer = CharTokenizer.__new__(CharTokenizer)
-    tokenizer.char_to_id = char_to_id
-    tokenizer.id_to_char = {i: c for c, i in char_to_id.items()}
-    tokenizer.vocab_size = len(char_to_id)
+    tokenizer = _load_tokenizer(ckpt)
 
-    print(f"[load] {checkpoint_path.name} (step {ckpt['step']}, vocab {tokenizer.vocab_size})")
+    tokenizer_type = ckpt.get("tokenizer", {}).get("type", "char")
+    print(
+        f"[load] {checkpoint_path.name} "
+        f"(step {ckpt['step']}, tokenizer {tokenizer_type}, vocab {tokenizer.vocab_size})"
+    )
     return model, tokenizer
 
 
@@ -85,12 +120,12 @@ def main() -> None:
 
     idx = torch.tensor([prompt_ids], dtype=torch.long, device=device)
 
-    print(f"\n=== 生成設定 ===")
+    print("\n=== 生成設定 ===")
     print(f"prompt      = {args.prompt!r}")
     print(f"max_tokens  = {args.max_tokens}")
     print(f"temperature = {args.temperature}")
     print(f"top_k       = {args.top_k}")
-    print(f"\n=== 生成結果 ===")
+    print("\n=== 生成結果 ===")
 
     top_k = args.top_k if args.top_k > 0 else None
     with torch.no_grad():

@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import requests
+import requests  # type: ignore[import-untyped]
 import torch
 
 # データファイルのパス
