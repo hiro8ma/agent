@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
-import { grep, listFiles, readFile, writeFile } from "@cli/tools";
+import { editFile, grep, listFiles, readFile, writeFile } from "@cli/tools";
 
 let workspace: string;
 let prevRoot: string | undefined;
@@ -92,6 +92,66 @@ describe("writeFile", () => {
   test("rejects writes outside the workspace", async () => {
     await expect(
       writeFile.execute({ path: "../escape.txt", content: "x" }),
+    ).rejects.toThrow(/outside workspace/);
+  });
+});
+
+describe("editFile", () => {
+  test("is marked as requiring approval", () => {
+    expect(editFile.needsApproval).toBe(true);
+  });
+
+  test("replaces a unique snippet", async () => {
+    const out = await editFile.execute({
+      path: "a.txt",
+      oldText: "second line",
+      newText: "edited line",
+    });
+    expect(out).toContain("1 replacement");
+    expect(await readFile.execute({ path: "a.txt" })).toBe(
+      "hello world\nedited line\n",
+    );
+  });
+
+  test("rejects when oldText is not found", async () => {
+    await expect(
+      editFile.execute({ path: "a.txt", oldText: "missing", newText: "x" }),
+    ).rejects.toThrow(/no match/);
+  });
+
+  test("rejects when oldText matches multiple times", async () => {
+    await fs.writeFile(path.join(workspace, "dup.txt"), "x\nx\n");
+    await expect(
+      editFile.execute({ path: "dup.txt", oldText: "x", newText: "y" }),
+    ).rejects.toThrow(/matched 2 times/);
+  });
+
+  test("treats replacement special patterns literally", async () => {
+    await editFile.execute({
+      path: "a.txt",
+      oldText: "hello world",
+      newText: "$& and $1 stay literal",
+    });
+    expect(await readFile.execute({ path: "a.txt" })).toBe(
+      "$& and $1 stay literal\nsecond line\n",
+    );
+  });
+
+  test("rejects an empty oldText", async () => {
+    await expect(
+      editFile.execute({ path: "a.txt", oldText: "", newText: "x" }),
+    ).rejects.toThrow(/must not be empty/);
+  });
+
+  test("reports file not found", async () => {
+    await expect(
+      editFile.execute({ path: "nope.txt", oldText: "a", newText: "b" }),
+    ).rejects.toThrow(/file not found/);
+  });
+
+  test("rejects edits outside the workspace", async () => {
+    await expect(
+      editFile.execute({ path: "../escape.txt", oldText: "a", newText: "b" }),
     ).rejects.toThrow(/outside workspace/);
   });
 });
