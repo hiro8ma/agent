@@ -1,4 +1,4 @@
-.PHONY: help setup data bpe eval-tokenizer encode-bin model train generate clean
+.PHONY: help setup data bpe word-bpe eval-tokenizer encode-bin model train generate clean
 
 help: ## ヘルプを表示
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-15s\033[0m %s\n", $$1, $$2}'
@@ -11,6 +11,9 @@ data: ## データセットの動作確認
 
 bpe: ## バイト単位 + BPE tokenizer の動作確認
 	uv run python bpe.py
+
+word-bpe: ## 単語頻度つき文字ベース BPE の教育用デモ
+	uv run python word_bpe_demo.py
 
 eval-tokenizer: ## Char vs BPE の圧縮率と語彙サイズ別トレードオフを評価
 	uv run python eval_tokenizer.py
