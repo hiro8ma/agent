@@ -1,0 +1,54 @@
+# docs-triage ループ（L1: レポートのみ）。LLM 不使用の決定論的チェック。
+# ドキュメントのリンク切れと、README に記載されたパスと実態の乖離を検出する。
+name: docs-triage
+
+on:
+  schedule:
+    - cron: "0 0 * * 1" # 月曜 09:00 JST
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check links in markdown
+        id: lychee
+        uses: lycheeverse/lychee-action@v2
+        with:
+          args: --no-progress --exclude-mail 'README.md' 'docs/**/*.md' 'ts/**/README.md' 'python/**/README.md' 'go/**/README.md'
+          fail: false
+
+      - name: Check README references real paths
+        id: drift
+        run: |
+          missing=""
+          for p in $(grep -oE '`(ts|python|go|docs|bin|mastra)/[A-Za-z0-9_./-]*`' README.md | tr -d '\`' | sort -u); do
+            [ -e "$p" ] || missing="$missing\n- $p"
+          done
+          if [ -n "$missing" ]; then
+            echo "drift=true" >> "$GITHUB_OUTPUT"
+            printf "README に記載があるが存在しないパス:%b\n" "$missing" > drift-report.txt
+          fi
+
+      - name: Open issue if problems found
+        if: steps.lychee.outputs.exit_code != '0' || steps.drift.outputs.drift == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          existing=$(gh issue list --label docs-triage --state open --json number --jq 'length')
+          if [ "$existing" = "0" ]; then
+            {
+              echo "docs-triage ループ（L1）の検出結果。詳細は Actions のログを参照。"
+              echo ""
+              [ -f lychee/out.md ] && cat lychee/out.md
+              [ -f drift-report.txt ] && cat drift-report.txt
+            } > issue-body.txt
+            gh issue create --title "docs-triage: リンク切れ / README 乖離を検出" \
+              --label docs-triage --body-file issue-body.txt
+          fi
