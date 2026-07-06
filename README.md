@@ -26,6 +26,13 @@ AI エージェントの実装を複数言語・複数フレームワークで�
 
 各言語ディレクトリに README と実装を置く。ルート README は言語をまたぐ一覧に留める
 
+## LLMOps
+
+このリポの実装は、PoCとして動くだけでなく、本番運用に必要な観測・評価・コスト・セキュリティの規律を載せる対象でもある。
+
+運用モデルは [`docs/llmops-operating-model.md`](./docs/llmops-operating-model.md) に定義する。
+既存の [`docs/llmops-gap-analysis.md`](./docs/llmops-gap-analysis.md) は不足箇所の棚卸し、運用モデルはSLO・severity・dashboard・eval・incident responseの基準として扱う。
+
 ## ランタイム / ツールチェーン
 
 各サブディレクトリは「言語ごとに乱立しがちなツールを統合した選択」を採用している。Go / Rust が言語設計時から持つ「標準ツールチェーン一発で完結」の体験を、TS と Python でも近づけるのが狙い。
