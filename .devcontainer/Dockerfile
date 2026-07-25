@@ -1,7 +1,7 @@
 # agent monorepo dev container
 # 多言語サポート（Bun / Go / Python + uv）+ GitHub CLI、非 root ユーザー前提
 
-FROM ubuntu:24.04
+FROM ubuntu:26.04
 
 ARG BUN_VERSION=1.3.11
 ARG GO_VERSION=1.23.4
