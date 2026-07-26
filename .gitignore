@@ -22,3 +22,6 @@ settings.local.json
 # OS
 .DS_Store
 Thumbs.db
+
+# GPT 学習用コーパス（README の手順で取得）
+go/data/
