@@ -64,11 +64,23 @@ go run ./cmd/genkit-ask -agent research -session s2 "リモートワークは週
 buf generate   # protoc-gen-go / protoc-gen-connect-go が PATH に必要
 ```
 
+## MCP 実接続（2026-07-30 検証済み）
+
+mcp リポの weather_go（公式 Go SDK 製、Open-Meteo）を Streamable HTTP で立て、research エージェントに接続して確認済み。
+
+```bash
+# 別ターミナルで MCP サーバーを起動
+(cd ../../mcp/weather_go && go run . -http :19920)
+
+MCP_SERVER_URL=http://localhost:19920 VERTEX_PROJECT_ID=<gcp-project> go run ./cmd/genkit-agent
+go run ./cmd/genkit-ask -agent research "いまの東京の天気と気温を教えて"
+# => internal-systems_get_current_weather が選択され、Open-Meteo の実データで回答
+```
+
 ## 次の実装計画
 
-1. MCP 実接続テスト（../../mcp/ のサーバーを Streamable HTTP で立てて research エージェントに繋ぐ）
-2. ADK 版・genai 版を同じ proto（AgentService）で実装し、3 スタック比較を書く
-3. eval ハーネス（ツール選択の正答率・承認フローの回帰）
+1. ADK 版・genai 版を同じ proto（AgentService）で実装し、3 スタック比較を書く
+2. eval ハーネス（ツール選択の正答率・承認フローの回帰）
 
 ## 残論点
 
