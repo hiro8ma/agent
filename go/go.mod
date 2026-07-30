@@ -5,11 +5,11 @@ go 1.25.0
 require (
 	cloud.google.com/go/firestore v1.19.0
 	connectrpc.com/connect v1.20.0
-	github.com/firebase/genkit/go v1.4.0
+	github.com/firebase/genkit/go v1.11.0
 	golang.org/x/net v0.49.0
 	google.golang.org/adk v0.6.0
 	google.golang.org/api v0.252.0
-	google.golang.org/genai v1.51.0
+	google.golang.org/genai v1.57.0
 	google.golang.org/grpc v1.78.0
 	google.golang.org/protobuf v1.36.11
 )
@@ -23,6 +23,7 @@ require (
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
 	github.com/buger/jsonparser v1.1.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
+	github.com/coder/websocket v1.8.14 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
