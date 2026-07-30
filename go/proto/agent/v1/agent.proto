@@ -1,0 +1,76 @@
+syntax = "proto3";
+
+package agent.v1;
+
+import "google/protobuf/struct.proto";
+
+option go_package = "github.com/hiro8ma/agent/go/gen/agent/v1;agentv1";
+
+service AgentService {
+  // 利用できるエージェントの一覧
+  rpc ListAgents(ListAgentsRequest) returns (ListAgentsResponse);
+  // 問い合わせ（server streaming）
+  rpc Ask(AskRequest) returns (stream AskResponse);
+  // 承認済みツール呼び出しの実行
+  rpc ExecuteConfirmedToolCall(ExecuteConfirmedToolCallRequest) returns (ExecuteConfirmedToolCallResponse);
+}
+
+message ListAgentsRequest {}
+
+message ListAgentsResponse {
+  repeated AgentInfo agents = 1;
+}
+
+message AgentInfo {
+  string id = 1;
+  string description = 2;
+}
+
+message AskRequest {
+  string agent_id = 1;
+  string session_id = 2;
+  string message = 3;
+}
+
+message AskResponse {
+  // 途中チャンク。最終メッセージでは空
+  string answer_delta = 1;
+  // 最終メッセージでのみ設定される
+  AskResult result = 2;
+}
+
+message AskResult {
+  string session_id = 1;
+  string answer = 2;
+  string finish_reason = 3;
+  repeated ToolCall tool_calls = 4;
+  TokenUsage usage = 5;
+  string error_message = 6;
+  // 承認待ちのツール呼び出し。ExecuteConfirmedToolCall で実行する
+  repeated PendingToolCall pending_tool_calls = 7;
+}
+
+message ToolCall {
+  string name = 1;
+  google.protobuf.Struct input = 2;
+}
+
+message PendingToolCall {
+  string tool_call_id = 1;
+  string name = 2;
+  google.protobuf.Struct input = 3;
+}
+
+message TokenUsage {
+  int32 input_tokens = 1;
+  int32 output_tokens = 2;
+  int32 total_tokens = 3;
+}
+
+message ExecuteConfirmedToolCallRequest {
+  string tool_call_id = 1;
+}
+
+message ExecuteConfirmedToolCallResponse {
+  google.protobuf.Struct result = 1;
+}
