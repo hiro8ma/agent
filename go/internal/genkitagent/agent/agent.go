@@ -9,6 +9,7 @@ import (
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/core"
 	"github.com/firebase/genkit/go/genkit"
+	"github.com/firebase/genkit/go/plugins/middleware"
 )
 
 const (
@@ -24,6 +25,9 @@ type Definition struct {
 	Description  string
 	SystemPrompt string
 	Tools        []ai.ToolRef
+	// SkillPaths は Agent Skills（SKILL.md を持つディレクトリの親）を探すパス。
+	// 空のときは skills ミドルウェアを差し込まない。
+	SkillPaths []string
 }
 
 // Agent は 1 つの Definition を Genkit の streaming flow として公開する。
@@ -113,15 +117,21 @@ func runAsk(ctx context.Context, g *genkit.Genkit, def Definition, input *AskInp
 		return nil
 	}
 
+	opts := []ai.GenerateOption{
+		ai.WithMessages(messages...),
+		ai.WithTools(def.Tools...),
+		ai.WithMaxTurns(askMaxTurns),
+		ai.WithStreaming(stream),
+	}
+	if len(def.SkillPaths) > 0 {
+		// メタデータだけ system prompt に注入し、本文は use_skill 呼び出し時にロードされる。
+		opts = append(opts, ai.WithUse(&middleware.Skills{SkillPaths: def.SkillPaths}))
+	}
+
 	var resp *ai.ModelResponse
 	var err error
 	for attempt := 0; ; attempt++ {
-		resp, err = genkit.Generate(ctx, g,
-			ai.WithMessages(messages...),
-			ai.WithTools(def.Tools...),
-			ai.WithMaxTurns(askMaxTurns),
-			ai.WithStreaming(stream),
-		)
+		resp, err = genkit.Generate(ctx, g, opts...)
 		if err == nil {
 			break
 		}

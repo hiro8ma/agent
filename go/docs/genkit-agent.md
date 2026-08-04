@@ -16,6 +16,7 @@ genkit / ADK / genai の 3 スタックで同じものを作り比べる計画�
 | 承認付き実行 | 書き込み系ツールは承認待ち登録のみ → `ExecuteConfirmedToolCall` で人間承認後に実行。取り出しは一度きりで二重実行防止 | Propose→Verify→Authorize→Execute の Authorize 部分 |
 | ログ / メトリクス | `ask_completed` 構造化ログ（レイテンシ・トークン・ツール数） | Cloud Logging → BigQuery sink |
 | Web 検索 | 未実装 | MCP 経由の Web 検索ツールで代替可 |
+| Agent Skills（手順書の遅延ロード） | `SKILLS_DIR` を設定すると SKILL.md をスキャンし、メタデータだけ system prompt に注入。本文は `use_skill` 呼び出し時にロード（genkit v1.11 の `middleware.Skills`） | スキルディレクトリを増やすだけ |
 
 ## 構成
 
@@ -41,6 +42,7 @@ internal/genkitagent/
 ```bash
 VERTEX_PROJECT_ID=<gcp-project> go run ./cmd/genkit-agent
 # オプション: FIRESTORE_PROJECT_ID（履歴・承認待ちの永続化）/ MCP_SERVER_URL（MCP ツール取り込み）
+#            SKILLS_DIR（Agent Skills のディレクトリ。例 cmd/genkit-agent/skills）
 
 go run ./cmd/genkit-ask -list
 go run ./cmd/genkit-ask -agent operations -session s1 "注文 ord-001 の支払い方法を教えて"
@@ -76,6 +78,25 @@ MCP_SERVER_URL=http://localhost:19920 VERTEX_PROJECT_ID=<gcp-project> go run ./c
 go run ./cmd/genkit-ask -agent research "いまの東京の天気と気温を教えて"
 # => internal-systems_get_current_weather が選択され、Open-Meteo の実データで回答
 ```
+
+## Agent Skills 実接続（2026-08-04 検証済み）
+
+genkit v1.11.0 の `middleware.Skills` で、SKILL.md 形式の手順書を遅延ロードする Agent Skills を有効化できる。
+サンプルは `cmd/genkit-agent/skills/refund-escalation/`（返金・キャンセルの判断分岐）。
+
+```bash
+SKILLS_DIR=cmd/genkit-agent/skills VERTEX_PROJECT_ID=<gcp-project> go run ./cmd/genkit-agent
+go run ./cmd/genkit-ask -agent operations "注文 ord-001 をキャンセルして返金してほしい。流れを教えて"
+# => use_skill(refund-escalation) が呼ばれ、手順書の「5 営業日以内」「8 日以内」を使って回答
+```
+
+検証結果（Vertex AI 実呼び出し）
+
+- 返金の依頼では `use_skill` が発火し、SKILL.md の判断基準（発送前 / 発送後 / 3 万円超のエスカレーション）に沿って回答した
+- 無関係な照会（支払い方法の確認）では `use_skill` は呼ばれず `get_order` のみ。入力トークンはスキル本文ロード時 602 に対し未ロード時 323 で、メタデータ注入だけのコストに留まる
+- system prompt に手順を書く方式と違い、手順書は Markdown ファイルとして版管理でき、ロードは必要時だけになる
+
+`use_skill` はツールターンを 1 回消費するため、多段のツール利用と重なる場合は `askMaxTurns` の残りに注意。
 
 ## 次の実装計画
 

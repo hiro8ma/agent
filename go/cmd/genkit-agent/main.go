@@ -30,6 +30,7 @@ type config struct {
 	defaultModel     string
 	firestoreProject string // 空なら履歴・承認待ちはインメモリ
 	mcpServerURL     string // 空なら MCP 連携なし（Streamable HTTP の URL）
+	skillsDir        string // 空なら Agent Skills なし（SKILL.md を持つディレクトリの親）
 }
 
 func loadConfig() (*config, error) {
@@ -40,6 +41,7 @@ func loadConfig() (*config, error) {
 		defaultModel:     envOr("DEFAULT_MODEL", "vertexai/gemini-2.5-flash"),
 		firestoreProject: os.Getenv("FIRESTORE_PROJECT_ID"),
 		mcpServerURL:     os.Getenv("MCP_SERVER_URL"),
+		skillsDir:        os.Getenv("SKILLS_DIR"),
 	}
 	if c.vertexProjectID == "" {
 		return nil, fmt.Errorf("VERTEX_PROJECT_ID is required")
@@ -101,6 +103,12 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	geo := backend.NewInMemoryGeo()
 	kn := knowledge.NewInMemory()
 
+	var skillPaths []string
+	if cfg.skillsDir != "" {
+		skillPaths = []string{cfg.skillsDir}
+		logger.Info("agent skills enabled", "dir", cfg.skillsDir)
+	}
+
 	// 部署別エージェント。system prompt とツールの組み合わせだけが違う
 	research := agent.New(g, agent.Definition{
 		ID:          "research",
@@ -108,7 +116,8 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		SystemPrompt: "あなたは技術調査を支援するアシスタントです。" +
 			"社内ナレッジ（search_knowledge）と利用可能なツールで事実を集め、出典がわかる形で簡潔に日本語で回答してください。" +
 			"取得できなかった情報を推測で補わないでください。",
-		Tools: append(defineToolRefs(g, kn), mcpTools...),
+		Tools:      append(defineToolRefs(g, kn), mcpTools...),
+		SkillPaths: skillPaths,
 	})
 	operations := agent.New(g, agent.Definition{
 		ID:          "operations",
@@ -117,7 +126,8 @@ func run(ctx context.Context, logger *slog.Logger) error {
 			"注文やエリアの質問にはツールで事実を取得して簡潔に日本語で回答してください。" +
 			"変更系の操作は承認が必要です。承認待ちになった場合はその旨をユーザーに伝えてください。" +
 			"取得できなかった情報を推測で補わないでください。",
-		Tools: agent.DefineOperationsTools(g, orders, geo, pending),
+		Tools:      agent.DefineOperationsTools(g, orders, geo, pending),
+		SkillPaths: skillPaths,
 	})
 
 	registry := agent.NewRegistry(research, operations)
