@@ -20,7 +20,7 @@ import (
 	"github.com/hiro8ma/agent/go/internal/genkitagent/backend"
 	"github.com/hiro8ma/agent/go/internal/genkitagent/knowledge"
 	"github.com/hiro8ma/agent/go/internal/genkitagent/session"
-	"github.com/hiro8ma/agent/go/internal/genkitagent/transport"
+	"github.com/hiro8ma/agent/go/internal/agentcore"
 )
 
 type config struct {
@@ -130,11 +130,11 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		SkillPaths: skillPaths,
 	})
 
-	registry := agent.NewRegistry(research, operations)
+	registry := agentcore.NewRegistry(research, operations)
 	executor := agent.NewExecutor(orders, pending)
 
 	mux := http.NewServeMux()
-	path, handler := agentv1connect.NewAgentServiceHandler(transport.NewHandler(registry, sessions, executor, logger))
+	path, handler := agentv1connect.NewAgentServiceHandler(agentcore.NewHandler(registry, sessions, executor, logger))
 	mux.Handle(path, handler)
 
 	logger.Info("starting agent server", "port", cfg.port, "model", cfg.defaultModel, "agents", len(registry.List()))

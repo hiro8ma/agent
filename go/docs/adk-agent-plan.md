@@ -28,7 +28,7 @@ Live API だけは Python が必要（Phase 4 参照）。
 
 ## フェーズ分け
 
-### Phase 1 — 骨格と streaming（AgentService 互換の最小形）
+### Phase 1 — 骨格と streaming（AgentService 互換の最小形）— 実装済み 2026-08-05（docs/adk-agent.md）
 
 1. `internal/agentcore` を新設し、AskInput / AskOutput / Ask インターフェースと Connect Handler を genkit-agent から抽出（genkit 版はこれの実装になる）
 2. `internal/adkagent` — llmagent × 2、FunctionTool（order / geo / knowledge。バックエンドは genkitagent の InMemory 実装を共有）

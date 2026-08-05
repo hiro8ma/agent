@@ -1,5 +1,4 @@
-// Package transport は Connect RPC（server streaming）で AgentService を公開する。
-package transport
+package agentcore
 
 import (
 	"context"
@@ -13,27 +12,27 @@ import (
 
 	"github.com/hiro8ma/agent/go/gen/agent/v1"
 	"github.com/hiro8ma/agent/go/gen/agent/v1/agentv1connect"
-	"github.com/hiro8ma/agent/go/internal/genkitagent/agent"
-	"github.com/hiro8ma/agent/go/internal/genkitagent/session"
 )
 
+// Handler は Connect RPC（server streaming）で AgentService を公開する。
+// 実装フレームワークには依存せず、Agent / SessionStore / ToolExecutor だけを見る。
 type Handler struct {
-	registry *agent.Registry
-	sessions session.Store
-	executor *agent.Executor
+	registry *Registry
+	sessions SessionStore
+	executor ToolExecutor
 	logger   *slog.Logger
 }
 
 var _ agentv1connect.AgentServiceHandler = (*Handler)(nil)
 
-func NewHandler(registry *agent.Registry, sessions session.Store, executor *agent.Executor, logger *slog.Logger) *Handler {
+func NewHandler(registry *Registry, sessions SessionStore, executor ToolExecutor, logger *slog.Logger) *Handler {
 	return &Handler{registry: registry, sessions: sessions, executor: executor, logger: logger}
 }
 
 func (h *Handler) ListAgents(_ context.Context, _ *connect.Request[agentv1.ListAgentsRequest]) (*connect.Response[agentv1.ListAgentsResponse], error) {
 	resp := &agentv1.ListAgentsResponse{}
-	for _, def := range h.registry.List() {
-		resp.Agents = append(resp.Agents, &agentv1.AgentInfo{Id: def.ID, Description: def.Description})
+	for _, info := range h.registry.List() {
+		resp.Agents = append(resp.Agents, &agentv1.AgentInfo{Id: info.ID, Description: info.Description})
 	}
 	return connect.NewResponse(resp), nil
 }
@@ -54,8 +53,8 @@ func (h *Handler) Ask(ctx context.Context, req *connect.Request[agentv1.AskReque
 	}
 
 	start := time.Now()
-	input := &agent.AskInput{SessionID: msg.GetSessionId(), UserMessage: msg.GetMessage(), History: history}
-	var final *agent.AskOutput
+	input := &AskInput{SessionID: msg.GetSessionId(), UserMessage: msg.GetMessage(), History: history}
+	var final *AskOutput
 	for chunk, out := range a.Ask(ctx, input) {
 		if out != nil {
 			final = out
@@ -87,8 +86,8 @@ func (h *Handler) Ask(ctx context.Context, req *connect.Request[agentv1.AskReque
 
 	if final.ErrorMessage == "" {
 		err := h.sessions.Append(ctx, msg.GetSessionId(),
-			agent.Message{Role: "user", Text: msg.GetMessage()},
-			agent.Message{Role: "model", Text: final.Answer},
+			Message{Role: "user", Text: msg.GetMessage()},
+			Message{Role: "model", Text: final.Answer},
 		)
 		if err != nil {
 			h.logger.Error("failed to append session", "sessionId", msg.GetSessionId(), "error", err)
@@ -103,7 +102,7 @@ func (h *Handler) ExecuteConfirmedToolCall(ctx context.Context, req *connect.Req
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("toolCallId is required"))
 	}
 	result, err := h.executor.Execute(ctx, id)
-	if errors.Is(err, agent.ErrPendingNotFound) {
+	if errors.Is(err, ErrPendingNotFound) {
 		return nil, connect.NewError(connect.CodeNotFound, err)
 	}
 	if err != nil {
@@ -113,7 +112,7 @@ func (h *Handler) ExecuteConfirmedToolCall(ctx context.Context, req *connect.Req
 	return connect.NewResponse(&agentv1.ExecuteConfirmedToolCallResponse{Result: toStruct(result)}), nil
 }
 
-func toResult(out *agent.AskOutput) *agentv1.AskResult {
+func toResult(out *AskOutput) *agentv1.AskResult {
 	result := &agentv1.AskResult{
 		SessionId:    out.SessionID,
 		Answer:       out.Answer,

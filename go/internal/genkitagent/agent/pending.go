@@ -4,11 +4,12 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"errors"
+
+	"github.com/hiro8ma/agent/go/internal/agentcore"
 )
 
-// ErrPendingNotFound は承認待ちツール呼び出しが存在しない（または実行済み）ことを示す。
-var ErrPendingNotFound = errors.New("pending tool call not found")
+// ErrPendingNotFound は agentcore の sentinel を共有する。transport がこのエラーで NotFound を返す。
+var ErrPendingNotFound = agentcore.ErrPendingNotFound
 
 // PendingStore は承認待ちツール呼び出しの永続化。
 // Take は取得と同時に削除し、同じ承認の二重実行を防ぐ。

@@ -10,6 +10,8 @@ import (
 	"github.com/firebase/genkit/go/core"
 	"github.com/firebase/genkit/go/genkit"
 	"github.com/firebase/genkit/go/plugins/middleware"
+
+	"github.com/hiro8ma/agent/go/internal/agentcore"
 )
 
 const (
@@ -49,33 +51,12 @@ func New(g *genkit.Genkit, def Definition) *Agent {
 
 func (a *Agent) Definition() Definition { return a.def }
 
-// Registry はエージェントの登録と選択。
-type Registry struct {
-	agents map[string]*Agent
-	order  []string
+// Info は agentcore.Agent の実装。
+func (a *Agent) Info() agentcore.AgentInfo {
+	return agentcore.AgentInfo{ID: a.def.ID, Description: a.def.Description}
 }
 
-func NewRegistry(agents ...*Agent) *Registry {
-	r := &Registry{agents: map[string]*Agent{}}
-	for _, a := range agents {
-		r.agents[a.def.ID] = a
-		r.order = append(r.order, a.def.ID)
-	}
-	return r
-}
-
-func (r *Registry) Get(id string) (*Agent, bool) {
-	a, ok := r.agents[id]
-	return a, ok
-}
-
-func (r *Registry) List() []Definition {
-	defs := make([]Definition, 0, len(r.order))
-	for _, id := range r.order {
-		defs = append(defs, r.agents[id].def)
-	}
-	return defs
-}
+var _ agentcore.Agent = (*Agent)(nil)
 
 // Ask はチャンク列と最終出力を 1 本のシーケンスで返す。
 // エラーも AskOutput.ErrorMessage に畳み込み、呼び出し側の分岐を 1 箇所にする。

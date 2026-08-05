@@ -25,13 +25,15 @@ proto/agent/v1/           # AgentService（ListAgents / Ask(stream) / ExecuteCon
 gen/                      # buf generate の生成物
 cmd/genkit-agent/         # サーバー本体（env config、手書き DI、h2c）
 cmd/genkit-ask/           # 動作確認 CLI（-list / ask / -exec）
+internal/agentcore/       # フレームワーク非依存の核。入出力型 / Agent インターフェース / Connect ハンドラ
 internal/genkitagent/
-├── agent/                # ドメイン核。Definition / Registry / flow / ツール / 承認 Executor
+├── agent/                # genkit 実装。Definition / flow / ツール / 承認 Executor（agentcore.Agent を満たす）
 ├── backend/              # ツール接続先のインメモリ実装（実運用は gRPC クライアント）
 ├── knowledge/            # データストアのインメモリ実装
-├── session/              # 履歴（メッセージ分割）+ 承認待ちストア（InMemory / Firestore）
-└── transport/            # Connect RPC ハンドラ + メトリクスログ
+└── session/              # 履歴（メッセージ分割）+ 承認待ちストア（InMemory / Firestore）
 ```
+
+ADK 版（`docs/adk-agent.md`、`internal/adkagent/`）も同じ agentcore を実装し、transport と型を共有する。
 
 - 履歴は Firestore サブコレクション（`agent_sessions/{id}/messages`）で 1 メッセージ 1 ドキュメント。1MB 上限を回避
 - 429 リトライはチャンク未送出時のみ（送出後の再試行は先頭から重複するため）
