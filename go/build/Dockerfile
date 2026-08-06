@@ -1,6 +1,6 @@
 # 3 実装を同じベースイメージからビルドする。
 # TARGET 環境変数で cmd/{genai,genkit,adk} を切り替える（compose.yaml で設定）。
-FROM golang:1.25-bookworm AS builder
+FROM golang:1.26-bookworm AS builder
 
 WORKDIR /agent
 COPY go.mod go.sum ./
