@@ -10,7 +10,7 @@ require (
 	google.golang.org/adk v0.6.0
 	google.golang.org/adk/v2 v2.1.0
 	google.golang.org/api v0.279.0
-	google.golang.org/genai v1.63.0
+	google.golang.org/genai v1.67.0
 	google.golang.org/grpc v1.81.0
 	google.golang.org/protobuf v1.36.11
 )
