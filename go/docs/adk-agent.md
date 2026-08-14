@@ -38,6 +38,7 @@ genkit 版・ADK 版とも `agentcore.Agent` インターフェース（`Ask(ctx
 
 ```bash
 VERTEX_PROJECT_ID=<gcp-project> go run ./cmd/adk-agent   # PORT 19912
+GEMINI_API_KEY=<api-key> go run ./cmd/adk-agent          # GCP プロジェクト不要
 # オプション: BUDGET_SESSION_TOKENS / BUDGET_TOTAL_TOKENS（トークン予算。未設定または 0 で無制限）
 
 # クライアントは genkit-ask がそのまま使える（proto 共通の利点）

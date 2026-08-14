@@ -39,12 +39,22 @@ ADK 版（`docs/adk-agent.md`、`internal/adkagent/`）も同じ agentcore を�
 - 429 リトライはチャンク未送出時のみ（送出後の再試行は先頭から重複するため）
 - ツールのエラーは `{"error": ...}` で返してモデルに続きを判断させる
 - トークン予算は `BUDGET_SESSION_TOKENS`（セッション合計）と `BUDGET_TOTAL_TOKENS`（プロセス全体）で設定する。上限に達したあとの `Ask` は `resource_exhausted` で拒否し、消費量は `ask_completed` ログの `budget_session_used` / `budget_total_used` に出る
+- トークン予算と Connect ハンドラの挙動は、モデルを呼ばないスタブエージェントで検証している（`internal/agentcore/handler_budget_test.go`）。API キーもネットワークも不要で `go test ./internal/agentcore/...` だけで回る
 - 1 回の応答で使うトークン数は事前にわからないため、予算は超過を検知した次の呼び出しから止める。消費量はインメモリで、再起動するとリセットされる
 
 ## 動かし方
 
+バックエンドは Vertex AI と Gemini Developer API のどちらでも動く。
+`VERTEX_PROJECT_ID` があれば Vertex AI、なければ `GEMINI_API_KEY` で Gemini Developer API を使う。
+後者は GCP プロジェクトも課金アカウントも要らないため、動作確認はこちらで完結する。
+
 ```bash
+# Vertex AI
 VERTEX_PROJECT_ID=<gcp-project> go run ./cmd/genkit-agent
+
+# Gemini Developer API（AI Studio の API キー）
+GEMINI_API_KEY=<api-key> go run ./cmd/genkit-agent
+
 # オプション: FIRESTORE_PROJECT_ID（履歴・承認待ちの永続化）/ MCP_SERVER_URL（MCP ツール取り込み）
 #            SKILLS_DIR（Agent Skills のディレクトリ。例 cmd/genkit-agent/skills）
 #            BUDGET_SESSION_TOKENS / BUDGET_TOTAL_TOKENS（トークン予算。未設定または 0 で無制限）

@@ -9,6 +9,7 @@ import (
 
 	"cloud.google.com/go/firestore"
 	"github.com/firebase/genkit/go/ai"
+	"github.com/firebase/genkit/go/core/api"
 	"github.com/firebase/genkit/go/genkit"
 	"github.com/firebase/genkit/go/plugins/googlegenai"
 	"github.com/firebase/genkit/go/plugins/mcp"
@@ -27,6 +28,7 @@ type config struct {
 	port             string
 	vertexProjectID  string
 	vertexLocation   string
+	geminiAPIKey     string // Vertex AI の代わりに Gemini Developer API を使う場合
 	defaultModel     string
 	firestoreProject string // 空なら履歴・承認待ちはインメモリ
 	mcpServerURL     string // 空なら MCP 連携なし（Streamable HTTP の URL）
@@ -39,14 +41,22 @@ func loadConfig() (*config, error) {
 		port:             envOr("PORT", "19910"),
 		vertexProjectID:  os.Getenv("VERTEX_PROJECT_ID"),
 		vertexLocation:   envOr("VERTEX_LOCATION", "asia-northeast1"),
-		defaultModel:     envOr("DEFAULT_MODEL", "vertexai/gemini-2.5-flash"),
+		geminiAPIKey:     envOr("GEMINI_API_KEY", os.Getenv("GOOGLE_API_KEY")),
 		firestoreProject: os.Getenv("FIRESTORE_PROJECT_ID"),
 		mcpServerURL:     os.Getenv("MCP_SERVER_URL"),
 		skillsDir:        os.Getenv("SKILLS_DIR"),
 		budget:           agentcore.BudgetLimitsFromEnv(),
 	}
-	if c.vertexProjectID == "" {
-		return nil, fmt.Errorf("VERTEX_PROJECT_ID is required")
+
+	// バックエンドは Vertex AI と Gemini Developer API の 2 択。
+	// モデル名の接頭辞がプラグインごとに異なるため、既定値もバックエンドで変える。
+	switch {
+	case c.vertexProjectID != "":
+		c.defaultModel = envOr("DEFAULT_MODEL", "vertexai/gemini-2.5-flash")
+	case c.geminiAPIKey != "":
+		c.defaultModel = envOr("DEFAULT_MODEL", "googleai/gemini-2.5-flash")
+	default:
+		return nil, fmt.Errorf("VERTEX_PROJECT_ID または GEMINI_API_KEY が必要です")
 	}
 	return c, nil
 }
@@ -72,11 +82,15 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		return err
 	}
 
+	var plugin api.Plugin
+	if cfg.vertexProjectID != "" {
+		plugin = &googlegenai.VertexAI{ProjectID: cfg.vertexProjectID, Location: cfg.vertexLocation}
+	} else {
+		plugin = &googlegenai.GoogleAI{APIKey: cfg.geminiAPIKey}
+	}
+
 	g := genkit.Init(ctx,
-		genkit.WithPlugins(&googlegenai.VertexAI{
-			ProjectID: cfg.vertexProjectID,
-			Location:  cfg.vertexLocation,
-		}),
+		genkit.WithPlugins(plugin),
 		genkit.WithDefaultModel(cfg.defaultModel),
 	)
 

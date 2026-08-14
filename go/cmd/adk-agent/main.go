@@ -26,6 +26,7 @@ type config struct {
 	port            string
 	vertexProjectID string
 	vertexLocation  string
+	geminiAPIKey    string // Vertex AI の代わりに Gemini Developer API を使う場合
 	modelName       string
 	budget          agentcore.BudgetLimits
 }
@@ -35,11 +36,12 @@ func loadConfig() (*config, error) {
 		port:            envOr("PORT", "19912"),
 		vertexProjectID: os.Getenv("VERTEX_PROJECT_ID"),
 		vertexLocation:  envOr("VERTEX_LOCATION", "asia-northeast1"),
+		geminiAPIKey:    envOr("GEMINI_API_KEY", os.Getenv("GOOGLE_API_KEY")),
 		modelName:       envOr("DEFAULT_MODEL", "gemini-2.5-flash"),
 		budget:          agentcore.BudgetLimitsFromEnv(),
 	}
-	if c.vertexProjectID == "" {
-		return nil, fmt.Errorf("VERTEX_PROJECT_ID is required")
+	if c.vertexProjectID == "" && c.geminiAPIKey == "" {
+		return nil, fmt.Errorf("VERTEX_PROJECT_ID または GEMINI_API_KEY が必要です")
 	}
 	return c, nil
 }
@@ -72,11 +74,16 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		return err
 	}
 
-	m, err := gemini.NewModel(ctx, cfg.modelName, &genai.ClientConfig{
+	clientCfg := &genai.ClientConfig{
 		Backend:  genai.BackendVertexAI,
 		Project:  cfg.vertexProjectID,
 		Location: cfg.vertexLocation,
-	})
+	}
+	if cfg.vertexProjectID == "" {
+		clientCfg = &genai.ClientConfig{Backend: genai.BackendGeminiAPI, APIKey: cfg.geminiAPIKey}
+	}
+
+	m, err := gemini.NewModel(ctx, cfg.modelName, clientCfg)
 	if err != nil {
 		return fmt.Errorf("gemini model init: %w", err)
 	}
