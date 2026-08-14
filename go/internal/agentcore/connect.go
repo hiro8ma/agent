@@ -21,12 +21,19 @@ type Handler struct {
 	sessions SessionStore
 	executor ToolExecutor
 	logger   *slog.Logger
+	budget   *BudgetTracker // nil ならトークン予算のチェックなし
 }
 
 var _ agentv1connect.AgentServiceHandler = (*Handler)(nil)
 
 func NewHandler(registry *Registry, sessions SessionStore, executor ToolExecutor, logger *slog.Logger) *Handler {
 	return &Handler{registry: registry, sessions: sessions, executor: executor, logger: logger}
+}
+
+// WithBudget はトークン予算を有効にする。
+func (h *Handler) WithBudget(b *BudgetTracker) *Handler {
+	h.budget = b
+	return h
 }
 
 func (h *Handler) ListAgents(_ context.Context, _ *connect.Request[agentv1.ListAgentsRequest]) (*connect.Response[agentv1.ListAgentsResponse], error) {
@@ -45,6 +52,10 @@ func (h *Handler) Ask(ctx context.Context, req *connect.Request[agentv1.AskReque
 	a, ok := h.registry.Get(msg.GetAgentId())
 	if !ok {
 		return connect.NewError(connect.CodeNotFound, errors.New("unknown agent: "+msg.GetAgentId()))
+	}
+
+	if err := h.budget.Check(msg.GetSessionId()); err != nil {
+		return connect.NewError(connect.CodeResourceExhausted, err)
 	}
 
 	history, err := h.sessions.Load(ctx, msg.GetSessionId())
@@ -68,7 +79,9 @@ func (h *Handler) Ask(ctx context.Context, req *connect.Request[agentv1.AskReque
 		return connect.NewError(connect.CodeInternal, errors.New("stream ended without result"))
 	}
 
-	h.logger.Info("ask_completed",
+	h.budget.Add(msg.GetSessionId(), final.Usage)
+
+	attrs := []any{
 		"agentId", msg.GetAgentId(),
 		"sessionId", msg.GetSessionId(),
 		"latencyMs", time.Since(start).Milliseconds(),
@@ -78,7 +91,12 @@ func (h *Handler) Ask(ctx context.Context, req *connect.Request[agentv1.AskReque
 		"pendingToolCalls", len(final.PendingToolCalls),
 		"finishReason", final.FinishReason,
 		"error", final.ErrorMessage,
-	)
+	}
+	if h.budget != nil {
+		sessionUsed, totalUsed := h.budget.Used(msg.GetSessionId())
+		attrs = append(attrs, "budget_session_used", sessionUsed, "budget_total_used", totalUsed)
+	}
+	h.logger.Info("ask_completed", attrs...)
 
 	if err := stream.Send(&agentv1.AskResponse{Result: toResult(final)}); err != nil {
 		return err

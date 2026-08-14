@@ -38,6 +38,8 @@ ADK 版（`docs/adk-agent.md`、`internal/adkagent/`）も同じ agentcore を�
 - 履歴は Firestore サブコレクション（`agent_sessions/{id}/messages`）で 1 メッセージ 1 ドキュメント。1MB 上限を回避
 - 429 リトライはチャンク未送出時のみ（送出後の再試行は先頭から重複するため）
 - ツールのエラーは `{"error": ...}` で返してモデルに続きを判断させる
+- トークン予算は `BUDGET_SESSION_TOKENS`（セッション合計）と `BUDGET_TOTAL_TOKENS`（プロセス全体）で設定する。上限に達したあとの `Ask` は `resource_exhausted` で拒否し、消費量は `ask_completed` ログの `budget_session_used` / `budget_total_used` に出る
+- 1 回の応答で使うトークン数は事前にわからないため、予算は超過を検知した次の呼び出しから止める。消費量はインメモリで、再起動するとリセットされる
 
 ## 動かし方
 
@@ -45,6 +47,7 @@ ADK 版（`docs/adk-agent.md`、`internal/adkagent/`）も同じ agentcore を�
 VERTEX_PROJECT_ID=<gcp-project> go run ./cmd/genkit-agent
 # オプション: FIRESTORE_PROJECT_ID（履歴・承認待ちの永続化）/ MCP_SERVER_URL（MCP ツール取り込み）
 #            SKILLS_DIR（Agent Skills のディレクトリ。例 cmd/genkit-agent/skills）
+#            BUDGET_SESSION_TOKENS / BUDGET_TOTAL_TOKENS（トークン予算。未設定または 0 で無制限）
 
 go run ./cmd/genkit-ask -list
 go run ./cmd/genkit-ask -agent operations -session s1 "注文 ord-001 の支払い方法を教えて"

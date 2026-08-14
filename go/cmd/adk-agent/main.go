@@ -27,6 +27,7 @@ type config struct {
 	vertexProjectID string
 	vertexLocation  string
 	modelName       string
+	budget          agentcore.BudgetLimits
 }
 
 func loadConfig() (*config, error) {
@@ -35,6 +36,7 @@ func loadConfig() (*config, error) {
 		vertexProjectID: os.Getenv("VERTEX_PROJECT_ID"),
 		vertexLocation:  envOr("VERTEX_LOCATION", "asia-northeast1"),
 		modelName:       envOr("DEFAULT_MODEL", "gemini-2.5-flash"),
+		budget:          agentcore.BudgetLimitsFromEnv(),
 	}
 	if c.vertexProjectID == "" {
 		return nil, fmt.Errorf("VERTEX_PROJECT_ID is required")
@@ -120,10 +122,14 @@ func run(ctx context.Context, logger *slog.Logger) error {
 
 	registry := agentcore.NewRegistry(research, operations)
 
+	core := agentcore.NewHandler(registry, session.NewInMemory(), noopExecutor{}, logger)
+	if cfg.budget.Enabled() {
+		core = core.WithBudget(agentcore.NewBudgetTracker(cfg.budget))
+		logger.Info("token budget enabled", "sessionTokens", cfg.budget.SessionTokens, "totalTokens", cfg.budget.TotalTokens)
+	}
+
 	mux := http.NewServeMux()
-	path, handler := agentv1connect.NewAgentServiceHandler(
-		agentcore.NewHandler(registry, session.NewInMemory(), noopExecutor{}, logger),
-	)
+	path, handler := agentv1connect.NewAgentServiceHandler(core)
 	mux.Handle(path, handler)
 
 	logger.Info("starting adk agent server", "port", cfg.port, "model", cfg.modelName, "agents", len(registry.List()))

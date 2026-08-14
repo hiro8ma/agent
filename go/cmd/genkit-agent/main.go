@@ -16,11 +16,11 @@ import (
 	"golang.org/x/net/http2/h2c"
 
 	"github.com/hiro8ma/agent/go/gen/agent/v1/agentv1connect"
+	"github.com/hiro8ma/agent/go/internal/agentcore"
 	"github.com/hiro8ma/agent/go/internal/genkitagent/agent"
 	"github.com/hiro8ma/agent/go/internal/genkitagent/backend"
 	"github.com/hiro8ma/agent/go/internal/genkitagent/knowledge"
 	"github.com/hiro8ma/agent/go/internal/genkitagent/session"
-	"github.com/hiro8ma/agent/go/internal/agentcore"
 )
 
 type config struct {
@@ -31,6 +31,7 @@ type config struct {
 	firestoreProject string // 空なら履歴・承認待ちはインメモリ
 	mcpServerURL     string // 空なら MCP 連携なし（Streamable HTTP の URL）
 	skillsDir        string // 空なら Agent Skills なし（SKILL.md を持つディレクトリの親）
+	budget           agentcore.BudgetLimits
 }
 
 func loadConfig() (*config, error) {
@@ -42,6 +43,7 @@ func loadConfig() (*config, error) {
 		firestoreProject: os.Getenv("FIRESTORE_PROJECT_ID"),
 		mcpServerURL:     os.Getenv("MCP_SERVER_URL"),
 		skillsDir:        os.Getenv("SKILLS_DIR"),
+		budget:           agentcore.BudgetLimitsFromEnv(),
 	}
 	if c.vertexProjectID == "" {
 		return nil, fmt.Errorf("VERTEX_PROJECT_ID is required")
@@ -133,8 +135,14 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	registry := agentcore.NewRegistry(research, operations)
 	executor := agent.NewExecutor(orders, pending)
 
+	core := agentcore.NewHandler(registry, sessions, executor, logger)
+	if cfg.budget.Enabled() {
+		core = core.WithBudget(agentcore.NewBudgetTracker(cfg.budget))
+		logger.Info("token budget enabled", "sessionTokens", cfg.budget.SessionTokens, "totalTokens", cfg.budget.TotalTokens)
+	}
+
 	mux := http.NewServeMux()
-	path, handler := agentv1connect.NewAgentServiceHandler(agentcore.NewHandler(registry, sessions, executor, logger))
+	path, handler := agentv1connect.NewAgentServiceHandler(core)
 	mux.Handle(path, handler)
 
 	logger.Info("starting agent server", "port", cfg.port, "model", cfg.defaultModel, "agents", len(registry.List()))

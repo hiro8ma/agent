@@ -10,12 +10,16 @@ internal/agentcore/       # フレームワーク非依存の核（Phase 1 で g
 ├── types.go              # AskInput / AskOutput / AskChunk などの入出力型
 ├── domain.go             # Order / KnowledgeDoc とサービスインターフェース
 ├── registry.go           # Agent インターフェース / Registry / SessionStore / ToolExecutor
-└── connect.go            # Connect RPC ハンドラ（ask_completed メトリクスログ込み）
+├── connect.go            # Connect RPC ハンドラ（ask_completed メトリクスログ込み）
+└── budget.go             # トークン予算（セッション単位 / プロセス全体の上限）
 internal/adkagent/        # ADK 実装。agentcore.Agent を満たす
 ├── agent.go              # Definition / llmagent × Runner / イベント列 → チャンク写像
 └── tools.go              # functiontool（get_order / resolve_area_names / search_knowledge）
 cmd/adk-agent/            # サーバー本体（PORT 19912）
 ```
+
+トークン予算（`agentcore/budget.go`）は Connect ハンドラ側にあるため、genkit 版と ADK 版で同じ env・同じ挙動になる。
+上限に達したあとの `Ask` は `resource_exhausted` で拒否し、消費量は `ask_completed` ログの `budget_session_used` / `budget_total_used` に出る。
 
 genkit 版・ADK 版とも `agentcore.Agent` インターフェース（`Ask(ctx, input) iter.Seq2[*AskChunk, *AskOutput]`）の実装になり、Connect transport・型・バックエンド（backend / knowledge のインメモリ実装）を共有する。
 差分はフレームワークの使い方だけになり、比較が成立する。
@@ -34,6 +38,7 @@ genkit 版・ADK 版とも `agentcore.Agent` インターフェース（`Ask(ctx
 
 ```bash
 VERTEX_PROJECT_ID=<gcp-project> go run ./cmd/adk-agent   # PORT 19912
+# オプション: BUDGET_SESSION_TOKENS / BUDGET_TOTAL_TOKENS（トークン予算。未設定または 0 で無制限）
 
 # クライアントは genkit-ask がそのまま使える（proto 共通の利点）
 go run ./cmd/genkit-ask -url http://localhost:19912 -list
