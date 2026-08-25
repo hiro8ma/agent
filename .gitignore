@@ -25,3 +25,15 @@ Thumbs.db
 
 # GPT 学習用コーパス（README の手順で取得）
 go/data/
+
+# 鍵・証明書（golang-security の secrets ルール）
+*.key
+*.pem
+*.p12
+*.pfx
+secrets/
+credentials/
+
+# ビルド成果物
+/go/genkit-agent
+/go/adk-agent

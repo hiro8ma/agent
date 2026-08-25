@@ -46,6 +46,23 @@ func loadConfig() (*config, error) {
 	return c, nil
 }
 
+// LogValue は config をログに出したときにキーが平文で出ることを防ぐ。
+// slog は fmt.Stringer ではなく slog.LogValuer を見るため、両方を実装しておく。
+func (c *config) LogValue() slog.Value {
+	return slog.GroupValue(
+		slog.String("port", c.port),
+		slog.String("vertexProjectID", c.vertexProjectID),
+		slog.String("vertexLocation", c.vertexLocation),
+		slog.String("geminiAPIKey", agentcore.MaskSecret(c.geminiAPIKey)),
+		slog.String("modelName", c.modelName),
+	)
+}
+
+func (c *config) String() string {
+	return fmt.Sprintf("config{port:%s model:%s vertexProjectID:%s geminiAPIKey:%s}",
+		c.port, c.modelName, c.vertexProjectID, agentcore.MaskSecret(c.geminiAPIKey))
+}
+
 func envOr(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
