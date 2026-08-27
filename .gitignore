@@ -37,3 +37,6 @@ credentials/
 # ビルド成果物
 /go/genkit-agent
 /go/adk-agent
+
+# DDP デモの保存モデル
+python/transformer_training/ddp_model.pt
