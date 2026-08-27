@@ -45,3 +45,6 @@ python/transformer_training/ddp_model.pt
 .deepeval/
 .deepeval-cache*
 temp_test_run_data.json
+__pycache__/
+.pytest_cache/
+*.pyc
