@@ -48,9 +48,10 @@ type GeminiLLM struct {
 
 	// MaxRetries は 429 を受けたときの再試行回数。0 なら再試行しない。
 	//
-	// 無料枠の上限は quotaId が PerDay となっているが、応答の retryDelay は
-	// 数十秒を返す。実際には短いローリング窓で、待てば通る。
-	// 待ち時間はサーバの指示に従う。自前の固定待ちだと窓と噛み合わない。
+	// 待つ価値があるのは 1 分あたりの上限に当たった場合だけ。
+	// 日次上限（quotaId に PerDay を含む）は数十秒待っても回復しない。
+	// retryDelay は日次上限でも数十秒を返すため、指示をそのまま信じると
+	// 回復しない待機を繰り返す。実際に 4 回再試行で 18.6 分待って全滅した。
 	MaxRetries int
 
 	mu   sync.Mutex
@@ -121,6 +122,12 @@ func (g *GeminiLLM) generateWithRetry(ctx context.Context, prompt string, cfg *g
 func retryAfter(err error) (time.Duration, bool) {
 	msg := err.Error()
 	if !strings.Contains(msg, "RESOURCE_EXHAUSTED") && !strings.Contains(msg, "429") {
+		return 0, false
+	}
+
+	// 日次上限は秒単位の待機では回復しない。retryDelay は数十秒を返すが、
+	// それに従って待ち直しても同じ 429 が返るだけで時間を失う。
+	if strings.Contains(msg, "PerDay") {
 		return 0, false
 	}
 

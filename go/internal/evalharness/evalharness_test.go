@@ -353,6 +353,12 @@ func TestRetryAfter(t *testing.T) {
 		// 正規表現だけで判断すると、待っても解消しないエラーで待たされる。
 		{"待ち時間の指示があっても 429 でなければ待たない",
 			errors.New("Error 400, Message: rate policy. Please retry in 5.0s."), false, 0},
+		// 日次上限は秒単位では回復しない。retryDelay に従って待ち直しても無駄になる。
+		// 実際に 4 回再試行で 18.6 分待って全滅した経路。
+		{"日次上限は待たない",
+			errors.New(`Error 429, Status: RESOURCE_EXHAUSTED, ` +
+				`quotaId:GenerateRequestsPerDayPerProjectPerModel-FreeTier, ` +
+				`Please retry in 48.0s.`), false, 0},
 		{"サーバエラーは待たない",
 			errors.New("Error 500, Message: internal"), false, 0},
 	}
