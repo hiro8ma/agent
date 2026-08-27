@@ -24,6 +24,8 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+import math
+
 import torch
 
 from bpe import BPETokenizer
@@ -57,6 +59,7 @@ class TrainConfig:
     weight_decay: float = 0.1
     grad_clip: float = 1.0  # gradient clipping のノルム上限
     warmup_iters: int = 100  # learning rate warmup（最初に lr を 0 → max まで線形に上げる）
+    grad_accum_steps: int = 1  # 勾配蓄積。グローバルバッチ = batch_size × grad_accum_steps
 
     # 出力
     save_interval: int = 1000  # checkpoint 保存間隔
@@ -82,6 +85,7 @@ def parse_args() -> TrainConfig:
     parser.add_argument("--batch-size", type=int, default=TrainConfig.batch_size)
     parser.add_argument("--block-size", type=int, default=TrainConfig.block_size)
     parser.add_argument("--device", default=TrainConfig.device)
+    parser.add_argument("--grad-accum-steps", type=int, default=TrainConfig.grad_accum_steps)
     args = parser.parse_args()
 
     config = TrainConfig()
@@ -93,6 +97,7 @@ def parse_args() -> TrainConfig:
     config.batch_size = args.batch_size
     config.block_size = args.block_size
     config.device = args.device
+    config.grad_accum_steps = args.grad_accum_steps
     return config
 
 
@@ -277,18 +282,26 @@ def main() -> None:
                 f"step {step:5d} | "
                 f"train loss {losses['train']:.4f} | "
                 f"val loss {losses['val']:.4f} | "
+                f"val ppl {math.exp(losses['val']):7.2f} | "
                 f"lr {lr:.5f} | "
                 f"elapsed {elapsed:6.1f}s"
             )
 
         # ---- 学習ステップ ----
-        # 1. Forward
-        x, y = get_batch(train_data, block_size=config.block_size, batch_size=config.batch_size)
-        _, loss = model(x, y)
-
-        # 2. Backward (autograd で全パラメータの勾配を計算)
+        # 勾配蓄積: 小さいバッチを複数回まわし、勾配を足してから 1 回更新する。
+        # GPU 1 台でも、GPU を増やしたのと同じグローバルバッチが作れる。
+        #   グローバルバッチ = batch_size × grad_accum_steps
+        #
+        # 損失を蓄積回数で割るのが要点になる。割り忘れても学習は進むが、
+        # 実効的な学習率が蓄積回数ぶん大きくなる。エラーは出ない。
+        # 等価であることの確認は grad_accum_demo.py にある。
         optimizer.zero_grad(set_to_none=True)
-        loss.backward()
+        for _ in range(config.grad_accum_steps):
+            x, y = get_batch(
+                train_data, block_size=config.block_size, batch_size=config.batch_size
+            )
+            _, loss = model(x, y)
+            (loss / config.grad_accum_steps).backward()
 
         # 3. Gradient clipping (爆発防止)
         torch.nn.utils.clip_grad_norm_(model.parameters(), config.grad_clip)
