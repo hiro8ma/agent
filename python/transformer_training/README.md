@@ -212,3 +212,56 @@ Sampler はインデックス列を分割する仕組みで、この方式には
 一方 DataLoader を使う場合は Sampler が要る。外すと全ランクが同じデータを見る。
 `ddp_demo.py` の最後でその状態を再現している。エラーは出ず、
 実質バッチサイズが world_size 倍になるだけで学習は進む。
+
+## テンソル並列と ZeRO
+
+`tensor_parallel_demo.py` — 分解が数学的に厳密であることと通信量の差
+`zero_fsdp_demo.py` — ZeRO（FSDP）がパラメータを分散保持していることの実測
+
+```bash
+uv run python tensor_parallel_demo.py
+uv run python zero_fsdp_demo.py --world-size 2
+```
+
+### なぜ 1 層目を列、2 層目を行で割るのか
+
+方向は選べる自由度ではなく、モデルの構造が決める。
+
+```
+Colwise  出力側の次元を分ける。入力は全次元が要る
+Rowwise  入力側の次元を分ける。出力は部分和になる
+```
+
+1 層目を Colwise にすると隠れ層が列方向に分かれる。
+それを受ける 2 層目は、入力側が分かれている前提の Rowwise でなければ形が合わない。
+
+両方を Colwise にすると、層をまたぐたびに all-gather で隠れ層を集める必要が出る。
+Colwise → Rowwise なら最後に all-reduce が 1 回で済む。
+
+```
+all-gather で動く要素数  = 隠れ層の全体
+all-reduce で動く要素数  = 出力のみ
+隠れ層が出力より広いほど差が開く
+```
+
+分解は近似ではない。実測した最大誤差は 2.38e-07 で、浮動小数の丸めだけになる。
+2 分割でも 4 分割でも単一 GPU の結果と一致する。
+
+### ZeRO は「動いた」では確かめられない
+
+DDP と FSDP は、どちらも loss が同じように下がる。
+違いは各ランクが手元に持つパラメータ量にしかない。
+
+```
+DDP   rank0 263,425 要素（100%）  rank1 263,425 要素（100%）  合計 = 全体 × 2.0
+FSDP  rank0 131,841 要素（ 50%）  rank1 131,584 要素（ 50%）  合計 = 全体 × 1.0
+```
+
+loss は両方とも 1.2512 -> 1.2065 で完全に同じだった。
+分散保持されているかは、保持している要素数を数える以外に判別方法がない。
+
+### Apple Silicon での注意
+
+`fully_shard` に `mesh` を渡さないと既定デバイスの判定が走り、
+MPS と見なされて `torch.mps.is_initialized` が無いために落ちる。
+`init_device_mesh("cpu", (world_size,))` を明示して渡す。
