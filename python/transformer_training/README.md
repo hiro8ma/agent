@@ -265,3 +265,53 @@ loss は両方とも 1.2512 -> 1.2065 で完全に同じだった。
 `fully_shard` に `mesh` を渡さないと既定デバイスの判定が走り、
 MPS と見なされて `torch.mps.is_initialized` が無いために落ちる。
 `init_device_mesh("cpu", (world_size,))` を明示して渡す。
+
+## 自作実装と Hugging Face の対応
+
+`hf_config_bridge.py` — 同じ設定から MiniGPT と GPT2LMHeadModel を組んで比べる
+
+```bash
+uv run --with transformers python hf_config_bridge.py
+```
+
+事前学習済みの重みは要らない。`GPT2Config` から構造だけ組めるため、
+ダウンロードなしで走る。
+
+### 設定の対応
+
+| 自作 GPTConfig | GPT2Config | 備考 |
+|---|---|---|
+| `vocab_size` | `vocab_size` | 同名 |
+| `block_size` | `n_positions` / `n_ctx` | GPT-2 は 2 つ持つ |
+| `n_layer` | `n_layer` | 同名 |
+| `n_head` | `n_head` | 同名 |
+| `n_embd` | `n_embd` | 同名 |
+| `dropout` | `resid_pdrop` / `embd_pdrop` / `attn_pdrop` | 3 箇所に分かれる |
+
+### 実測（32000 語彙 / 6 層 / 8 ヘッド / 512 次元）
+
+```
+自作 MiniGPT          52,195,328
+HF GPT2LMHeadModel    35,823,616
+差                    16,371,712  (31.4%)
+```
+
+5 項目は完全一致する。FFN・トークン埋め込み・位置埋め込み・LayerNorm 2 種。
+
+差は 2 箇所だけになる。
+
+**weight tying（16,384,000）** HF の GPT-2 は出力ヘッドをトークン埋め込みと共有する。
+`lm_head.weight` が `wte.weight` と同じテンソルを指すため二重に数えられない。
+語彙 32000 × 次元 512 で、モデル全体の 31% がこの 1 箇所にあたる。
+実装の優劣ではなく設計判断で、共有すると入力と出力の表現が結びつく。
+
+**Attention の 12,288** HF は Q/K/V を 1 つの行列 `c_attn` にまとめている。
+分けて持つ実装とはバイアスの持ち方が違う。行列本体は同じ大きさになる。
+
+### DeepSpeed について
+
+Apple Silicon では動かない。CUDA が前提になる。
+
+ただし ZeRO の原理を確かめるだけなら PyTorch 標準の FSDP で足りる。
+`zero_fsdp_demo.py` が ZeRO-3 相当を gloo + CPU で実行している。
+DeepSpeed が要るのは ZeRO-Offload（CPU / NVMe への退避）や独自カーネルを使う場合になる。
