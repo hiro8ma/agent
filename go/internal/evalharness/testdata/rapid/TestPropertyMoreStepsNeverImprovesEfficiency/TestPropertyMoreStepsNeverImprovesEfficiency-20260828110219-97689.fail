@@ -1,0 +1,13 @@
+# 2026/08/28 11:02:19.869601 [TestPropertyMoreStepsNeverImprovesEfficiency] [rapid] draw input: ""
+# 2026/08/28 11:02:19.869604 [TestPropertyMoreStepsNeverImprovesEfficiency] [rapid] draw output: ""
+# 2026/08/28 11:02:19.869604 [TestPropertyMoreStepsNeverImprovesEfficiency] [rapid] draw steps: []evalharness.Step{}
+# 2026/08/28 11:02:19.869605 [TestPropertyMoreStepsNeverImprovesEfficiency] [rapid] draw optimal: 1
+# 2026/08/28 11:02:19.869606 [TestPropertyMoreStepsNeverImprovesEfficiency] ステップを足したのにスコアが 0.0000 → 1.0000 と上がった
+# 
+v0.4.8#13099828166972537776
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0

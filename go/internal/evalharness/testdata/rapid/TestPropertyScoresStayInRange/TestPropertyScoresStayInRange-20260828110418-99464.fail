@@ -1,0 +1,21 @@
+# 2026/08/28 11:04:18.146795 [TestPropertyScoresStayInRange] [rapid] draw input: ""
+# 2026/08/28 11:04:18.146798 [TestPropertyScoresStayInRange] [rapid] draw output: ""
+# 2026/08/28 11:04:18.146799 [TestPropertyScoresStayInRange] [rapid] draw steps: []evalharness.Step{evalharness.Step{ToolCalls:[]evalharness.ToolCall{}, Tokens:0, Duration:0}}
+# 2026/08/28 11:04:18.146804 [TestPropertyScoresStayInRange] [rapid] draw optimal: 2
+# 2026/08/28 11:04:18.146805 [TestPropertyScoresStayInRange] StepEfficiency のスコアが範囲外: 2
+# 
+v0.4.8#18084741550005724894
+0x0
+0x0
+0x6666666666666
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x38e38e38e38e4
+0x2

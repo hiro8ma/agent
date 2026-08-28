@@ -1,0 +1,21 @@
+# 2026/08/28 11:02:19.866787 [TestPropertyPassedMatchesThreshold] [rapid] draw input: ""
+# 2026/08/28 11:02:19.866790 [TestPropertyPassedMatchesThreshold] [rapid] draw output: ""
+# 2026/08/28 11:02:19.866791 [TestPropertyPassedMatchesThreshold] [rapid] draw steps: []evalharness.Step{}
+# 2026/08/28 11:02:19.866793 [TestPropertyPassedMatchesThreshold] [rapid] draw threshold: 0
+# 2026/08/28 11:02:19.866794 [TestPropertyPassedMatchesThreshold] [rapid] draw optimal: 1
+# 2026/08/28 11:02:19.866796 [TestPropertyPassedMatchesThreshold] StepEfficiency: 合否 false がスコア 0.0000 と閾値 0.0000 に一致しない
+# 
+v0.4.8#11897863378953451235
+0x0
+0x0
+0x0
+0x0
+0x0
+0x1486342748b279
+0x3ff
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0

@@ -1,0 +1,12 @@
+# 2026/08/28 11:04:51.284562 [TestPropertySignatureDistinguishesArgs] [rapid] draw key: "from"
+# 2026/08/28 11:04:51.284566 [TestPropertySignatureDistinguishesArgs] [rapid] draw a: "USD"
+# 2026/08/28 11:04:51.284566 [TestPropertySignatureDistinguishesArgs] [rapid] draw b: "EUR"
+# 2026/08/28 11:04:51.284567 [TestPropertySignatureDistinguishesArgs] 引数が違うのに署名が同じ: t(from)（from="USD" と "EUR"）
+# 
+v0.4.8#1867157742644764611
+0x0
+0x0
+0x0
+0x0
+0x0
+0x1
