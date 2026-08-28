@@ -104,7 +104,7 @@ func (g *GeminiLLM) generateWithRetry(ctx context.Context, prompt string, cfg *g
 			return resp, nil
 		}
 
-		wait, ok := retryAfter(err)
+		wait, ok := RetryAfter(err)
 		if !ok || attempt >= g.MaxRetries {
 			return nil, fmt.Errorf("生成リクエスト (%d 回目, 再試行 %d): %w", g.Calls, attempt, err)
 		}
@@ -119,8 +119,18 @@ func (g *GeminiLLM) generateWithRetry(ctx context.Context, prompt string, cfg *g
 
 // retryAfter は 429 応答から待つべき時間を取り出す。
 // 待てる種類のエラーでなければ ok=false を返し、呼び出し側は即座に諦める。
-func retryAfter(err error) (time.Duration, bool) {
+// RetryAfter は 429 / 503 応答から待つべき時間を取り出す。
+// 待てない種類のエラーなら ok=false を返す。
+func RetryAfter(err error) (time.Duration, bool) {
 	msg := err.Error()
+
+	// 混雑による 503 は時間をおけば解消する。サーバは待ち時間を返さないため、
+	// 一定時間おいて試す。実測で I2T の評価中に遭遇し、
+	// 再試行が無かったため測定が 1 件落ちた。
+	if strings.Contains(msg, "503") || strings.Contains(msg, "UNAVAILABLE") {
+		return 10 * time.Second, true
+	}
+
 	if !strings.Contains(msg, "RESOURCE_EXHAUSTED") && !strings.Contains(msg, "429") {
 		return 0, false
 	}

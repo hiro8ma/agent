@@ -361,11 +361,14 @@ func TestRetryAfter(t *testing.T) {
 				`Please retry in 48.0s.`), false, 0},
 		{"サーバエラーは待たない",
 			errors.New("Error 500, Message: internal"), false, 0},
+		// 混雑は時間をおけば解消する。サーバは待ち時間を返さないため固定で待つ。
+		{"混雑は待つ",
+			errors.New("Error 503, Message: high demand, Status: UNAVAILABLE"), true, 10},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, ok := retryAfter(tt.err)
+			got, ok := RetryAfter(tt.err)
 			if ok != tt.wantOK {
 				t.Fatalf("待てるか = %v, 期待 %v", ok, tt.wantOK)
 			}
