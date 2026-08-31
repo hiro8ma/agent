@@ -374,3 +374,73 @@ func TestIntegrationShortfallIsDetected(t *testing.T) {
 		t.Errorf("原因が伝わらないエラー: %v", err)
 	}
 }
+
+// 拡張のバージョンが要求に満たなければ起動時に落とす。
+//
+// 古い版では索引の種類や関数が足りず、CREATE INDEX が構文エラーになる。
+// 原因が索引の定義側に見えるため、バージョンとして先に出す。
+func TestIntegrationVerifyChecksExtensionVersion(t *testing.T) {
+	pool := testPool(t)
+	ctx := context.Background()
+	const table = "kb_extver"
+	setup(t, pool, table, 500, 1)
+
+	if _, err := pool.Exec(ctx, fmt.Sprintf(
+		"CREATE INDEX ON %s USING hnsw (embedding vector_cosine_ops)", table)); err != nil {
+		t.Fatalf("索引作成: %v", err)
+	}
+
+	cfg := baseCfg(table)
+	cfg.MinExtensionVersion = "0.1.0"
+	s, err := NewPgVector(ctx, pool, fakeEmbedder{}, cfg)
+	if err != nil {
+		t.Fatalf("満たしているのに落ちた: %v", err)
+	}
+	if s.ExtensionVersion == "" {
+		t.Error("実際のバージョンを記録していない")
+	}
+	t.Logf("vector %s / vector(%d)", s.ExtensionVersion, s.Dimension)
+
+	cfg.MinExtensionVersion = "99.0.0"
+	if _, err := NewPgVector(ctx, pool, fakeEmbedder{}, cfg); err == nil {
+		t.Fatal("満たさないバージョンを通した")
+	} else if !strings.Contains(err.Error(), "ALTER EXTENSION") {
+		t.Errorf("対処が示されない: %v", err)
+	}
+}
+
+// 埋め込み器の次元と列の次元が食い違えば起動時に落とす。
+//
+// モデルを差し替えて次元が変わると、投入も検索も
+// different vector dimensions で落ちる。落ちる場所がリクエスト単位になる。
+func TestIntegrationVerifyCatchesDimensionMismatch(t *testing.T) {
+	pool := testPool(t)
+	ctx := context.Background()
+	const table = "kb_dim"
+	setup(t, pool, table, 500, 1)
+
+	if _, err := pool.Exec(ctx, fmt.Sprintf(
+		"CREATE INDEX ON %s USING hnsw (embedding vector_cosine_ops)", table)); err != nil {
+		t.Fatalf("索引作成: %v", err)
+	}
+
+	if _, err := NewPgVector(ctx, pool, fakeEmbedder{}, baseCfg(table)); err != nil {
+		t.Fatalf("次元が合っているのに落ちた: %v", err)
+	}
+
+	_, err := NewPgVector(ctx, pool, shortEmbedder{}, baseCfg(table))
+	if err == nil {
+		t.Fatal("次元違いの埋め込み器を通した")
+	}
+	if !strings.Contains(err.Error(), "作り直す") {
+		t.Errorf("対処が示されない: %v", err)
+	}
+	t.Logf("検出: %v", err)
+}
+
+// shortEmbedder はモデルを差し替えて次元が減った状況を作る。
+type shortEmbedder struct{}
+
+func (shortEmbedder) Embed(_ context.Context, _ string) ([]float32, error) {
+	return make([]float32, dim/2), nil
+}

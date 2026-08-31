@@ -44,6 +44,10 @@ type PgVector struct {
 	embedder Embedder
 	cfg      PgVectorConfig
 
+	// ExtensionVersion と Dimension は起動時に確かめた実際の値。
+	ExtensionVersion string
+	Dimension        int
+
 	// MeasuredRecall は起動時に測った厳密検索との一致率。
 	// 索引の設定を変えたときの影響を追えるよう、起動ログに出す用途を想定する。
 	MeasuredRecall float64
@@ -78,6 +82,12 @@ type PgVectorConfig struct {
 	// ef_search と同じくセッション単位なので、プールから借りた接続に毎回設定する。
 	// ALTER DATABASE で設定しても既存の接続には届かない。
 	IvfflatProbes int
+
+	// MinExtensionVersion は要求する vector 拡張の最小バージョン。空なら確かめない。
+	//
+	// 索引の種類や関数はバージョンで増える。古い版では
+	// CREATE INDEX が構文エラーになり、原因が索引の定義側に見える。
+	MinExtensionVersion string
 
 	// MinRecall は起動時に測る再現率の下限。0 なら 0.05 を使う。
 	//

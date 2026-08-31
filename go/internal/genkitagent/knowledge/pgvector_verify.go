@@ -16,7 +16,9 @@ import (
 // 起動時に落として、原因を 1 行で示す。
 func (s *PgVector) Verify(ctx context.Context) error {
 	for _, check := range []func(context.Context) error{
+		s.verifyExtension,
 		s.verifyVectorTypeRegistered,
+		s.verifyEmbedderDimension,
 		s.verifyIndexUsed,
 		s.verifyIndexRecall,
 		s.verifySelectivity,
