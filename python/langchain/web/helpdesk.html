@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>ヘルプデスクエージェント</title>
+<style>
+:root{--bg:#12141a;--panel:#171a21;--border:#242832;--fg:#e6e8ee;--muted:#8b93a5;
+      --ok:#7ddb9b;--ng:#f0a0a0;--accent:#7fb2f0}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font-size:14px;line-height:1.6;
+     font-family:"Hiragino Sans","Hiragino Kaku Gothic ProN",system-ui,sans-serif}
+main{max-width:1000px;margin:0 auto;padding:28px 20px 60px}
+h1{font-size:20px;margin:0 0 4px}
+.lead{color:var(--muted);font-size:13px;margin:0 0 22px}
+.panel{background:var(--panel);border:1px solid var(--border);border-radius:6px;
+       padding:14px 16px;margin-bottom:16px}
+label{display:block;color:var(--muted);font-size:12px;margin-bottom:5px}
+textarea{width:100%;min-height:64px;background:#0f1116;color:var(--fg);
+         border:1px solid var(--border);border-radius:4px;padding:9px 11px;
+         font-family:inherit;font-size:13.5px;resize:vertical}
+.row{display:flex;gap:14px;align-items:center;margin-top:11px;flex-wrap:wrap}
+button{background:#2a3550;color:var(--fg);border:1px solid #3a4a6e;border-radius:4px;
+       padding:7px 18px;font-size:13.5px;cursor:pointer;font-family:inherit}
+button:hover{background:#334066}
+button:disabled{opacity:.5;cursor:default}
+.seg{display:inline-flex;border:1px solid var(--border);border-radius:4px;overflow:hidden}
+.seg button{border:0;border-radius:0;background:transparent;padding:6px 14px}
+.seg button.on{background:#2a3550}
+.note{color:var(--muted);font-size:12px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;color:var(--muted);font-weight:400;font-size:12px;
+   padding:6px 10px;border-bottom:1px solid var(--border)}
+td{padding:7px 10px;border-bottom:1px solid #1e2229;vertical-align:top}
+tr:last-child td{border-bottom:none}
+.num{text-align:right;font-variant-numeric:tabular-nums}
+.badge{display:inline-block;font-size:11px;padding:1px 7px;border-radius:3px}
+.badge.ok{background:#16321f;color:var(--ok)}
+.badge.ng{background:#3a2222;color:var(--ng)}
+.metric{display:flex;gap:26px;flex-wrap:wrap;margin-bottom:6px}
+.metric div span{display:block}
+.metric .k{color:var(--muted);font-size:11px}
+.metric .v{font-size:19px;font-variant-numeric:tabular-nums}
+pre{white-space:pre-wrap;word-break:break-word;margin:0;font-size:13px}
+.sub{color:var(--muted);font-size:12px;display:block;margin-top:3px}
+h2{font-size:14px;margin:22px 0 8px}
+</style>
+</head>
+<body>
+<main>
+  <h1>ヘルプデスクエージェント</h1>
+  <p class="lead">
+    計画を立て、サブタスクを実行し、自己修正してから最終回答を作る。
+    逐次と動的並列を切り替えて、実行の中身を並べて見る。
+  </p>
+
+  <div class="panel">
+    <label>質問</label>
+    <textarea id="q">What does error code E-204 mean and how do I rotate an API key</textarea>
+    <div class="row">
+      <div class="seg">
+        <button id="m-par" class="on" onclick="setMode('parallel')">動的並列（Send API）</button>
+        <button id="m-seq" onclick="setMode('sequential')">逐次</button>
+      </div>
+      <button id="go" onclick="ask()">実行</button>
+      <span class="note" id="status"></span>
+    </div>
+    <p class="note" style="margin-top:10px">
+      API キーが無い環境でも動くよう、既定は決定的な代替モデルを使う。
+      計画の分割・ツール選択・自己修正の判定は固定の規則で決まるため、
+      毎回同じ結果になる。グラフの形と流れを確かめるための設定になる。
+      <br><br>
+      検索対象は架空のシステム XYZ の英語コーパス 8 件のみ。
+      日本語で聞くと 1 件も当たらず、ツールの実行結果が空になる。
+      回答だけを見ていると空振りに気づけないため、下の表に検索結果も出す。
+    </p>
+  </div>
+
+  <div id="out"></div>
+</main>
+
+<script>
+const API = location.origin;
+let mode = "parallel";
+
+function setMode(m){
+  mode = m;
+  document.getElementById("m-par").className = m === "parallel" ? "on" : "";
+  document.getElementById("m-seq").className = m === "sequential" ? "on" : "";
+}
+
+function esc(s){ return (s ?? "").replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c])); }
+
+async function ask(){
+  const btn = document.getElementById("go");
+  const st = document.getElementById("status");
+  btn.disabled = true; st.textContent = "実行中…";
+  document.getElementById("out").innerHTML = "";
+  try{
+    const res = await fetch(API + "/api/ask", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({query: document.getElementById("q").value, mode, use_fake:true})
+    });
+    if(!res.ok) throw new Error("HTTP " + res.status);
+    render(await res.json());
+    st.textContent = "";
+  }catch(e){
+    st.textContent = "失敗: " + e.message;
+  }finally{ btn.disabled = false; }
+}
+
+function render(d){
+  const done = d.results.filter(r => r.completed !== false).length;
+  const retried = d.results.filter(r => (r.attempts ?? 1) > 1).length;
+
+  let h = `<div class="panel"><div class="metric">
+    <div><span class="k">方式</span><span class="v">${d.mode === "parallel" ? "動的並列" : "逐次"}</span></div>
+    <div><span class="k">サブタスク</span><span class="v">${d.results.length}</span></div>
+    <div><span class="k">完了</span><span class="v">${done} / ${d.results.length}</span></div>
+    <div><span class="k">やり直しあり</span><span class="v">${retried}</span></div>
+    <div><span class="k">経過</span><span class="v">${d.elapsedMs} ms</span></div>
+  </div></div>`;
+
+  h += `<h2>計画とサブタスクの結果</h2><div class="panel"><table>
+    <thead><tr><th class="num">#</th><th>サブタスク</th>
+    <th class="num">試行</th><th>状態</th><th>検索と回答</th></tr></thead><tbody>`;
+  for(const r of d.results){
+    const ok = r.completed !== false;
+    let detail = "";
+    for(const t of (r.tool_log || [])){
+      const empty = (t.result || "").startsWith("(no matching");
+      detail += `<div class="sub">試行 ${t.attempt} · ${t.tool}` +
+        (empty ? ` <span class="badge ng">該当なし</span>` : "") +
+        `<br>${esc((t.result||"").slice(0,140))}</div>`;
+    }
+    for(const a of (r.advice || [])){
+      detail += `<div class="sub">助言: ${esc(a.split("\n").pop())}</div>`;
+    }
+    h += `<tr>
+      <td class="num">${r.index}</td>
+      <td>${esc(r.subtask)}</td>
+      <td class="num">${r.attempts ?? "—"}</td>
+      <td><span class="badge ${ok?"ok":"ng"}">${ok?"完了":"未完了"}</span></td>
+      <td><pre>${esc(r.answer)}</pre>${detail}</td>
+    </tr>`;
+  }
+  h += `</tbody></table></div>`;
+
+  h += `<h2>最終回答</h2><div class="panel"><pre>${esc(d.finalAnswer)}</pre></div>`;
+
+  if(d.history && d.history.length){
+    h += `<h2>実行の記録</h2><div class="panel"><pre class="note">${d.history.map(esc).join("\n")}</pre></div>`;
+  }
+
+  document.getElementById("out").innerHTML = h;
+}
+</script>
+</body>
+</html>

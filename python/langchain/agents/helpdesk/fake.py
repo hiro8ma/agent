@@ -57,9 +57,17 @@ class FakeChatModel(BaseChatModel):
 
     @staticmethod
     def _plan(user: str) -> str:
-        # Split the inquiry on conjunctions so multi-part questions yield >1 subtask.
+        """Split the inquiry into subtasks on conjunctions.
+
+        Handles Japanese as well as English. Without the Japanese separators a
+        multi-part Japanese inquiry collapses into one subtask, which hides the
+        parallel fan-out entirely — the graph looks correct but exercises nothing.
+        """
+
         body = user.split("Inquiry:", 1)[-1].strip()
-        parts = [p.strip() for p in body.replace(" and ", "\n").split("\n") if p.strip()]
+        for sep in (" and ", "、と", "と、", "および", "ならびに", "。"):
+            body = body.replace(sep, "\n")
+        parts = [p.strip("と 　") for p in body.split("\n") if p.strip("と 　")]
         return "\n".join(parts) if parts else body
 
     @staticmethod
@@ -70,7 +78,13 @@ class FakeChatModel(BaseChatModel):
         return "search_qa"
 
     def _reflect(self, user: str) -> str:
-        subtask = user.split("Subtask:", 1)[-1].split("Answer:", 1)[0].strip()
+        # The caller may label the draft "Answer:" or "Draft answer:".
+        # Splitting on the wrong label leaves the whole prompt as the key, so the
+        # retry counter never matches and every attempt returns RETRY.
+        body = user.split("Subtask:", 1)[-1]
+        for label in ("Draft answer:", "Answer:"):
+            body = body.split(label, 1)[0]
+        subtask = body.strip()
         count = self._retry_counts.get(subtask, 0)
         if count < self.retries_before_pass:
             self._retry_counts[subtask] = count + 1
