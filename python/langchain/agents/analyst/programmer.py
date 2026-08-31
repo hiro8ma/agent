@@ -37,6 +37,7 @@ CODE_SYSTEM_PROMPT = """あなたはデータ分析のコードを書きます�
 - Python のコードだけを ```python のコードブロックで返す
 - 説明文を書かない
 - 与えられた変数だけを使う。ファイルやネットワークにアクセスしない
+- ライブラリは自分で import する（pandas は使える）
 - 最後に `result` という変数へ答えを入れる
 - print で途中経過を出す
 
@@ -118,7 +119,7 @@ def _build_generate(model: BaseChatModel) -> Any:
 
 
 def _execute(state: ProgrammerState) -> dict[str, Any]:
-    from .data import load_frames
+    from .dataset import load_frames
 
     res = run_code(state["code"], load_frames())
     return {

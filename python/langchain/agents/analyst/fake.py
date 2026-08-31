@@ -18,48 +18,32 @@ from pydantic import PrivateAttr
 
 # 1 回目。存在しない列を参照して失敗する。
 _BROKEN = '''```python
-# 平均評価値をジャンル別に出す
-from collections import defaultdict
-by_genre = defaultdict(list)
-for r in ratings:
-    m = movies[r["movie_id"]]          # 添字と id を取り違えている
-    for g in m["genre"]:               # 列名が違う（正しくは genres）
-        by_genre[g].append(r["rating"])
-result = {g: sum(v)/len(v) for g, v in by_genre.items()}
+import pandas as pd
+# チャネル別のコンバージョン率
+grouped = df.groupby("channel")["conversion_rate"].mean()   # 列名が違う（正しくは channel_id）
+result = grouped.to_dict()
 ```'''
 
 # 2 回目。直したもの。
 _FIXED = '''```python
-from collections import defaultdict
-by_id = {m["movie_id"]: m for m in movies}
-by_genre = defaultdict(list)
-for r in ratings:
-    m = by_id.get(r["movie_id"])
-    if not m:
-        continue
-    for g in m["genres"]:
-        by_genre[g].append(r["rating"])
-result = {g: round(sum(v)/len(v), 3) for g, v in sorted(by_genre.items())}
-print("ジャンル数:", len(result))
-for g, v in result.items():
-    print(f"  {g:8s} {v}")
+import pandas as pd
+grouped = df.groupby("channel_id")["conversion_rate"].agg(["mean", "count"])
+grouped = grouped.sort_values("mean", ascending=False)
+print(grouped.to_string())
+result = grouped["mean"].round(4).to_dict()
 ```'''
 
 
 # 分布の分析。1 回で通る。
 _DISTRIBUTION = '''```python
-from collections import Counter
-import statistics
-
-counts = Counter(r["rating"] for r in ratings)
-values = [r["rating"] for r in ratings]
-mean = statistics.mean(values)
-median = statistics.median(values)
-print(f"平均 {mean:.3f} / 中央値 {median:.1f}")
-for v in sorted(counts):
-    print(f"  {v}: {counts[v]:4d}")
-result = {"mean": round(mean, 3), "median": median,
-          "counts": {str(k): v for k, v in sorted(counts.items())}}
+import pandas as pd
+# 購入金額の分布。欠損があるので数を先に出す。
+col = df["purchase_amount"]
+print(f"非欠損 {col.notna().sum()} / 全体 {len(col)}")
+desc = col.describe()
+print(desc.to_string())
+result = {"mean": round(desc["mean"], 1), "median": round(col.median(), 1),
+          "missing": int(col.isna().sum())}
 ```'''
 
 
@@ -87,17 +71,17 @@ class FakeAnalystModel(BaseChatModel):
         if "データ分析の計画を立てます" in system:
             # 要求を 2 つの分析タスクに割る。1 つだと並列が見えない。
             return self._reply(
-                "- ジャンルごとの平均評価値を出す\n"
-                "- 評価値の分布を出す"
+                "- チャネル別のコンバージョン率を出す\n"
+                "- 購入金額の分布を出す"
             )
 
         if "分析結果からレポートを書きます" in system:
             return self._reply(
-                "分析の結果、ジャンル間で平均評価値に大きな差はありませんでした"
-                "（いずれも 3.9 前後）。\n"
-                "評価値そのものは高い側に偏っており、中央値が平均を上回ります。\n\n"
-                "示唆: ジャンルで出し分ける根拠は弱く、"
-                "評価値をそのまま順位付けに使うと高評価側に潰れます。"
+                "チャネル別のコンバージョン率に大きな差は見られませんでした。\n"
+                "購入金額は約 14% が欠損しており、これは購入に至らなかった行になります。\n\n"
+                "示唆: 平均購入金額をチャネル比較に使うと、"
+                "購入した人だけの平均になり、購入率の低いチャネルが有利に見えます。"
+                "件数を併記するか、購入率と分けて見る必要があります。"
             )
 
         if "コードの実行結果を検査" in system:
@@ -114,7 +98,7 @@ class FakeAnalystModel(BaseChatModel):
         # タスクの内容でコードを切り替える。
         # 分布の分析は 1 回で通し、平均の分析だけ 1 回失敗させる。
         # 全部失敗させると、成功だけの経路が試されない。
-        if "分布" in user:
+        if "購入金額" in user or "分布" in user:
             return self._reply(_DISTRIBUTION)
 
         n = self._calls.get("code", 0)

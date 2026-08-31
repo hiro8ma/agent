@@ -103,15 +103,21 @@ def analyze(req: AnalyzeRequest) -> dict[str, Any]:
 
     from ..analyst.fake import FakeAnalystModel
     from ..analyst.graph import build_graph, initial_state
+    from ..analyst.usage import Usage
 
     start = time.perf_counter()
     model: Any = FakeAnalystModel()
+    model_name = "(代替モデル)"
     if not req.use_fake:
         from core.providers.factory import select_provider
 
         model = select_provider()
+        model_name = getattr(model, "model_name", "") or getattr(model, "model", "")
 
-    app_graph = build_graph(model)
+    # 呼び出し回数と費用を数える。
+    # 請求の反映は最大 24 時間遅れるため、実行中に知るには自分で数えるしかない。
+    usage = Usage(model=model_name)
+    app_graph = build_graph(model, usage)
     state = app_graph.invoke(initial_state(req.task), {"recursion_limit": 60})
     results = sorted(state["results"], key=lambda r: r["index"])
     return {
@@ -119,6 +125,7 @@ def analyze(req: AnalyzeRequest) -> dict[str, Any]:
         "plan": state["plan"],
         "results": results,
         "report": state["report"],
+        "usage": usage.to_dict(),
     }
 
 

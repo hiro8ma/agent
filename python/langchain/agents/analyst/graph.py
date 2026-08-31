@@ -25,7 +25,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Send
 
-from .data import DATA_SUMMARY
+from .dataset import describe_dataframe
 from .programmer import build_graph as build_programmer
 from .programmer import initial_state as programmer_state
 
@@ -90,7 +90,7 @@ def _build_create_plan(model: BaseChatModel) -> Any:
         text = _invoke_text(
             model,
             PLAN_SYSTEM_PROMPT,
-            f"要求:\n{state['request']}\n\n使えるデータ:\n{DATA_SUMMARY}",
+            f"要求:\n{state['request']}\n\n使えるデータ:\n{describe_dataframe()}",
         )
         tasks = [ln.strip("-• \t") for ln in text.splitlines() if ln.strip("-• \t")]
         if not tasks:
@@ -126,7 +126,7 @@ def _build_run_programmer(model: BaseChatModel) -> Any:
     def run_programmer(state: dict[str, Any]) -> dict[str, Any]:
         task = state["task"]
         out = programmer.invoke(
-            programmer_state(task, DATA_SUMMARY), {"recursion_limit": 50}
+            programmer_state(task, describe_dataframe()), {"recursion_limit": 50}
         )
         return {
             "results": [
@@ -170,11 +170,26 @@ def _build_create_report(model: BaseChatModel) -> Any:
     return create_report
 
 
-def build_graph(model: BaseChatModel) -> CompiledStateGraph[Any, Any, Any]:
+def build_graph(
+    model: BaseChatModel, usage: Any = None
+) -> CompiledStateGraph[Any, Any, Any]:
+    """グラフを組む。usage を渡すと段ごとの呼び出し回数と費用を数える。
+
+    数える場所をモデルの手前に置く。
+    各ノードに数える処理を書くと、書き忘れた箇所が静かに漏れる。
+    """
+
+    def wrap(node: str) -> BaseChatModel:
+        if usage is None:
+            return model
+        from .usage import MeteredModel
+
+        return MeteredModel(inner=model, usage=usage, node=node)
+
     g: StateGraph[Any, Any, Any, Any] = StateGraph(AnalystState)
-    g.add_node("create_plan", _build_create_plan(model))
-    g.add_node("run_programmer", _build_run_programmer(model))
-    g.add_node("create_report", _build_create_report(model))
+    g.add_node("create_plan", _build_create_plan(wrap("create_plan")))
+    g.add_node("run_programmer", _build_run_programmer(wrap("programmer")))
+    g.add_node("create_report", _build_create_report(wrap("create_report")))
 
     g.add_edge(START, "create_plan")
     g.add_conditional_edges("create_plan", fan_out, ["run_programmer"])

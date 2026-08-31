@@ -48,7 +48,7 @@ a{color:#7fb2f0}
   </p>
 
   <div class="panel">
-    <textarea id="t">評価データの傾向を知りたい</textarea>
+    <textarea id="t">キャンペーンの傾向を知りたい</textarea>
     <button id="go" onclick="analyze()">実行</button>
     <span class="note" id="status"></span>
     <p class="note" style="margin-top:10px">
@@ -88,7 +88,14 @@ function render(d){
     <div><span class="k">完了</span><span class="v">${done} / ${d.results.length}</span></div>
     <div><span class="k">のべ試行</span><span class="v">${tries}</span></div>
     <div><span class="k">経過</span><span class="v">${d.elapsedMs} ms</span></div>
-  </div></div>`;
+    <div><span class="k">LLM 呼び出し</span><span class="v">${d.usage.calls}</span></div>
+    <div><span class="k">概算費用</span><span class="v">${d.usage.costUsd === null ? "—" : "$" + d.usage.costUsd.toFixed(5)}</span></div>
+  </div>
+  <p class="note" style="margin-top:8px">
+    段ごとの呼び出し: ${Object.entries(d.usage.perNode).map(([k,v]) => k + " " + v).join(" / ")}
+    ・モデル ${esc(d.usage.model)}
+    ${d.usage.costUsd === null ? "（単価が未登録のため費用は「—」。0 と区別する）" : ""}
+  </p></div>`;
 
   h += `<h2>レポート</h2><div class="panel"><pre>${esc(d.report)}</pre></div>`;
 
