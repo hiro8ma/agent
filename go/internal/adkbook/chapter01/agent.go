@@ -18,6 +18,8 @@ import (
 	"google.golang.org/adk/v2/model/gemini"
 	"google.golang.org/adk/v2/tool"
 	"google.golang.org/adk/v2/tool/functiontool"
+
+	"github.com/hiro8ma/agent/go/internal/guardrail"
 )
 
 // ModelName は教材のメインモデル。
@@ -77,9 +79,30 @@ const instruction = "あなたは天気を答えるエージェントです。" 
 // Python 版の root_agent にあたるが、変数名の規約ではなく
 // 呼び出し側が受け取って launcher に渡す。
 func New(ctx context.Context, apiKey string) (agent.Agent, error) {
+	a, _, err := NewWithGuardrails(ctx, apiKey)
+	return a, err
+}
+
+// NewWithGuardrails はコールバック 4 点に検査を置いたエージェントを返す。
+//
+// 検査の記録も一緒に返す。止めた件数だけでなく通した件数も残るため、
+// 「検査が動いていない」と「止めるものが無かった」を区別できる。
+//
+// 今週の実装で繰り返し踏んだのは、例外が出ないまま
+// 誤った結果が最後まで流れる形だった。
+// 通り道に検査を置くと、通った回数が記録に残る。
+func NewWithGuardrails(ctx context.Context, apiKey string) (agent.Agent, *guardrail.Log, error) {
+	a, log, err := build(ctx, apiKey)
+	if err != nil {
+		return nil, nil, err
+	}
+	return a, log, nil
+}
+
+func build(ctx context.Context, apiKey string) (agent.Agent, *guardrail.Log, error) {
 	model, err := gemini.NewModel(ctx, ModelName, &genai.ClientConfig{APIKey: apiKey})
 	if err != nil {
-		return nil, fmt.Errorf("create model: %w", err)
+		return nil, nil, fmt.Errorf("create model: %w", err)
 	}
 
 	weatherTool, err := functiontool.New(functiontool.Config{
@@ -87,8 +110,10 @@ func New(ctx context.Context, apiKey string) (agent.Agent, error) {
 		Description: "指定した都市の現在の天気を返す。都市名は英語の小文字で渡す。",
 	}, GetWeather)
 	if err != nil {
-		return nil, fmt.Errorf("create tool: %w", err)
+		return nil, nil, fmt.Errorf("create tool: %w", err)
 	}
+
+	log := guardrail.NewLog()
 
 	a, err := llmagent.New(llmagent.Config{
 		Name:        "weather_agent",
@@ -96,9 +121,23 @@ func New(ctx context.Context, apiKey string) (agent.Agent, error) {
 		Description: "都市の天気を答えるエージェント",
 		Instruction: instruction,
 		Tools:       []tool.Tool{weatherTool},
+
+		// 入力に鍵や資格情報を求める語が来たらモデルへ送らない。
+		BeforeModelCallbacks: []llmagent.BeforeModelCallback{
+			guardrail.BlockInput(log, []string{"パスワード", "APIキー", "秘密鍵"}),
+		},
+		// 都市名が落ちたまま実行すると、ツールが空文字を引いて
+		// 「登録されていない都市」を返す。落ちたことが記録に残らない。
+		BeforeToolCallbacks: []llmagent.BeforeToolCallback{
+			guardrail.RequireArgs(log, "get_weather", "city"),
+		},
+		// report が空なら成功として扱わない。
+		AfterToolCallbacks: []llmagent.AfterToolCallback{
+			guardrail.RejectEmptyResult(log, "report"),
+		},
 	})
 	if err != nil {
-		return nil, fmt.Errorf("create agent: %w", err)
+		return nil, nil, fmt.Errorf("create agent: %w", err)
 	}
-	return a, nil
+	return a, log, nil
 }
