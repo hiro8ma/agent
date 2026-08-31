@@ -37,7 +37,7 @@ func loadConfig() (*config, error) {
 		vertexProjectID: os.Getenv("VERTEX_PROJECT_ID"),
 		vertexLocation:  envOr("VERTEX_LOCATION", "asia-northeast1"),
 		geminiAPIKey:    envOr("GEMINI_API_KEY", os.Getenv("GOOGLE_API_KEY")),
-		modelName:       envOr("DEFAULT_MODEL", "gemini-2.5-flash"),
+		modelName:       envOr("DEFAULT_MODEL", "gemini-3.5-flash"),
 		budget:          agentcore.BudgetLimitsFromEnv(),
 	}
 	if c.vertexProjectID == "" && c.geminiAPIKey == "" {

@@ -52,9 +52,9 @@ func loadConfig() (*config, error) {
 	// モデル名の接頭辞がプラグインごとに異なるため、既定値もバックエンドで変える。
 	switch {
 	case c.vertexProjectID != "":
-		c.defaultModel = envOr("DEFAULT_MODEL", "vertexai/gemini-2.5-flash")
+		c.defaultModel = envOr("DEFAULT_MODEL", "vertexai/gemini-3.5-flash")
 	case c.geminiAPIKey != "":
-		c.defaultModel = envOr("DEFAULT_MODEL", "googleai/gemini-2.5-flash")
+		c.defaultModel = envOr("DEFAULT_MODEL", "googleai/gemini-3.5-flash")
 	default:
 		return nil, fmt.Errorf("VERTEX_PROJECT_ID または GEMINI_API_KEY が必要です")
 	}

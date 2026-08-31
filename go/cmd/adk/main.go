@@ -11,7 +11,8 @@ import (
 	"github.com/hiro8ma/agent/go/internal/handler/cli"
 )
 
-const modelName = "gemini-2.0-flash"
+// gemini-2.x 系は 2026-10-16 に提供終了。現行の安定版に揃える。
+const modelName = "gemini-3.5-flash"
 
 func main() {
 	ctx := context.Background()
