@@ -78,11 +78,25 @@ class FakeChatModel(BaseChatModel):
         return "search_qa"
 
     def _reflect(self, user: str) -> str:
+        """Judge the draft the way the reflect prompt asks.
+
+        The prompt says an answer that could not find the information must be
+        marked RETRY. A counter-only reflector passes after N tries regardless of
+        what the tools returned, so an empty retrieval still ends as "completed" —
+        the graph looks healthy while every subtask answered from nothing.
+
+        Checking the retrieved context here is what makes the not-found path
+        reachable at all.
+        """
+
+        if "(no matching documents)" in user:
+            return "VERDICT: RETRY\nNothing was retrieved; try the other tool or different terms."
+
         # The caller may label the draft "Answer:" or "Draft answer:".
         # Splitting on the wrong label leaves the whole prompt as the key, so the
         # retry counter never matches and every attempt returns RETRY.
         body = user.split("Subtask:", 1)[-1]
-        for label in ("Draft answer:", "Answer:"):
+        for label in ("Retrieved context:", "Draft answer:", "Answer:"):
             body = body.split(label, 1)[0]
         subtask = body.strip()
         count = self._retry_counts.get(subtask, 0)

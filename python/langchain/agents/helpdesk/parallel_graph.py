@@ -111,6 +111,14 @@ class SubtaskState(TypedDict):
     # 直前の 1 件だけを渡すと、同じ助言が繰り返される。
     # 3 回やり直しても同じツールを試し続ける形になる。
     advice: Annotated[list[str], operator.add]
+    # selected_tool と retrieved はノード間の受け渡し。
+    #
+    # TypedDict に宣言しないキーは LangGraph が黙って捨てる。
+    # 宣言を忘れると、書いた側はエラーにならず、読む側が既定値に倒れる。
+    # 実際、選んだツールが伝わらず常に既定のツールが走り、
+    # 検索結果も自己修正へ届いていなかった。どちらも例外は出ない。
+    selected_tool: str
+    retrieved: str
     subtask_results: Annotated[list[SubtaskResult], operator.add]
 
 
@@ -161,6 +169,8 @@ def fan_out(state: MainState) -> list[Send]:
                 "completed": False,
                 "tool_log": [],
                 "advice": [],
+                "selected_tool": "",
+                "retrieved": "",
                 "subtask_results": [],
             },
         )
@@ -172,14 +182,27 @@ def _build_create_answer(model: BaseChatModel) -> Any:
     def create_answer(state: MainState) -> dict[str, Any]:
         # 並列で戻るため順序が保証されない。index で並べ直す。
         results = sorted(state["subtask_results"], key=lambda r: r["index"])
+
+        # 渡すのはサブタスクの内容と回答だけにする。
+        # 対話履歴や検索結果を丸ごと渡すとトークンを食い、
+        # かつ最終回答が中間の推測を拾ってしまう。
         joined = "\n\n".join(
             f"[{r['index']}] {r['subtask']}\n{r['answer']}" for r in results
         )
-        final = _invoke_text(
-            model,
-            SYNTHESIZE_SYSTEM_PROMPT,
-            f"Original inquiry:\n{state['query']}\n\nSubtask answers:\n{joined}",
-        )
+
+        unresolved = [r for r in results if not r["completed"]]
+        user = f"Original inquiry:\n{state['query']}\n\nSubtask answers:\n{joined}"
+        if unresolved:
+            # 未解決を明示する。伏せると、最終回答が
+            # 「分からなかった」を隠して確からしい文章を作ってしまう。
+            names = "\n".join(f"- {r['subtask']}" for r in unresolved)
+            user += (
+                f"\n\nUnresolved subtasks (say so plainly and offer to keep "
+                f"investigating; do not guess and do not redirect the user to "
+                f"another team):\n{names}"
+            )
+
+        final = _invoke_text(model, SYNTHESIZE_SYSTEM_PROMPT, user)
         return {"final_answer": final}
 
     return create_answer
@@ -195,18 +218,22 @@ def _build_select_tools(model: BaseChatModel) -> Any:
         ).lower()
         # 想定外の応答はキーワード検索に倒す。
         name = "search_qa" if "search_qa" in choice else "search_manual"
+        # やり直しでは前回と違うツールを試す。
+        # 同じツールを引き直しても結果は変わらない。
+        if state["attempts"] > 0 and name == state.get("selected_tool"):
+            name = "search_qa" if name == "search_manual" else "search_manual"
         return {"draft": "", "critique": "", "attempts": state["attempts"] + 1,
-                "_tool": name}
+                "selected_tool": name}
 
     return select_tools
 
 
 def _execute_tools(state: SubtaskState) -> dict[str, Any]:
-    name = state.get("_tool", "search_manual")  # type: ignore[typeddict-item]
+    name = state.get("selected_tool", "search_manual")
     query = state["subtask"]
     context = search_qa(query) if name == "search_qa" else search_manual(query)
     return {
-        "_context": context,  # type: ignore[typeddict-unknown-key]
+        "retrieved": context,
         "tool_log": [{"attempt": str(state["attempts"]), "tool": name,
                       "query": query, "result": context}],
     }
@@ -214,7 +241,7 @@ def _execute_tools(state: SubtaskState) -> dict[str, Any]:
 
 def _build_create_subtask_answer(model: BaseChatModel) -> Any:
     def create_subtask_answer(state: SubtaskState) -> dict[str, Any]:
-        context = state.get("_context", "")  # type: ignore[typeddict-item]
+        context = state.get("retrieved", "")
         critique = state.get("critique", "")
         # やり直しのときは前回の指摘を渡す。渡さないと同じ答えを繰り返す。
         user = f"Subtask:\n{state['subtask']}\n\nRetrieved context:\n{context}"
@@ -230,7 +257,7 @@ def _build_reflect_subtask(model: BaseChatModel) -> Any:
     def reflect_subtask(state: SubtaskState) -> dict[str, Any]:
         # ツールの実行結果を必ず渡す。
         # 回答だけを見ると「情報が見つからなかった」を判定できない。
-        context = state.get("_context", "")  # type: ignore[typeddict-item]
+        context = state.get("retrieved", "")
         past = state.get("advice", [])
         user = (
             f"Subtask:\n{state['subtask']}\n\n"
@@ -254,19 +281,33 @@ def _build_reflect_subtask(model: BaseChatModel) -> Any:
     return reflect_subtask
 
 
+# 上限に達して未完だったときに残す文言。
+#
+# draft をそのまま返してはいけない。
+# 上限で諦めたときの draft は「それらしいが裏付けの無い文章」であり、
+# 最終回答がそれを確からしい材料として扱ってしまう。
+# 「見つからなかった」に置き換えて、不確実性を後段へ伝える。
+NOT_FOUND_TEMPLATE = "「{subtask}」の回答は見つかりませんでした。"
+
+
 def _commit(state: SubtaskState) -> dict[str, Any]:
     """サブタスクの結果をメイングラフへ 1 件返す。
 
     上限に達して未完のまま来ることもある。
-    その場合も completed=False で返し、握り潰さない。
-    「答えが出なかった」ことを最終回答の材料にする必要がある。
+    その場合も握り潰さず、答えが出なかったことを明示して返す。
     """
+    completed = state["completed"]
+    answer = (
+        state["draft"]
+        if completed
+        else NOT_FOUND_TEMPLATE.format(subtask=state["subtask"])
+    )
     return {
         "subtask_results": [
             SubtaskResult(
                 index=state["index"],
                 subtask=state["subtask"],
-                answer=state["draft"],
+                answer=answer,
                 attempts=state["attempts"],
                 completed=state["completed"],
                 tool_log=list(state.get("tool_log", [])),
