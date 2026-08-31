@@ -17,15 +17,30 @@ from langchain_core.outputs import ChatGeneration, ChatResult
 from pydantic import PrivateAttr
 
 # 1 回目。存在しない列を参照して失敗する。
-_BROKEN = '''```python
+_BROKEN = '''## 達成条件
+チャネルごとの平均コンバージョン率が、3 つのチャネルすべてについて出ている。
+
+## 実行計画
+- チャネルでグループ化する
+- conversion_rate の平均を取る
+
+## コード
+```python
 import pandas as pd
-# チャネル別のコンバージョン率
 grouped = df.groupby("channel")["conversion_rate"].mean()   # 列名が違う（正しくは channel_id）
 result = grouped.to_dict()
 ```'''
 
 # 2 回目。直したもの。
-_FIXED = '''```python
+_FIXED = '''## 達成条件
+チャネルごとの平均コンバージョン率が、3 つのチャネルすべてについて出ている。
+
+## 実行計画
+- channel_id でグループ化する
+- 平均と件数を取り、平均の降順に並べる
+
+## コード
+```python
 import pandas as pd
 grouped = df.groupby("channel_id")["conversion_rate"].agg(["mean", "count"])
 grouped = grouped.sort_values("mean", ascending=False)
@@ -35,7 +50,15 @@ result = grouped["mean"].round(4).to_dict()
 
 
 # 分布の分析。1 回で通る。
-_DISTRIBUTION = '''```python
+_DISTRIBUTION = '''## 達成条件
+購入金額の平均・中央値・欠損件数が出ている。
+
+## 実行計画
+- 欠損の件数を数える
+- describe で分布を出す
+
+## コード
+```python
 import pandas as pd
 # 購入金額の分布。欠損があるので数を先に出す。
 col = df["purchase_amount"]
@@ -69,10 +92,23 @@ class FakeAnalystModel(BaseChatModel):
         user = user if isinstance(user, str) else ""
 
         if "データ分析の計画を立てます" in system:
-            # 要求を 2 つの分析タスクに割る。1 つだと並列が見えない。
+            # 要求を 2 つの仮説に割る。1 つだと並列が見えない。
+            #
+            # 作業ではなく主張の形にする。
+            # 「コンバージョン率を出す」は検証しても何も言えない。
             return self._reply(
-                "- チャネル別のコンバージョン率を出す\n"
-                "- 購入金額の分布を出す"
+                "目的: 広告費の配分を見直す\n"
+                "達成条件: チャネルごとの費用対効果が比較でき、"
+                "増やすべきチャネルが 1 つ以上示されている\n"
+                "\n"
+                "- 仮説: チャネルによってコンバージョン率に差がある\n"
+                "  目的: 予算を寄せる先を決める\n"
+                "  方針: channel_id ごとに conversion_rate の平均を出す\n"
+                "  グラフ: 棒グラフ\n"
+                "- 仮説: 購入金額は少数の高額購入に偏っている\n"
+                "  目的: 平均で語ってよいかを確かめる\n"
+                "  方針: purchase_amount の分布と欠損を見る\n"
+                "  グラフ: ヒストグラム"
             )
 
         if "分析結果からレポートを書きます" in system:
@@ -90,10 +126,13 @@ class FakeAnalystModel(BaseChatModel):
             empty = "result:\n(なし)" in user
             if failed or empty:
                 return self._reply(
-                    "VERDICT: RETRY\n"
-                    "実行に失敗しているか結果が空です。列名と添字の扱いを見直してください。"
+                    "COMPLETED: false\n"
+                    "OBSERVATION: 実行に失敗しているか結果が空です。"
+                    "列名と添字の扱いを見直してください。"
                 )
-            return self._reply("VERDICT: PASS\n")
+            return self._reply(
+                "COMPLETED: true\nOBSERVATION: 達成条件を満たしています。"
+            )
 
         # タスクの内容でコードを切り替える。
         # 分布の分析は 1 回で通し、平均の分析だけ 1 回失敗させる。

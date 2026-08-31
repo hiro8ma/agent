@@ -26,41 +26,63 @@ from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Send
 
 from .dataset import describe_dataframe
+from .plan import Task, parse_plan
 from .programmer import build_graph as build_programmer
 from .programmer import initial_state as programmer_state
 
 PLAN_SYSTEM_PROMPT = """あなたはデータ分析の計画を立てます。
 
-以下を守ってください。
+レポートは 60 分の会議で使われます。
+方針を決めるための叩き台になるため、作業の一覧ではなく
+**検証できる仮説**を立ててください。
 
-- 分析タスクを 1 行ずつ、箇条書きで返す
-- 説明文を書かない
-- 必要最小限にする。多すぎると不要な分析が混ざる
-- 同じ内容を重複して調べない
-- 1 つのタスクは 1 つのコードで完結する粒度にする
+要求には曖昧な部分があります。意図を推測して補ってください。
 
-例
-要求: 売上の傾向を知りたい
-計画:
-- 月別の売上合計を出す
-- 商品カテゴリ別の売上構成比を出す
+次の形式で返してください。説明文は書かないでください。
+
+目的: 要求から読み取れる問い合わせの目的
+達成条件: 何が示されればこの要求に答えたと言えるか
+
+- 仮説: 検証できる形の主張。「〜を出す」ではなく「〜は〜より高い」
+  目的: この仮説を確かめる理由
+  方針: どの列をどう集計するか
+  グラフ: 棒グラフ / 折れ線グラフ / ヒストグラム / 散布図 のいずれか
+
+仮説は必要最小限にしてください。重複させないでください。
+1 つの仮説は 1 本のコードで検証できる粒度にしてください。
 """
 
 REPORT_SYSTEM_PROMPT = """あなたは分析結果からレポートを書きます。
+レポートは 60 分の会議で方針を決めるための資料になります。
 
 以下を守ってください。
 
+- 仮説ごとにセクションを分け、検証結果と示唆を書く
 - 各分析の結果を数字で示す
 - **数字だけで終わらせず、そこから言える示唆を書く**
 - 不確実な情報や推測を含めない
 - 分析できなかった項目は、その旨を素直に書く
 - 読み手は分析の専門家ではない
+- **最後に達成条件を振り返り、足りない情報を次にやることとして書く**
+
+次の構成にしてください。
+
+# データ分析レポート
+## 分析の目的
+## 分析結果詳細
+### 仮説 1: ...
+（検証結果と示唆）
+## まとめと考察
+## ネクストアクション
 """
 
 
 class AnalysisResult(TypedDict):
     index: int
     task: str
+    purpose: str
+    chart_type: str
+    observation: str
     attempts: int
     completed: bool
     code: str
@@ -71,7 +93,15 @@ class AnalysisResult(TypedDict):
 
 class AnalystState(TypedDict):
     request: str
-    plan: list[str]
+    # plan は仮説の一覧。作業ではなく主張を並べる。
+    plan: list[dict[str, str]]
+    purpose: str
+    # achievement は計画全体の達成条件。レポートの基準になる。
+    #
+    # コード 1 本ごとの達成条件（Program.achievement_condition）とは別物。
+    # 個々のコードが通っても問い合わせに答えていない、
+    # という結果を防ぐには両方が要る。
+    achievement: str
     results: Annotated[list[AnalysisResult], operator.add]
     report: str
 
@@ -92,10 +122,17 @@ def _build_create_plan(model: BaseChatModel) -> Any:
             PLAN_SYSTEM_PROMPT,
             f"要求:\n{state['request']}\n\n使えるデータ:\n{describe_dataframe()}",
         )
-        tasks = [ln.strip("-• \t") for ln in text.splitlines() if ln.strip("-• \t")]
+        parsed = parse_plan(text)
+        tasks = [t.model_dump() for t in parsed.tasks]
         if not tasks:
-            tasks = [state["request"]]
-        return {"plan": tasks}
+            # 仮説が読み取れなくても分析は進める。
+            # 要求そのものを 1 件の仮説として扱う。
+            tasks = [Task(hypothesis=state["request"]).model_dump()]
+        return {
+            "plan": tasks,
+            "purpose": parsed.purpose,
+            "achievement": parsed.achievement,
+        }
 
 
     return create_plan
@@ -125,14 +162,26 @@ def _build_run_programmer(model: BaseChatModel) -> Any:
 
     def run_programmer(state: dict[str, Any]) -> dict[str, Any]:
         task = state["task"]
+        # 仮説と方針とグラフ種別をまとめてコード生成へ渡す。
+        # グラフ種別を渡すのは自由度を下げるため。
+        # 「いい感じに可視化して」だと毎回違うものが出て比較できない。
+        request = task["hypothesis"]
+        if task.get("description"):
+            request += f"\n分析方針: {task['description']}"
+        if task.get("chart_type"):
+            request += f"\nグラフ: {task['chart_type']} で描く"
+
         out = programmer.invoke(
-            programmer_state(task, describe_dataframe()), {"recursion_limit": 50}
+            programmer_state(request, describe_dataframe()), {"recursion_limit": 50}
         )
         return {
             "results": [
                 AnalysisResult(
                     index=state["index"],
-                    task=task,
+                    task=task["hypothesis"],
+                    purpose=task.get("purpose", ""),
+                    chart_type=task.get("chart_type", ""),
+                    observation=out.get("observation", ""),
                     attempts=out["attempts"],
                     completed=out["completed"],
                     code=out["code"],
@@ -154,11 +203,19 @@ def _build_create_report(model: BaseChatModel) -> Any:
         # 中間の試行錯誤をレポートが拾うと、
         # 失敗したコードの出力まで根拠として扱われる。
         body = "\n\n".join(
-            f"[{r['index']}] {r['task']}\n"
-            + (r["stdout"] or r["result"] or "(結果なし)")
+            f"仮説 {r['index'] + 1}: {r['task']}\n"
+            f"検証目的: {r['purpose'] or '(なし)'}\n"
+            f"結果:\n{r['stdout'] or r['result'] or '(結果なし)'}\n"
+            f"レビューの所見: {r['observation'] or '(なし)'}"
             for r in results
         )
-        user = f"要求:\n{state['request']}\n\n分析結果:\n{body}"
+        user = (
+            f"要求:\n{state['request']}\n\n"
+            f"分析の目的:\n{state.get('purpose') or '(なし)'}\n\n"
+            f"達成条件（ネクストアクションはこれを基準に書く）:\n"
+            f"{state.get('achievement') or '(なし)'}\n\n"
+            f"分析結果:\n{body}"
+        )
 
         failed = [r for r in results if not r["completed"]]
         if failed:
@@ -199,4 +256,11 @@ def build_graph(
 
 
 def initial_state(request: str) -> AnalystState:
-    return {"request": request, "plan": [], "results": [], "report": ""}
+    return {
+        "request": request,
+        "plan": [],
+        "purpose": "",
+        "achievement": "",
+        "results": [],
+        "report": "",
+    }

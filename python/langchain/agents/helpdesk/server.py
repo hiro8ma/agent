@@ -123,6 +123,8 @@ def analyze(req: AnalyzeRequest) -> dict[str, Any]:
     return {
         "elapsedMs": round((time.perf_counter() - start) * 1000, 1),
         "plan": state["plan"],
+        "purpose": state.get("purpose", ""),
+        "achievement": state.get("achievement", ""),
         "results": results,
         "report": state["report"],
         "usage": usage.to_dict(),

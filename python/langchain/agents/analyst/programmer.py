@@ -18,7 +18,6 @@
 from __future__ import annotations
 
 import operator
-import re
 from typing import Annotated, Any, TypedDict
 
 from langchain_core.language_models import BaseChatModel
@@ -26,34 +25,40 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
+from .program import parse_program
+from .review import parse_review
 from .sandbox import run_code
 
 MAX_ATTEMPTS = 3
 
-CODE_SYSTEM_PROMPT = """あなたはデータ分析のコードを書きます。
-
-以下を必ず守ってください。
-
-- Python のコードだけを ```python のコードブロックで返す
-- 説明文を書かない
-- 与えられた変数だけを使う。ファイルやネットワークにアクセスしない
-- ライブラリは自分で import する（pandas は使える）
-- 最後に `result` という変数へ答えを入れる
-- print で途中経過を出す
-
-前回のコードが失敗している場合は、エラーの内容を読んで直したコードを返してください。
-同じコードを繰り返さないでください。
-"""
-
 REVIEW_SYSTEM_PROMPT = """あなたはコードの実行結果を検査します。
+
+**生成時に宣言された達成条件を基準に判定してください。**
+条件が示されている場合、それを満たしているかだけを見ます。
+自分で新しい基準を作らないでください。
 
 2 行で答えてください。
 
-- 1 行目: タスクに正しく答えられていれば `VERDICT: PASS`、そうでなければ `VERDICT: RETRY`
+- 1 行目: 達成条件を満たしていれば `VERDICT: PASS`、そうでなければ `VERDICT: RETRY`
 - 2 行目: RETRY のとき、何が問題でどう直すかを 1 文で
 
-実行が失敗した場合、結果が空の場合、タスクと無関係な値の場合は RETRY にしてください。
+実行が失敗した場合、結果が空の場合、
+`df` 以外のデータを作って分析している場合は RETRY にしてください。
 """
+
+
+def _code_system_prompt(data_info: str) -> str:
+    """コード生成のシステムプロンプトをテンプレートから組む。
+
+    プロンプトをコード内の文字列に埋めると、
+    文言の変更がコードの変更になる。ファイルに出す。
+    """
+
+    from .dataset import load_template
+    from pathlib import Path
+
+    path = Path(__file__).parent / "prompts" / "generate_code.jinja"
+    return load_template(path).render(data_info=data_info, save_dir="")
 
 
 class ProgrammerState(TypedDict):
@@ -68,6 +73,18 @@ class ProgrammerState(TypedDict):
     # data_summary は解析対象の説明。コードを書くのに要る。
     data_summary: str
     code: str
+    # achievement_condition はコード生成時に宣言された達成条件。
+    #
+    # レビューの基準になる。無いと「正しいか」の判定に
+    # 基準が無く、例外が出なければ通すだけになる。
+    achievement_condition: str
+    execution_plan: str
+    # observation はレビューの所見。レポートへ渡す。
+    #
+    # 宣言を忘れると LangGraph が黙って捨てる。
+    # ノードは値を返し、例外も出ず、受け取る側だけが空になる。
+    # この状態は今週 3 回起きている。鍵を足すときは必ずここも足す。
+    observation: str
     attempts: int
     completed: bool
     exec_log: Annotated[list[dict[str, str]], operator.add]
@@ -86,17 +103,6 @@ def _invoke_text(model: BaseChatModel, system: str, user: str) -> str:
     return "\n".join(str(p) for p in parts).strip()
 
 
-def _extract_code(text: str) -> str:
-    """返答からコードブロックを取り出す。
-
-    説明文が混ざったまま実行すると必ず SyntaxError になる。
-    「コードだけ返せ」と指示しても混ざるので、受け取る側で外す。
-    """
-
-    blocks = re.findall(r"```(?:python)?\s*\n(.*?)```", text, re.S)
-    return blocks[0].strip() if blocks else text.strip()
-
-
 def _build_generate(model: BaseChatModel) -> Any:
     def generate_code(state: ProgrammerState) -> dict[str, Any]:
         user = (
@@ -112,8 +118,14 @@ def _build_generate(model: BaseChatModel) -> Any:
             if state["advice"]:
                 joined = "\n".join(f"- {a}" for a in state["advice"])
                 user += f"\n\n指摘:\n{joined}"
-        text = _invoke_text(model, CODE_SYSTEM_PROMPT, user)
-        return {"code": _extract_code(text), "attempts": state["attempts"] + 1}
+        text = _invoke_text(model, _code_system_prompt(state["data_summary"]), user)
+        program = parse_program(text)
+        return {
+            "code": program.code,
+            "achievement_condition": program.achievement_condition,
+            "execution_plan": program.execution_plan,
+            "attempts": state["attempts"] + 1,
+        }
 
     return generate_code
 
@@ -129,6 +141,7 @@ def _execute(state: ProgrammerState) -> dict[str, Any]:
         "exec_log": [
             {
                 "attempt": str(state["attempts"]),
+                "condition": state.get("achievement_condition", ""),
                 "code": state["code"],
                 "ok": str(res.ok),
                 "stdout": res.stdout[:600],
@@ -146,8 +159,10 @@ def _build_review(model: BaseChatModel) -> Any:
         # データ概要も渡す。スキーマを知らないと
         # 「正しい列を使ったか」を判定できず、
         # 例外が出なければ通す判定しかできなくなる。
+        condition = state.get("achievement_condition", "")
         user = (
             f"タスク:\n{state['task']}\n\n"
+            f"達成条件（生成時に宣言されたもの）:\n{condition or '(宣言なし)'}\n\n"
             f"使えるデータ:\n{state['data_summary']}\n\n"
             f"コード:\n```python\n{state['code']}\n```\n\n"
             f"標準出力:\n{state['stdout'] or '(なし)'}\n\n"
@@ -158,12 +173,15 @@ def _build_review(model: BaseChatModel) -> Any:
             joined = "\n".join(f"- {a}" for a in state["advice"])
             user += f"\n\nすでに出した指摘（繰り返さない）:\n{joined}"
 
-        verdict = _invoke_text(model, REVIEW_SYSTEM_PROMPT, user)
-        first = verdict.strip().splitlines()[0].upper() if verdict.strip() else ""
-        ok = "PASS" in first
-        if ok:
-            return {"completed": True}
-        return {"completed": False, "advice": [verdict]}
+        text = _invoke_text(model, REVIEW_SYSTEM_PROMPT, user)
+        r = parse_review(text)
+        if r.is_completed:
+            return {"completed": True, "observation": r.observation}
+        return {
+            "completed": False,
+            "observation": r.observation,
+            "advice": [r.observation],
+        }
 
     return review
 
@@ -194,6 +212,9 @@ def initial_state(task: str, data_summary: str) -> ProgrammerState:
         "task": task,
         "data_summary": data_summary,
         "code": "",
+        "achievement_condition": "",
+        "execution_plan": "",
+        "observation": "",
         "attempts": 0,
         "completed": False,
         "exec_log": [],

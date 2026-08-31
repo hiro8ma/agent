@@ -97,17 +97,29 @@ function render(d){
     ${d.usage.costUsd === null ? "（単価が未登録のため費用は「—」。0 と区別する）" : ""}
   </p></div>`;
 
+  if(d.purpose || d.achievement){
+    h += `<h2>分析計画</h2><div class="panel">
+      <div><span class="k">目的</span><span class="v">${esc(d.purpose||"—")}</span></div>
+      <div style="margin-top:6px"><span class="k">達成条件</span><span class="v">${esc(d.achievement||"—")}</span></div>
+      <p class="note" style="margin-top:8px">
+        計画の達成条件はレポートの基準。コード 1 本ごとの達成条件とは別物。
+      </p></div>`;
+  }
+
   h += `<h2>レポート</h2><div class="panel"><pre>${esc(d.report)}</pre></div>`;
 
   h += `<h2>分析タスクごとの経過</h2>`;
   for(const r of d.results){
-    h += `<div class="panel step ${r.completed?"ok":"ng"}">
+    h += `<div class="panel step ${r.completed?"ok":"ng"}">`;
+    if(r.chart_type) h += `<p class="note">グラフ想定: ${esc(r.chart_type)}${r.purpose ? " ・検証目的: " + esc(r.purpose) : ""}</p>`;
+    h += `
       <h3>[${r.index}] ${esc(r.task)}
         <span class="badge ${r.completed?"ok":"ng"}">${r.completed?"完了":"未完了"}</span>
         <span class="note">試行 ${r.attempts}</span></h3>`;
     for(const e of (r.exec_log || [])){
       const ok = e.ok === "True";
-      h += `<p class="note" style="margin-top:10px">試行 ${e.attempt}
+      if(e.condition) h += `<p class="note" style="margin-top:10px">達成条件: ${esc(e.condition)}</p>`;
+      h += `<p class="note" style="margin-top:6px">試行 ${e.attempt}
         <span class="badge ${ok?"ok":"ng"}">${ok?"成功":"失敗"}</span></p>
         <pre>${esc(e.code)}</pre>`;
       if(e.error) h += `<pre class="note">${esc(e.error)}</pre>`;

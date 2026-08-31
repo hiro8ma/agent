@@ -111,4 +111,7 @@ def load_frames() -> dict:
     CSV のパスを渡して向こうで読ませる形になる。
     """
 
-    return {"df": pd.read_csv(ensure_dataset())}
+    # _csv_path はリモート実行でファイルを送るための経路。
+    # ローカル実行では使わないが、同じ関数で両方に対応させる。
+    path = ensure_dataset()
+    return {"df": pd.read_csv(path), "_csv_path": str(path)}
