@@ -73,17 +73,10 @@ class ProgrammerState(TypedDict):
     # data_summary は解析対象の説明。コードを書くのに要る。
     data_summary: str
     code: str
-    # achievement_condition はコード生成時に宣言された達成条件。
-    #
-    # レビューの基準になる。無いと「正しいか」の判定に
-    # 基準が無く、例外が出なければ通すだけになる。
+    # achievement_condition はレビューの判定基準。
     achievement_condition: str
     execution_plan: str
-    # observation はレビューの所見。レポートへ渡す。
-    #
-    # 宣言を忘れると LangGraph が黙って捨てる。
-    # ノードは値を返し、例外も出ず、受け取る側だけが空になる。
-    # この状態は今週 3 回起きている。鍵を足すときは必ずここも足す。
+    # 宣言しない鍵は LangGraph が黙って捨てる。
     observation: str
     attempts: int
     completed: bool

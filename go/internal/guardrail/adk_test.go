@@ -72,9 +72,6 @@ func TestAfterModelRedacts(t *testing.T) {
 }
 
 // TestBeforeToolRequiresArgs は必須引数の欠落を実行前に捕まえることを見る。
-//
-// 引数が落ちたまま実行すると、ツールが空文字を既定値として扱い、
-// それらしい結果を返す。実行前なら落ちたことが記録に残る。
 func TestBeforeToolRequiresArgs(t *testing.T) {
 	log := NewLog()
 	cb := RequireArgs(log, "get_weather", "city")
@@ -103,10 +100,6 @@ func TestBeforeToolRequiresArgs(t *testing.T) {
 }
 
 // TestAfterToolRejectsEmpty は空の結果を失敗として扱うことを見る。
-//
-// 今週いちばん効く検査になる。
-// 検索が 0 件でもエラーにならず、回数だけ数えて次へ進む形を
-// ヘルプデスクと分析の両方で踏んだ。
 func TestAfterToolRejectsEmpty(t *testing.T) {
 	log := NewLog()
 	cb := RejectEmptyResult(log, "documents")
@@ -138,10 +131,6 @@ func TestAfterToolRejectsEmpty(t *testing.T) {
 }
 
 // TestLogCountsBothSides は通した数も数えることを見る。
-//
-// 止めた数だけを見ると、検査が動いていないのと
-// 「止めるものが無かった」の区別がつかない。
-// 今週それで 3 回止まった。
 func TestLogCountsBothSides(t *testing.T) {
 	log := NewLog()
 	cb := BlockInput(log, []string{"禁止"})

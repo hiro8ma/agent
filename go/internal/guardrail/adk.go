@@ -1,12 +1,7 @@
 // ADK 側の適用。コールバック 4 点に規則を載せる。
 //
-//	before_model  LLM へ送る前
-//	after_model   LLM の出力を受けた後
-//	before_tool   ツール実行の前
-//	after_tool    ツール実行の後
-//
-// 4 点に分かれているため、どの段の検査かがシグネチャで決まる。
-// before で見た値を after で使うには、外の状態を持つ必要がある。
+// どの段の検査かがシグネチャで決まる代わりに、
+// before で見た値を after で使うには外の状態が要る。
 package guardrail
 
 import (
@@ -23,8 +18,7 @@ import (
 
 // BlockInput は禁止語を含む入力を LLM へ渡す前に止める。
 //
-// 返り値に LLMResponse を入れるとモデルの呼び出しを飛ばし、
-// その内容が応答になる。止めた理由を利用者へ返せる。
+// LLMResponse を返すとモデルの呼び出しを飛ばし、その内容が応答になる。
 func BlockInput(log *Log, banned []string) llmagent.BeforeModelCallback {
 	return func(ctx agent.Context, req *model.LLMRequest) (*model.LLMResponse, error) {
 		text := requestText(req)
@@ -41,9 +35,7 @@ func BlockInput(log *Log, banned []string) llmagent.BeforeModelCallback {
 }
 
 // RedactOutput は出力に現れた機微な語を伏せる。
-//
-// 止めるのではなく書き換える。
-// 応答そのものは返しつつ、外へ出してはいけない部分だけを消す。
+// 止めずに書き換え、外へ出してはいけない部分だけを消す。
 func RedactOutput(log *Log, secrets []string) llmagent.AfterModelCallback {
 	return func(ctx agent.Context, resp *model.LLMResponse, err error) (*model.LLMResponse, error) {
 		if err != nil || resp == nil || resp.Content == nil {
@@ -75,9 +67,8 @@ func RedactOutput(log *Log, secrets []string) llmagent.AfterModelCallback {
 
 // RequireArgs はツールの必須引数が埋まっているかを実行前に確かめる。
 //
-// モデルは引数を落とす。落ちたまま実行すると、
-// ツール側が空文字を既定値として扱い、それらしい結果を返す。
-// 実行前に止めれば、落ちたことがログに残る。
+// 引数が落ちたまま実行すると、ツール側が空文字を既定値として扱い
+// それらしい結果を返す。実行前に止めれば落ちたことが記録に残る。
 func RequireArgs(log *Log, toolName string, required ...string) llmagent.BeforeToolCallback {
 	return func(ctx agent.Context, t tool.Tool, args map[string]any) (map[string]any, error) {
 		if t.Name() != toolName {
@@ -102,10 +93,7 @@ func RequireArgs(log *Log, toolName string, required ...string) llmagent.BeforeT
 
 // RejectEmptyResult はツールが空を返したことを失敗として扱う。
 //
-// これが今週いちばん効く検査になる。
-// 検索が 0 件でもエラーにはならず、回数だけ数えて次へ進む形を
-// ヘルプデスクと分析の両方で踏んだ。
-// 空は正常な結果ではなく、判定に渡してはいけない値になる。
+// 検索の 0 件はエラーにならず、そのまま次の判定へ流れる。
 func RejectEmptyResult(log *Log, keys ...string) llmagent.AfterToolCallback {
 	return func(ctx agent.Context, t tool.Tool, args, result map[string]any, err error) (map[string]any, error) {
 		if err != nil {
@@ -126,9 +114,6 @@ func RejectEmptyResult(log *Log, keys ...string) llmagent.AfterToolCallback {
 }
 
 // refuse はモデルを呼ばずに返す応答を作る。
-//
-// before_model が非 nil を返すとモデルの呼び出しが飛ぶ。
-// 止めた事実を利用者へ伝えるため、理由を本文に入れる。
 func refuse(msg string) *model.LLMResponse {
 	return &model.LLMResponse{
 		Content: &genai.Content{

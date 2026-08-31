@@ -43,7 +43,6 @@ func describer(t *testing.T) *i2t.Describer {
 //
 // 左右を同数にすると、鏡像テストで「反転に追随した場合」と「しなかった場合」が
 // 同じ言及数になり区別できない。満点が出るが何も測っていない状態になる。
-// 実測で左 1 右 1 の配置を使って踏んだ。
 var basicScene = i2t.Scene{
 	Name: "基本", Width: 480, Height: 480,
 	Objects: []i2t.Object{

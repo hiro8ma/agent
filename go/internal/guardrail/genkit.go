@@ -1,18 +1,8 @@
-// Genkit 側の適用。同じ規則を 2 つのラッパーへ載せる。
+// Genkit 側の適用。WrapModel と WrapTool の 2 つで包む。
 //
-// ADK が before/after × model/tool の 4 点に分けるのに対し、
-// Genkit は WrapModel と WrapTool の 2 つで包む。
-// 前と後は 1 つの関数の中で next の前後に置く。
-//
-//	ADK     4 つの関数。どの段かがシグネチャで決まる
-//	Genkit  2 つの関数。next の呼び出しで前後が分かれる
-//
-// 包む形は、前で見た値を後でそのまま使える。
-// ADK では before で見た値を after へ渡すのに外の状態が要る。
-// 分ける形は、書き分けが強制される代わりに受け渡しに手間が乗る。
-//
-// どちらも「止める」は同じ考え方になる。
-// ADK は非 nil を返して次を飛ばし、Genkit は next を呼ばずに返す。
+// ADK が 4 点に分けるところを、next の前後で段を分ける。
+// 前で見た値を後でそのまま使える。
+// 止め方も違い、ADK は非 nil を返し、Genkit は next を呼ばない。
 package guardrail
 
 import (
@@ -29,13 +19,13 @@ import (
 // secrets は出力に現れたら伏せる語になる。
 func ModelGuard(log *Log, banned, secrets []string) func(context.Context, *ai.ModelParams, ai.ModelNext) (*ai.ModelResponse, error) {
 	return func(ctx context.Context, p *ai.ModelParams, next ai.ModelNext) (*ai.ModelResponse, error) {
-		// next の前が ADK の before_model にあたる。
+		// next の前が before_model にあたる。
 		text := promptText(p.Request)
 		for _, w := range banned {
 			if w != "" && strings.Contains(text, w) {
 				log.add(Verdict{Stage: "before_model", Rule: "禁止語", Blocked: true,
 					Detail: fmt.Sprintf("入力に %q が含まれる", w)})
-				// next を呼ばずに返すとモデルを呼ばない。
+				// next を呼ばなければモデルは呼ばれない。
 				return &ai.ModelResponse{
 					Message: ai.NewModelTextMessage(
 						fmt.Sprintf("この内容には回答できません（%s）", w)),
@@ -50,7 +40,6 @@ func ModelGuard(log *Log, banned, secrets []string) func(context.Context, *ai.Mo
 		}
 
 		// next の後が after_model にあたる。
-		// 前で見た text がそのまま使える。ADK では外の状態が要る。
 		hit := ""
 		if resp != nil && resp.Message != nil {
 			for _, part := range resp.Message.Content {

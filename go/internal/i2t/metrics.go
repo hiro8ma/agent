@@ -176,7 +176,7 @@ func MirrorConsistency(original, mirrored string, threshold float64) Score {
 	}
 
 	// 左右が同数だと、反転に追随した場合としなかった場合が同じ数になり区別できない。
-	// 満点が出るが何も測っていない。実測で左 1 右 1 の配置を使って踏んだ。
+	// 左 1 右 1 の配置では満点が出るが何も測っていない。
 	// 判別できない条件では採点しない。
 	if lo == ro && lm == rm {
 		return Score{Metric: "MirrorConsistency", Threshold: threshold,

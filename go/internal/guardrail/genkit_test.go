@@ -15,10 +15,6 @@ func userReq(text string) *ai.ModelParams {
 }
 
 // TestGenkitModelGuard は ADK 側と同じ規則が Genkit でも効くことを見る。
-//
-// 止め方の書き方は違う。
-// ADK は非 nil を返して次を飛ばし、Genkit は next を呼ばずに返す。
-// 結果として得られる振る舞いは同じになる。
 func TestGenkitModelGuard(t *testing.T) {
 	log := NewLog()
 	g := ModelGuard(log, []string{"パスワード"}, []string{"AKIA0000EXAMPLE"})
@@ -114,11 +110,8 @@ func TestGenkitToolGuard(t *testing.T) {
 	}
 }
 
-// TestSameRulesBothRuntimes は、同じ入力に対して
+// TestSameRulesBothRuntimes は同じ入力に対して
 // ADK と Genkit が同じ判断をすることを見る。
-//
-// 規則を 1 か所に書き、適用だけを分けている。
-// 片方だけ直すと運用でずれるため、同じ表で確かめる。
 func TestSameRulesBothRuntimes(t *testing.T) {
 	banned := []string{"パスワード"}
 

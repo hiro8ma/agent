@@ -84,13 +84,7 @@ func New(ctx context.Context, apiKey string) (agent.Agent, error) {
 }
 
 // NewWithGuardrails はコールバック 4 点に検査を置いたエージェントを返す。
-//
-// 検査の記録も一緒に返す。止めた件数だけでなく通した件数も残るため、
-// 「検査が動いていない」と「止めるものが無かった」を区別できる。
-//
-// 今週の実装で繰り返し踏んだのは、例外が出ないまま
-// 誤った結果が最後まで流れる形だった。
-// 通り道に検査を置くと、通った回数が記録に残る。
+// 検査の記録も返す。
 func NewWithGuardrails(ctx context.Context, apiKey string) (agent.Agent, *guardrail.Log, error) {
 	a, log, err := build(ctx, apiKey)
 	if err != nil {
@@ -122,16 +116,13 @@ func build(ctx context.Context, apiKey string) (agent.Agent, *guardrail.Log, err
 		Instruction: instruction,
 		Tools:       []tool.Tool{weatherTool},
 
-		// 入力に鍵や資格情報を求める語が来たらモデルへ送らない。
 		BeforeModelCallbacks: []llmagent.BeforeModelCallback{
 			guardrail.BlockInput(log, []string{"パスワード", "APIキー", "秘密鍵"}),
 		},
-		// 都市名が落ちたまま実行すると、ツールが空文字を引いて
-		// 「登録されていない都市」を返す。落ちたことが記録に残らない。
+		// 都市名が落ちると空文字で引き、「登録されていない都市」が返る。
 		BeforeToolCallbacks: []llmagent.BeforeToolCallback{
 			guardrail.RequireArgs(log, "get_weather", "city"),
 		},
-		// report が空なら成功として扱わない。
 		AfterToolCallbacks: []llmagent.AfterToolCallback{
 			guardrail.RejectEmptyResult(log, "report"),
 		},
