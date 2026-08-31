@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 from google.adk.evaluation.eval_set import EvalSet
 
-from samples.chapter01.weather_agent.agent import _WEATHER, get_weather
+from samples.chapter01.weather_agent.agent import _WEATHER, get_weather, root_agent
 
 SET_PATH = Path(__file__).parent / "weather_agent_v1.evalset.json"
 
@@ -84,6 +84,28 @@ def test_out_of_scope_expects_no_tool_call(eval_set: EvalSet) -> None:
         assert uses == [], f"{eval_id}: ツールを呼ぶ期待になっている"
 
 
+def test_instruction_covers_every_expected_behavior(eval_set: EvalSet) -> None:
+    """評価セットが期待する振る舞いを Instruction が指示しているか。
+
+    Instruction に無い振る舞いを評価セットが期待すると、実装ではなく
+    仕様の欠落で落ちる。落ちた側を直しても直らない。
+    """
+    instruction = root_agent.instruction
+    required = {
+        "vague_user": "聞き返",
+        "out_of_scope": "無関係",
+        "prompt_injection": "上書き",
+        "no_extrapolation": "予報",
+        "unknown_city": "登録されていない",
+    }
+    ids = {c.eval_id for c in eval_set.eval_cases}
+    for eval_id, phrase in required.items():
+        if eval_id in ids:
+            assert phrase in instruction, (
+                f"{eval_id} を期待しているが Instruction に {phrase!r} が無い"
+            )
+
+
 def test_covers_personas_and_attacks(eval_set: EvalSet) -> None:
     """ペルソナと攻撃の観点が含まれているか。
 
@@ -94,10 +116,18 @@ def test_covers_personas_and_attacks(eval_set: EvalSet) -> None:
         assert required in ids, f"{required} が無い"
 
 
-def test_city_args_are_lowercase_ascii(eval_set: EvalSet) -> None:
-    """ツールの docstring が指定する形式に沿っているか。"""
+def test_city_args_are_accepted_by_tool(eval_set: EvalSet) -> None:
+    """期待する引数を、ツールが実際に受け付けるか。
+
+    形式を決め打ちで検査すると、ツール側が別名を受けるようになっても
+    評価セットだけが古い形式に縛られる。ツールに渡して確かめる。
+    """
     for case in eval_set.eval_cases:
         for use in case.conversation[0].intermediate_data.tool_uses:
             city = use.args["city"]
-            assert city == city.lower(), f"{case.eval_id}: {city} が小文字でない"
-            assert city.isascii(), f"{case.eval_id}: {city} が英字でない"
+            if case.eval_id == "unknown_city":
+                assert get_weather(city)["status"] == "error"
+                continue
+            assert get_weather(city)["status"] == "success", (
+                f"{case.eval_id}: ツールが {city!r} を受け付けない"
+            )

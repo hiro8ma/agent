@@ -106,7 +106,7 @@
             "tool_uses": [
               {
                 "args": {
-                  "city": "sapporo"
+                  "city": "さっぽろ"
                 },
                 "name": "get_weather"
               }
