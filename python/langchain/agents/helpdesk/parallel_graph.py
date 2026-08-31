@@ -50,7 +50,7 @@ from .prompt import (
     ROUTER_SYSTEM_PROMPT,
     SYNTHESIZE_SYSTEM_PROMPT,
 )
-from .tools import search_manual, search_qa
+from .tools import search_hybrid, search_manual, search_qa
 
 # やり直しの上限。教材と同じ 3 回。
 MAX_ATTEMPTS = 3
@@ -218,10 +218,15 @@ def _build_select_tools(model: BaseChatModel) -> Any:
         ).lower()
         # 想定外の応答はキーワード検索に倒す。
         name = "search_qa" if "search_qa" in choice else "search_manual"
-        # やり直しでは前回と違うツールを試す。
-        # 同じツールを引き直しても結果は変わらない。
-        if state["attempts"] > 0 and name == state.get("selected_tool"):
-            name = "search_qa" if name == "search_manual" else "search_manual"
+        # やり直しではツールを変える。同じものを引き直しても結果は変わらない。
+        #
+        # 2 回目は反対側、3 回目はハイブリッドに倒す。
+        # 選択で片方に倒すと、選び損ねた側にしかない文書へ到達できない。
+        # 最後は両方を統合した検索で拾いにいく。
+        if state["attempts"] == 1:
+            name = "search_qa" if state.get("selected_tool") == "search_manual" else "search_manual"
+        elif state["attempts"] >= 2:
+            name = "search_hybrid"
         return {"draft": "", "critique": "", "attempts": state["attempts"] + 1,
                 "selected_tool": name}
 
@@ -231,7 +236,12 @@ def _build_select_tools(model: BaseChatModel) -> Any:
 def _execute_tools(state: SubtaskState) -> dict[str, Any]:
     name = state.get("selected_tool", "search_manual")
     query = state["subtask"]
-    context = search_qa(query) if name == "search_qa" else search_manual(query)
+    if name == "search_hybrid":
+        context = search_hybrid(query)
+    elif name == "search_qa":
+        context = search_qa(query)
+    else:
+        context = search_manual(query)
     return {
         "retrieved": context,
         "tool_log": [{"attempt": str(state["attempts"]), "tool": name,

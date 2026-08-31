@@ -62,8 +62,74 @@ _QA_CORPUS: list[tuple[str, str]] = [
 ]
 
 
+# 同義語辞書。専門用語と固有名詞の揺れを吸収する。
+#
+# 教材が「形態素解析の工夫」で挙げる要素。
+# 「APIキー」と「アクセスキー」が別語のままだと、
+# どちらか一方でしか引けない。
+_SYNONYMS: dict[str, set[str]] = {
+    "api": {"apiキー", "アクセスキー", "認証キー"},
+    "key": {"キー", "鍵"},
+    "rotate": {"ローテーション", "更新", "再発行"},
+    "error": {"エラー", "障害"},
+    "token": {"トークン"},
+    "session": {"セッション"},
+    "export": {"エクスポート", "書き出し"},
+    "login": {"ログイン", "サインイン", "ログインが切れる", "ログイン切れ"},
+    "expired": {"切れる", "期限切れ", "失効"},
+    "permission": {"権限", "パーミッション"},
+    "job": {"ジョブ", "バッチ"},
+}
+# 逆引き。日本語から英語の見出し語へ寄せる。
+_SYNONYM_INDEX: dict[str, str] = {
+    alias.lower(): head for head, aliases in _SYNONYMS.items() for alias in aliases
+}
+
+# 検索に寄与しない語。落とさないと、どの文書とも当たってしまう。
+#
+# 実際、"How do I configure the quantum flux capacitor" が
+# how / do / the で無関係な文書に score=1 で当たっていた。
+_STOPWORDS = {
+    "the", "a", "an", "is", "are", "do", "does", "how", "what", "i", "my",
+    "to", "of", "in", "on", "for", "and", "or", "it", "this", "that",
+    "教えて", "ください", "について", "とは", "です", "ます",
+}
+
+
 def _tokenize(text: str) -> set[str]:
-    return set(re.findall(r"[a-z0-9-]+", text.lower()))
+    """語に分ける。英数字と日本語の両方を扱う。
+
+    元は `[a-z0-9-]+` だけを拾っていた。
+    英語のコーパスに日本語で問い合わせると 1 トークンも残らず、
+    常に「該当なし」になる。エラーは出ないので、
+    検索が動いていないことに気づけない。
+
+    日本語は形態素解析器を入れるのが本筋だが、
+    依存を増やさずに済ませるため 2-gram で近似する。
+    実運用では MeCab や Sudachi にカスタム辞書を足す。
+    """
+
+    lowered = text.lower()
+    tokens = {t for t in re.findall(r"[a-z0-9-]+", lowered) if t not in _STOPWORDS}
+
+    # 日本語（ひらがな・カタカナ・漢字）の連続を取り出す。
+    for run in re.findall(r"[ぁ-んァ-ヴー一-龥]+", lowered):
+        if run in _STOPWORDS:
+            continue
+        # 2 文字以上なら 2-gram、1 文字ならそのまま。
+        if len(run) == 1:
+            tokens.add(run)
+        else:
+            tokens.update(run[i : i + 2] for i in range(len(run) - 1))
+        tokens.add(run)
+
+    # 同義語を見出し語へ寄せる。
+    expanded = set(tokens)
+    for t in tokens:
+        head = _SYNONYM_INDEX.get(t)
+        if head:
+            expanded.add(head)
+    return expanded
 
 
 class FakeKeywordRetriever:
@@ -83,15 +149,31 @@ class FakeKeywordRetriever:
         return scored[:top_k]
 
 
+def _question_part(text: str) -> str:
+    """QA 形式のテキストから質問部分だけを取り出す。
+
+    教材の「ベクトルの工夫」にあたる。
+    質問と回答をまとめてベクトル化すると、
+    回答側の語が距離を押し広げる。
+    ユーザーが投げるのは質問なので、質問文どうしを近づけたほうが当たる。
+    """
+
+    body = text.split("A:", 1)[0]
+    return body.replace("Q:", "").strip() or text
+
+
 class FakeVectorRetriever:
     """Jaccard-similarity search. Stand-in for a Qdrant cosine-similarity query.
 
     Jaccard over token sets is a deterministic, dependency-free proxy for semantic
     similarity, enough to demonstrate vector-style retrieval offline.
+
+    索引に載せるのは質問部分だけにする。返す本文は Q と A の両方を含む。
     """
 
-    def __init__(self, corpus: list[tuple[str, str]]) -> None:
+    def __init__(self, corpus: list[tuple[str, str]], index_question_only: bool = True) -> None:
         self._corpus = corpus
+        self._index_question_only = index_question_only
 
     def search(self, query: str, top_k: int) -> list[Document]:
         q_tokens = _tokenize(query)
@@ -99,7 +181,8 @@ class FakeVectorRetriever:
             return []
         scored: list[Document] = []
         for source, text in self._corpus:
-            d_tokens = _tokenize(text)
+            indexed = _question_part(text) if self._index_question_only else text
+            d_tokens = _tokenize(indexed)
             union = q_tokens | d_tokens
             if not union:
                 continue
@@ -124,6 +207,28 @@ def _build_vector_retriever() -> Retriever:
 
         return build_qdrant_retriever()
     return FakeVectorRetriever(_QA_CORPUS)
+
+
+def _rrf(rankings: list[list[Document]], k: int = 60) -> list[Document]:
+    """Reciprocal Rank Fusion で複数の検索結果を統合する。
+
+    教材が言う「ハイブリッド検索」の実装。
+    スコアの尺度が違う検索器（キーワードの重なり数と Jaccard 係数）を
+    そのまま足すと、片方の尺度に引きずられる。
+    順位だけを使えば尺度に依存しない。
+    """
+
+    scores: dict[str, float] = {}
+    docs: dict[str, Document] = {}
+    for ranking in rankings:
+        for rank, doc in enumerate(ranking, start=1):
+            scores[doc.source] = scores.get(doc.source, 0.0) + 1.0 / (k + rank)
+            docs.setdefault(doc.source, doc)
+    ordered = sorted(scores.items(), key=lambda kv: kv[1], reverse=True)
+    return [
+        Document(source=src, text=docs[src].text, score=round(score, 5))
+        for src, score in ordered
+    ]
 
 
 def _format(docs: list[Document]) -> str:
@@ -171,3 +276,18 @@ SEARCH_QA_TOOL = StructuredTool.from_function(
 )
 
 ALL_TOOLS = [SEARCH_MANUAL_TOOL, SEARCH_QA_TOOL]
+
+
+def search_hybrid(query: str, top_k: int = 3) -> str:
+    """キーワード検索とベクトル検索を統合して引く。
+
+    教材は検索手法が不適切なときの解決策として
+    「ハイブリッド検索（ベクトル検索とキーワード検索の適切な組み合わせ）」を挙げる。
+
+    既存の 2 つは**選択**であって組み合わせではなかった。
+    ツール選択で片方に倒すと、選び損ねた側にしか無い文書に到達できない。
+    """
+
+    keyword = _build_keyword_retriever().search(query, top_k * 2)
+    vector = _build_vector_retriever().search(query, top_k * 2)
+    return _format(_rrf([keyword, vector])[:top_k])
