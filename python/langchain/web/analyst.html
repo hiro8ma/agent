@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>データ分析エージェント</title>
+<style>
+:root{--bg:#12141a;--panel:#171a21;--border:#242832;--fg:#e6e8ee;--muted:#8b93a5;
+      --ok:#7ddb9b;--ng:#f0a0a0}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font-size:14px;line-height:1.6;
+     font-family:"Hiragino Sans","Hiragino Kaku Gothic ProN",system-ui,sans-serif}
+main{max-width:980px;margin:0 auto;padding:28px 20px 60px}
+h1{font-size:20px;margin:0 0 4px}
+h2{font-size:14px;margin:22px 0 8px}
+.lead{color:var(--muted);font-size:13px;margin:0 0 22px}
+.panel{background:var(--panel);border:1px solid var(--border);border-radius:6px;
+       padding:14px 16px;margin-bottom:14px}
+textarea{width:100%;min-height:56px;background:#0f1116;color:var(--fg);
+         border:1px solid var(--border);border-radius:4px;padding:9px 11px;
+         font-family:inherit;font-size:13.5px;resize:vertical}
+button{background:#2a3550;color:var(--fg);border:1px solid #3a4a6e;border-radius:4px;
+       padding:7px 18px;font-size:13.5px;cursor:pointer;font-family:inherit;margin-top:10px}
+button:disabled{opacity:.5;cursor:default}
+.note{color:var(--muted);font-size:12px}
+pre{white-space:pre-wrap;word-break:break-word;margin:0;font-size:12.5px;
+    background:#0f1116;border:1px solid var(--border);border-radius:4px;padding:9px 11px}
+.badge{display:inline-block;font-size:11px;padding:1px 7px;border-radius:3px}
+.badge.ok{background:#16321f;color:var(--ok)}
+.badge.ng{background:#3a2222;color:var(--ng)}
+.metric{display:flex;gap:26px;flex-wrap:wrap}
+.metric .k{color:var(--muted);font-size:11px;display:block}
+.metric .v{font-size:19px;font-variant-numeric:tabular-nums;display:block}
+.step{border-left:2px solid var(--border);padding-left:12px;margin-bottom:14px}
+.step.ok{border-color:#245c36}
+.step.ng{border-color:#5c2424}
+.step h3{font-size:13px;margin:0 0 6px;font-weight:400}
+a{color:#7fb2f0}
+</style>
+</head>
+<body>
+<main>
+  <h1>データ分析エージェント</h1>
+  <p class="lead">
+    分析計画を立て、タスクごとにプログラマーエージェント
+    （コード生成 → 実行 → レビュー）を並列に走らせ、レポートを作る。
+    生成したコードと実行結果を全部出す。
+    <a href="/">ヘルプデスクへ</a>
+  </p>
+
+  <div class="panel">
+    <textarea id="t">評価データの傾向を知りたい</textarea>
+    <button id="go" onclick="analyze()">実行</button>
+    <span class="note" id="status"></span>
+    <p class="note" style="margin-top:10px">
+      既定は代替モデル。<strong>1 回目にわざと失敗するコードを返す</strong>ため、
+      やり直しの経路が必ず通る。失敗しない代替モデルだと、
+      直す経路が一度も試されないまま「動いている」ことになる。
+    </p>
+  </div>
+
+  <div id="out"></div>
+</main>
+
+<script>
+function esc(s){ return (s ?? "").replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c])); }
+
+async function analyze(){
+  const btn = document.getElementById("go"), st = document.getElementById("status");
+  btn.disabled = true; st.textContent = "実行中…";
+  document.getElementById("out").innerHTML = "";
+  try{
+    const res = await fetch("/api/analyze", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({task: document.getElementById("t").value, use_fake:true})
+    });
+    if(!res.ok) throw new Error("HTTP " + res.status);
+    render(await res.json()); st.textContent = "";
+  }catch(e){ st.textContent = "失敗: " + e.message; }
+  finally{ btn.disabled = false; }
+}
+
+function render(d){
+  const done = d.results.filter(r => r.completed).length;
+  const tries = d.results.reduce((a,r) => a + r.attempts, 0);
+
+  let h = `<div class="panel"><div class="metric">
+    <div><span class="k">分析タスク</span><span class="v">${d.results.length}</span></div>
+    <div><span class="k">完了</span><span class="v">${done} / ${d.results.length}</span></div>
+    <div><span class="k">のべ試行</span><span class="v">${tries}</span></div>
+    <div><span class="k">経過</span><span class="v">${d.elapsedMs} ms</span></div>
+  </div></div>`;
+
+  h += `<h2>レポート</h2><div class="panel"><pre>${esc(d.report)}</pre></div>`;
+
+  h += `<h2>分析タスクごとの経過</h2>`;
+  for(const r of d.results){
+    h += `<div class="panel step ${r.completed?"ok":"ng"}">
+      <h3>[${r.index}] ${esc(r.task)}
+        <span class="badge ${r.completed?"ok":"ng"}">${r.completed?"完了":"未完了"}</span>
+        <span class="note">試行 ${r.attempts}</span></h3>`;
+    for(const e of (r.exec_log || [])){
+      const ok = e.ok === "True";
+      h += `<p class="note" style="margin-top:10px">試行 ${e.attempt}
+        <span class="badge ${ok?"ok":"ng"}">${ok?"成功":"失敗"}</span></p>
+        <pre>${esc(e.code)}</pre>`;
+      if(e.error) h += `<pre class="note">${esc(e.error)}</pre>`;
+      if(e.stdout) h += `<pre>${esc(e.stdout)}</pre>`;
+    }
+    h += `</div>`;
+  }
+  document.getElementById("out").innerHTML = h;
+}
+</script>
+</body>
+</html>

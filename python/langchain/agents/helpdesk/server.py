@@ -84,6 +84,51 @@ def ask(req: AskRequest) -> dict[str, Any]:
     }
 
 
+class AnalyzeRequest(BaseModel):
+    task: str
+    use_fake: bool = True
+
+
+@app.post("/api/analyze")
+def analyze(req: AnalyzeRequest) -> dict[str, Any]:
+    """データ分析エージェントを走らせ、各試行のコードと実行結果を返す。
+
+    ダッシュボードは「読み取る材料」を出すが、示唆までは出さない。
+    ここでは何を実行して何が返ったかを全部出す。
+    生成されたコードを見ずに結果だけ信じるのは、
+    根拠を確かめずに数字を受け取るのと同じになる。
+    """
+
+    import time
+
+    from ..analyst.fake import FakeAnalystModel
+    from ..analyst.graph import build_graph, initial_state
+
+    start = time.perf_counter()
+    model: Any = FakeAnalystModel()
+    if not req.use_fake:
+        from core.providers.factory import select_provider
+
+        model = select_provider()
+
+    app_graph = build_graph(model)
+    state = app_graph.invoke(initial_state(req.task), {"recursion_limit": 60})
+    results = sorted(state["results"], key=lambda r: r["index"])
+    return {
+        "elapsedMs": round((time.perf_counter() - start) * 1000, 1),
+        "plan": state["plan"],
+        "results": results,
+        "report": state["report"],
+    }
+
+
+@app.get("/analyst", response_class=HTMLResponse)
+def analyst_page() -> str:
+    return (Path(__file__).parent.parent.parent / "web" / "analyst.html").read_text(
+        encoding="utf-8"
+    )
+
+
 @app.get("/", response_class=HTMLResponse)
 def index() -> str:
     """画面を返す。ビルド不要の 1 枚もの。"""
