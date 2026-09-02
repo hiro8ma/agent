@@ -48,3 +48,6 @@ temp_test_run_data.json
 __pycache__/
 .pytest_cache/
 *.pyc
+
+# adk web / adk run が作るローカルのセッション DB
+.adk/

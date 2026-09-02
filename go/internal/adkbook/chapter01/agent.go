@@ -20,6 +20,7 @@ import (
 
 	"google.golang.org/adk/v2/agent"
 	"google.golang.org/adk/v2/agent/llmagent"
+	"google.golang.org/adk/v2/model"
 	"google.golang.org/adk/v2/model/gemini"
 	"google.golang.org/adk/v2/tool"
 	"google.golang.org/adk/v2/tool/functiontool"
@@ -81,15 +82,17 @@ func New(ctx context.Context, apiKey string) (agent.Agent, error) {
 // NewWithGuardrails はコールバック 4 点に検査を置いたエージェントを返す。
 // 検査の記録も返す。
 func NewWithGuardrails(ctx context.Context, apiKey string) (agent.Agent, *guardrail.Log, error) {
-	return build(ctx, apiKey)
-}
-
-func build(ctx context.Context, apiKey string) (agent.Agent, *guardrail.Log, error) {
-	model, err := gemini.NewModel(ctx, ModelName, &genai.ClientConfig{APIKey: apiKey})
+	m, err := gemini.NewModel(ctx, ModelName, &genai.ClientConfig{APIKey: apiKey})
 	if err != nil {
 		return nil, nil, fmt.Errorf("create model: %w", err)
 	}
+	return NewWithModel(m)
+}
 
+// NewWithModel はモデルを受け取って同じ配線のエージェントを返す。
+//
+// API キー無しで実行ループを流すために外から差し替える。
+func NewWithModel(m model.LLM) (agent.Agent, *guardrail.Log, error) {
 	weatherTool, err := functiontool.New(functiontool.Config{
 		Name:        "get_weather",
 		Description: "指定した都市の現在の天気を返す。都市名は日本語と英語のどちらでもよい。",
@@ -110,7 +113,7 @@ func build(ctx context.Context, apiKey string) (agent.Agent, *guardrail.Log, err
 
 	a, err := llmagent.New(llmagent.Config{
 		Name:        "weather_agent",
-		Model:       model,
+		Model:       m,
 		Description: "都市の天気と観光を答えるエージェント",
 		// Instruction ではなく InstructionProvider を使う。
 		// InstructionProvider は {} の置換を行わないため、
