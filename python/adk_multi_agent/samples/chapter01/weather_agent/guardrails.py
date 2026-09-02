@@ -20,6 +20,8 @@ _INJECTION = ["これまでの指示を無視", "システムプロンプトを"
 # 出力に混ざってはいけない形。
 _SECRET_PATTERNS = [
     re.compile(r"AIzaSy[A-Za-z0-9_\-]{20,}"),
+    # 2026 年に発行される Gemini の鍵は AQ. 始まりで、AIzaSy に一致しない。
+    re.compile(r"AQ\.[A-Za-z0-9_\-.]{20,}"),
     re.compile(r"sk-[A-Za-z0-9]{20,}"),
 ]
 

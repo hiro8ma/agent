@@ -8,6 +8,7 @@ from google.genai import types
 
 from samples.chapter01.weather_agent.agent import build_instruction
 from samples.chapter01.weather_agent.guardrails import (
+    _SECRET_PATTERNS,
     block_credential_requests,
     redact_secrets,
 )
@@ -98,3 +99,14 @@ def test_tools_do_not_record_on_error() -> None:
     ctx = _ToolCtx()
     get_weather("那覇", ctx)
     assert LAST_CITY_KEY not in ctx.state
+
+def test_redacts_current_gemini_key_format():
+    """いま発行される鍵の形が秘匿されるかを見る。
+
+    2026 年の Gemini の鍵は AQ. 始まりで、AIzaSy の正規表現に一致しない。
+    実鍵は置かず、形だけ実行時に組み立てる。
+    """
+    fake = "AQ" + "." + "A" * 50
+    assert any(p.search(fake) for p in _SECRET_PATTERNS), (
+        "いま発行される鍵の形に一致するパターンが無い"
+    )

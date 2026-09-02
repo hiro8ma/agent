@@ -35,6 +35,11 @@ import (
 // 変わったことに気づけないまま結果だけが動く。
 const ModelName = "gemini-3.5-flash"
 
+// redactionPrefixes は出力から消す秘密の接頭辞。
+//
+// AQ. は 2026 年に発行される Gemini の鍵。AIza には一致しない。
+var redactionPrefixes = []string{"AIza", "AQ.", "sk-"}
+
 const baseInstruction = "あなたは天気と観光を答えるエージェントです。" +
 	"都市について聞かれたら get_weather と get_sightseeing を呼び、" +
 	"その結果だけを使って答えます。" +
@@ -125,7 +130,7 @@ func NewWithModel(m model.LLM) (agent.Agent, *guardrail.Log, error) {
 			guardrail.BlockInput(log, []string{"パスワード", "APIキー", "秘密鍵"}),
 		},
 		AfterModelCallbacks: []llmagent.AfterModelCallback{
-			guardrail.RedactOutput(log, []string{"AIza", "sk-"}),
+			guardrail.RedactOutput(log, redactionPrefixes),
 		},
 		// 都市名が落ちると空文字で引き、「登録されていない都市」が返る。
 		BeforeToolCallbacks: []llmagent.BeforeToolCallback{

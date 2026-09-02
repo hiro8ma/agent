@@ -184,3 +184,25 @@ func TestInstructionSpecifiesOutputFormat(t *testing.T) {
 		}
 	}
 }
+
+// いま発行される鍵の形が秘匿の対象に入っているかを見る。
+//
+// 2026 年の Gemini の鍵は AQ. 始まりで、AIza に一致しない。
+// 実鍵は置かず、形だけ実行時に組み立てる。
+func TestRedactionCoversCurrentGeminiKeyFormat(t *testing.T) {
+	fake := "AQ" + "." + strings.Repeat("A", 50)
+	a, _, err := NewWithModel(&scriptedModel{})
+	if err != nil {
+		t.Fatalf("build agent: %v", err)
+	}
+	_ = a
+	found := false
+	for _, p := range redactionPrefixes {
+		if strings.Contains(fake, p) {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("いま発行される鍵の形に一致する接頭辞が無い: %v", redactionPrefixes)
+	}
+}
