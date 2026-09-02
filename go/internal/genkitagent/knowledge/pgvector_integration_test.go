@@ -233,6 +233,9 @@ func TestIntegrationRecallMeasurementReflectsProbes(t *testing.T) {
 		cfg := baseCfg(table)
 		cfg.IvfflatProbes = probes
 		cfg.MinRecall = 0.0001 // 測るだけで落とさない
+		// 既定の 3 本では目盛りが 0.067 で、IVFFlat の k-means の初期値ぶんの
+		// 揺れに埋もれる。本数を増やして差を論じられる精度にする。
+		cfg.RecallProbes = 12
 		s, err := NewPgVector(ctx, pool, fakeEmbedder{}, cfg)
 		if err != nil {
 			t.Fatalf("probes=%d で Verify に失敗: %v", probes, err)
@@ -244,12 +247,14 @@ func TestIntegrationRecallMeasurementReflectsProbes(t *testing.T) {
 	wide := measure(200)
 	t.Logf("probes=1 の再現率 %.3f / probes=200 の再現率 %.3f", narrow, wide)
 
-	// 確かめたいのは「測定が索引の設定を反映するか」になる。
-	// 絶対値は合成データの同点の出方に左右されるため主張しない。
-	// 実際、一様乱数では全リスト走査でも 0.67 にしかならなかった。
-	if wide <= narrow*1.5 {
+	// 比で見ると上限 1.0 に近づくほど成立しなくなる。絶対差で見る。
+	// IVFFlat の構築は k-means の初期値で変わるため narrow は 0.5〜0.7 で揺れる。
+	if wide-narrow < 0.15 {
 		t.Errorf("探索を広げても再現率が十分に上がらない (probes=1: %.3f, probes=200: %.3f)。"+
 			"測定が索引の設定を反映していない", narrow, wide)
+	}
+	if wide < 0.9 {
+		t.Errorf("全リストを走査しても再現率が %.3f しかない。測定側が壊れている", wide)
 	}
 }
 

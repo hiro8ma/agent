@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/pgvector/pgvector-go"
 )
@@ -129,10 +130,11 @@ func (s *PgVector) verifyIndexUsed(ctx context.Context) error {
 // 表にある行をそのままクエリにすると、その行は自分が属するリストに必ず含まれるため、
 // 索引の質と関係なく見つかってしまう。実際にその形で書いて何も検出できなかった。
 func (s *PgVector) verifyIndexRecall(ctx context.Context) error {
-	const (
-		probes = 3 // クエリの本数
-		topK   = 5 // 1 クエリで比べる件数
-	)
+	const topK = 5 // 1 クエリで比べる件数
+	probes := s.cfg.RecallProbes
+	if probes <= 0 {
+		probes = 3
+	}
 	threshold := s.cfg.MinRecall
 	if threshold <= 0 {
 		threshold = 0.05
@@ -192,42 +194,88 @@ func (s *PgVector) verifyIndexRecall(ctx context.Context) error {
 // 2 行の平均を取る。実際の分布の内側にありながら、どの行とも一致しない点になる。
 // 乱数で作ると分布から外れ、索引の善し悪しと関係なく再現率が下がる。
 func (s *PgVector) sampleQueries(ctx context.Context, conn *pgxpool.Conn, n int) ([]pgvector.Vector, error) {
+	// 物理順で固定する。ORDER BY を省くと synchronize_seqscans で走査の
+	// 開始位置が変わり、起動ごとに別の点を測って再現率がばらつく。
 	rows, err := conn.Query(ctx, fmt.Sprintf(
-		"SELECT %s FROM %s LIMIT $1", s.cfg.EmbeddingColumn, s.cfg.Table), n*2)
+		"SELECT %s FROM %s ORDER BY ctid LIMIT $1",
+		s.cfg.EmbeddingColumn, s.cfg.Table), n)
 	if err != nil {
 		return nil, fmt.Errorf("pgvector: verify: 標本の取得: %w", err)
 	}
 	defer rows.Close()
 
-	var vecs [][]float32
+	var seeds []pgvector.Vector
 	for rows.Next() {
 		var v pgvector.Vector
 		if err := rows.Scan(&v); err != nil {
 			return nil, fmt.Errorf("pgvector: verify: 標本の読み取り: %w", err)
 		}
-		vecs = append(vecs, v.Slice())
+		seeds = append(seeds, v)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("pgvector: verify: 標本: %w", err)
 	}
-	if len(vecs) < 2 {
-		return nil, nil
-	}
+	rows.Close()
 
 	var out []pgvector.Vector
-	for i := 0; i+1 < len(vecs); i += 2 {
-		mid := make([]float32, len(vecs[i]))
-		for d := range mid {
-			mid[d] = (vecs[i][d] + vecs[i+1][d]) / 2
+	for _, seed := range seeds {
+		q, err := s.midpointWithNeighbor(ctx, conn, seed)
+		if err != nil {
+			return nil, err
 		}
-		out = append(out, toVector(mid))
+		if q == nil {
+			return nil, nil // 行が 2 件未満では確かめようが無い
+		}
+		out = append(out, *q)
 	}
 	return out, nil
 }
 
-// topIDs は上位 topK の ctid を返す。useIndex=false なら索引を切って厳密に引く。
+// midpointWithNeighbor は種の点と、その厳密な最近傍との中点を返す。
 //
-// 主キーの名前に依存しないよう ctid を使う。行の同一性が分かればよい。
+// 無作為に作った点や、離れた 2 行の平均はどのクラスタにも属さない場所に落ちる。
+// そこは近似索引が構造的に弱く、索引が正しくても再現率が 0 になる。
+// 中点をデータの密な場所に置き、かつ既存の行とは一致させない。
+func (s *PgVector) midpointWithNeighbor(ctx context.Context, conn *pgxpool.Conn,
+	seed pgvector.Vector) (*pgvector.Vector, error) {
+
+	if _, err := conn.Exec(ctx, "SET enable_indexscan = off"); err != nil {
+		return nil, fmt.Errorf("pgvector: verify: 標本の厳密検索: %w", err)
+	}
+	defer conn.Exec(ctx, "RESET enable_indexscan")
+
+	rows, err := conn.Query(ctx, fmt.Sprintf(
+		"SELECT %s FROM %s ORDER BY %s <=> $1 LIMIT 2",
+		s.cfg.EmbeddingColumn, s.cfg.Table, s.cfg.EmbeddingColumn),
+		pgx.QueryExecModeSimpleProtocol, seed)
+	if err != nil {
+		return nil, fmt.Errorf("pgvector: verify: 最近傍の取得: %w", err)
+	}
+	defer rows.Close()
+
+	var pair [][]float32
+	for rows.Next() {
+		var v pgvector.Vector
+		if err := rows.Scan(&v); err != nil {
+			return nil, fmt.Errorf("pgvector: verify: 最近傍の読み取り: %w", err)
+		}
+		pair = append(pair, v.Slice())
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("pgvector: verify: 最近傍: %w", err)
+	}
+	if len(pair) < 2 {
+		return nil, nil
+	}
+
+	mid := make([]float32, len(pair[0]))
+	for d := range mid {
+		mid[d] = (pair[0][d] + pair[1][d]) / 2
+	}
+	v := toVector(mid)
+	return &v, nil
+}
+
 func (s *PgVector) topIDs(ctx context.Context, conn *pgxpool.Conn, q pgvector.Vector,
 	topK int, useIndex bool) ([]string, error) {
 
@@ -246,9 +294,13 @@ func (s *PgVector) topIDs(ctx context.Context, conn *pgxpool.Conn, q pgvector.Ve
 	defer conn.Exec(ctx, "RESET enable_indexscan")
 	defer conn.Exec(ctx, "RESET enable_seqscan")
 
+	// プリペアドステートメントにするとプランがキャッシュされ、5 回目以降は
+	// ジェネリックプランに切り替わって enable_seqscan / enable_indexscan が効かなくなる。
+	// exact と索引で同じ SQL 文を使うため、両者が同じプランを引く。
 	rows, err := conn.Query(ctx, fmt.Sprintf(
 		"SELECT ctid::text FROM %s ORDER BY %s <=> $1 LIMIT $2",
-		s.cfg.Table, s.cfg.EmbeddingColumn), q, topK)
+		s.cfg.Table, s.cfg.EmbeddingColumn),
+		pgx.QueryExecModeSimpleProtocol, q, topK)
 	if err != nil {
 		return nil, fmt.Errorf("pgvector: verify: 再現率の測定: %w", err)
 	}

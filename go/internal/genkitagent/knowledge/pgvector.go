@@ -83,6 +83,13 @@ type PgVectorConfig struct {
 	// ALTER DATABASE で設定しても既存の接続には届かない。
 	IvfflatProbes int
 
+	// RecallProbes は起動時の再現率測定に使う問い合わせの本数。0 なら 3。
+	//
+	// 1 本あたり厳密検索が 1 回走るため、増やすと起動が線形に遅くなる。
+	// 既定の 3 本 × 上位 5 件では目盛りが 0.067 で、2 つの設定の差を
+	// 論じるには粗い。差を測る用途では増やす。
+	RecallProbes int
+
 	// MinExtensionVersion は要求する vector 拡張の最小バージョン。空なら確かめない。
 	//
 	// 索引の種類や関数はバージョンで増える。古い版では
@@ -113,6 +120,9 @@ func (c *PgVectorConfig) applyDefaults() {
 	}
 	if c.EfSearchCap <= 0 {
 		c.EfSearchCap = 1000
+	}
+	if c.RecallProbes <= 0 {
+		c.RecallProbes = 3
 	}
 }
 
