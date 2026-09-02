@@ -140,6 +140,17 @@ def test_instruction_covers_every_expected_behavior(eval_set: EvalSet) -> None:
             )
 
 
+def test_instruction_specifies_output_format() -> None:
+    """Instruction が出力形式を指示しているか。
+
+    目的と例外処理だけ書いて形式を落とすと、応答の長さと体裁が
+    モデルの気分で変わる。評価セットは形式を見ないので気づけない。
+    """
+    instruction = _instruction_text()
+    for phrase in ("3 文以内", "箇条書き"):
+        assert phrase in instruction, f"出力形式の指示に {phrase!r} が無い"
+
+
 def test_memory_case_declares_prior_state(eval_set: EvalSet) -> None:
     """記憶を使うケースが、前提の State を宣言しているか。
 
