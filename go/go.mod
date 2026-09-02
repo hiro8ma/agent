@@ -14,7 +14,7 @@ require (
 	google.golang.org/adk v0.6.0
 	google.golang.org/adk/v2 v2.2.0
 	google.golang.org/api v0.291.0
-	google.golang.org/genai v1.66.0
+	google.golang.org/genai v1.71.0
 	google.golang.org/grpc v1.83.0
 	google.golang.org/protobuf v1.36.11
 	pgregory.net/rapid v1.3.0
