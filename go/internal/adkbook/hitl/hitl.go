@@ -2,6 +2,27 @@
 //
 // ガードレールは条件に当たった行動を止める。HITL は判断を人へ回す。
 // 止めるか通すかを事前に決められない行動に使う。
+//
+// 承認を挟む手は 3 つある。使い分けは「聞かずに拒めるか」と
+// 「セッションをまたぐか」で決まる。
+//
+//	functiontool.Config.RequireConfirmation   聞くか聞かないかの 2 値。追加コード不要
+//	hitl.Gate                                 Allow / Ask / Deny の 3 値。理由も返す
+//	hitl.ApprovalNode                         3 値 + Workflow の永続化に乗る
+//
+// RequireConfirmation は bool しか返せないため、
+// 「額が大きすぎるので聞かずに拒む」を表現できない。実測でも
+// 1 億円の返金が確認要求になり、承認されれば通った。
+// 拒否の下限がある行動には Gate 以上が要る。
+//
+// ApprovalNode は Workflow のノードとして中断するため、
+// 承認待ちが Workflow の状態として保存される。
+// 1 回の対話で完結しない承認に使う。
+//
+// RequireConfirmation と Gate は同じ機構
+// （RequestConfirmation と ToolConfirmation）を使う。
+// この機構は ADK v2.2.0 では experimental の扱いになる。
+// Gate を選んでも実験的な依存は避けられない。
 package hitl
 
 import (
