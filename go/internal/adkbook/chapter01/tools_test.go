@@ -7,6 +7,8 @@ import (
 
 	"google.golang.org/adk/v2/agent"
 	"google.golang.org/adk/v2/session"
+
+	"github.com/hiro8ma/agent/go/internal/guardrail"
 )
 
 // mapState は State の最小実装。ADK の ContextMock は nil を返す。
@@ -204,5 +206,30 @@ func TestRedactionCoversCurrentGeminiKeyFormat(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("いま発行される鍵の形に一致する接頭辞が無い: %v", redactionPrefixes)
+	}
+}
+
+// コールバックが 6 点そろっているかを見る。
+//
+// エラー系 2 点を落とすと、モデルとツールの失敗が記録されず
+// 利用者にも停止としてしか見えない。
+func TestAllSixCallbacksAreWired(t *testing.T) {
+	log := guardrail.NewLog()
+	cfg, err := buildConfig(&scriptedModel{}, log)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for name, n := range map[string]int{
+		"before_model":   len(cfg.BeforeModelCallbacks),
+		"after_model":    len(cfg.AfterModelCallbacks),
+		"on_model_error": len(cfg.OnModelErrorCallbacks),
+		"before_tool":    len(cfg.BeforeToolCallbacks),
+		"after_tool":     len(cfg.AfterToolCallbacks),
+		"on_tool_error":  len(cfg.OnToolErrorCallbacks),
+	} {
+		if n == 0 {
+			t.Errorf("%s が配線されていない", name)
+		}
 	}
 }

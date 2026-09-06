@@ -98,12 +98,28 @@ func NewWithGuardrails(ctx context.Context, apiKey string) (agent.Agent, *guardr
 //
 // API キー無しで実行ループを流すために外から差し替える。
 func NewWithModel(m model.LLM) (agent.Agent, *guardrail.Log, error) {
+	log := guardrail.NewLog()
+	cfg, err := buildConfig(m, log)
+	if err != nil {
+		return nil, nil, err
+	}
+	a, err := llmagent.New(cfg)
+	if err != nil {
+		return nil, nil, fmt.Errorf("create agent: %w", err)
+	}
+	return a, log, nil
+}
+
+// buildConfig は配線をひとまとめにする。
+//
+// 設定を返すことで、コールバックが揃っているかを実行せずに検査できる。
+func buildConfig(m model.LLM, log *guardrail.Log) (llmagent.Config, error) {
 	weatherTool, err := functiontool.New(functiontool.Config{
 		Name:        "get_weather",
 		Description: "指定した都市の現在の天気を返す。都市名は日本語と英語のどちらでもよい。",
 	}, GetWeather)
 	if err != nil {
-		return nil, nil, fmt.Errorf("create weather tool: %w", err)
+		return llmagent.Config{}, fmt.Errorf("create weather tool: %w", err)
 	}
 
 	sightseeingTool, err := functiontool.New(functiontool.Config{
@@ -111,12 +127,10 @@ func NewWithModel(m model.LLM) (agent.Agent, *guardrail.Log, error) {
 		Description: "指定した都市の観光スポットと見頃を返す。都市名は日本語と英語のどちらでもよい。",
 	}, GetSightseeing)
 	if err != nil {
-		return nil, nil, fmt.Errorf("create sightseeing tool: %w", err)
+		return llmagent.Config{}, fmt.Errorf("create sightseeing tool: %w", err)
 	}
 
-	log := guardrail.NewLog()
-
-	a, err := llmagent.New(llmagent.Config{
+	return llmagent.Config{
 		Name:        "weather_agent",
 		Model:       m,
 		Description: "都市の天気と観光を答えるエージェント",
@@ -132,6 +146,10 @@ func NewWithModel(m model.LLM) (agent.Agent, *guardrail.Log, error) {
 		AfterModelCallbacks: []llmagent.AfterModelCallback{
 			guardrail.RedactOutput(log, redactionPrefixes),
 		},
+		OnModelErrorCallbacks: []llmagent.OnModelErrorCallback{
+			guardrail.FallbackOnModelError(log,
+				"いま天気を取得できません。少し時間をおいて試してください。"),
+		},
 		// 都市名が落ちると空文字で引き、「登録されていない都市」が返る。
 		BeforeToolCallbacks: []llmagent.BeforeToolCallback{
 			guardrail.RequireArgs(log, "get_weather", "city"),
@@ -140,9 +158,8 @@ func NewWithModel(m model.LLM) (agent.Agent, *guardrail.Log, error) {
 		AfterToolCallbacks: []llmagent.AfterToolCallback{
 			guardrail.RejectEmptyResult(log, "report", "spots"),
 		},
-	})
-	if err != nil {
-		return nil, nil, fmt.Errorf("create agent: %w", err)
-	}
-	return a, log, nil
+		OnToolErrorCallbacks: []llmagent.OnToolErrorCallback{
+			guardrail.StructureToolError(log),
+		},
+	}, nil
 }

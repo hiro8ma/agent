@@ -15,7 +15,12 @@ from __future__ import annotations
 from google.adk import Agent
 from google.adk.agents.readonly_context import ReadonlyContext
 
-from .guardrails import block_credential_requests, redact_secrets
+from .guardrails import (
+    block_credential_requests,
+    fallback_on_model_error,
+    redact_secrets,
+    structure_tool_error,
+)
 from .tools import LAST_CITY_KEY, get_sightseeing, get_weather
 
 MODEL = "gemini-3.5-flash"
@@ -61,4 +66,6 @@ root_agent = Agent(
     tools=[get_weather, get_sightseeing],
     before_model_callback=block_credential_requests,
     after_model_callback=redact_secrets,
+    on_model_error_callback=fallback_on_model_error,
+    on_tool_error_callback=structure_tool_error,
 )

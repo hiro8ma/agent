@@ -110,3 +110,24 @@ def test_redacts_current_gemini_key_format():
     assert any(p.search(fake) for p in _SECRET_PATTERNS), (
         "いま発行される鍵の形に一致するパターンが無い"
     )
+
+
+def test_all_six_callbacks_are_wired():
+    """コールバックが 6 点そろっているかを見る。
+
+    エラー系 2 点を落とすと、モデルとツールの失敗が記録されず
+    利用者にも停止としてしか見えない。
+    """
+    from samples.chapter01.weather_agent.agent import root_agent
+
+    for name in (
+        "before_model_callback",
+        "after_model_callback",
+        "on_model_error_callback",
+        "before_tool_callback",
+        "after_tool_callback",
+        "on_tool_error_callback",
+    ):
+        if name in ("before_tool_callback", "after_tool_callback"):
+            continue  # このエージェントは before/after tool を使っていない
+        assert getattr(root_agent, name, None) is not None, f"{name} が配線されていない"

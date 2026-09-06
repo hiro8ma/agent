@@ -69,3 +69,31 @@ def redact_secrets(
                 part.text = new
                 hit = True
     return llm_response if hit else None
+
+
+def fallback_on_model_error(
+    callback_context: CallbackContext,
+    llm_request: LlmRequest,
+    error: Exception,
+) -> LlmResponse | None:
+    """モデルの失敗を決まった文言へ落とす。
+
+    失敗をそのまま上へ返すと、利用者には停止としてしか見えない。
+    次の行動が分かる文を返す。
+    """
+    return _refuse("いま天気を取得できません。少し時間をおいて試してください。")
+
+
+def structure_tool_error(
+    tool,
+    args: dict,
+    tool_context,
+    error: Exception,
+) -> dict | None:
+    """ツールの失敗を構造化した結果へ落とす。
+
+    例外のままだとモデルは理由を読めず、呼び出し方が悪いのか
+    対象が無いのかを区別できない。
+    """
+    name = getattr(tool, "name", "tool")
+    return {"status": "error", "message": f"{name} の実行に失敗した"}

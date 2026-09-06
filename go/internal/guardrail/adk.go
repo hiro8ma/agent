@@ -140,3 +140,42 @@ func requestText(req *model.LLMRequest) string {
 	}
 	return b.String()
 }
+
+// FallbackOnModelError はモデルの失敗を記録し、決まった文言へ落とす。
+//
+// 失敗をそのまま上へ返すと、利用者には停止としてしか見えない。
+// 記録は Log に残し、利用者には次の行動が分かる文を返す。
+func FallbackOnModelError(log *Log, msg string) llmagent.OnModelErrorCallback {
+	return func(_ agent.Context, _ *model.LLMRequest, err error) (*model.LLMResponse, error) {
+		log.add(Verdict{
+			Stage:   "on_model_error",
+			Rule:    "fallback",
+			Blocked: true,
+			Detail:  err.Error(),
+		})
+		return refuse(msg), nil
+	}
+}
+
+// StructureToolError はツールの失敗を構造化した結果へ落とす。
+//
+// error を返すとモデルは理由を読めず、呼び出し方が悪いのか
+// 対象が無いのかを区別できない。status と message で返す。
+func StructureToolError(log *Log) llmagent.OnToolErrorCallback {
+	return func(_ agent.Context, t tool.Tool, _ map[string]any, err error) (map[string]any, error) {
+		name := ""
+		if t != nil {
+			name = t.Name()
+		}
+		log.add(Verdict{
+			Stage:   "on_tool_error",
+			Rule:    name,
+			Blocked: true,
+			Detail:  err.Error(),
+		})
+		return map[string]any{
+			"status":  "error",
+			"message": fmt.Sprintf("%s の実行に失敗した", name),
+		}, nil
+	}
+}
