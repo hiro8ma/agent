@@ -201,3 +201,30 @@ def test_city_args_are_accepted_by_tool(eval_set: EvalSet) -> None:
             assert fn(city)["status"] == "success", (
                 f"{case.eval_id}: {use.name} が {city!r} を受け付けない"
             )
+
+def test_instruction_matches_the_tool_trajectories_the_eval_set_expects(
+    eval_set: EvalSet,
+) -> None:
+    """評価セットが区別している呼び分けを Instruction が指示しているか。
+
+    get_sightseeing を足したとき Instruction を「両方呼ぶ」に変えたが、
+    評価セットは天気の質問に get_weather だけを期待していた。
+    24 件の検査は Instruction の内容とツールの挙動を見ていて、
+    両者のずれを誰も見ていなかった。adk optimize を回して初めて出た。
+    """
+    instruction = _instruction_text()
+
+    expected = set()
+    for case in eval_set.eval_cases:
+        uses = case.conversation[0].intermediate_data.tool_uses
+        expected.add(tuple(sorted({u.name for u in uses})))
+
+    # 評価セットが 3 通りを区別しているなら、Instruction も区別が要る
+    if ("get_weather",) in expected and ("get_sightseeing",) in expected:
+        for phrase in ("天気だけ", "観光だけ"):
+            assert phrase in instruction, (
+                f"評価セットは呼び分けを期待しているが Instruction に {phrase!r} が無い"
+            )
+    if ("get_sightseeing", "get_weather") in expected:
+        assert "両方" in instruction, "両方呼ぶ場合の指示が Instruction に無い"
+

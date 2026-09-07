@@ -1,0 +1,12 @@
+{
+  "app_name": "weather_static",
+  "train_eval_set": "weather_static_v1",
+  "train_eval_case_ids": ["tokyo_basic", "osaka_basic"],
+  "validation_eval_set": "weather_static_v1",
+  "validation_eval_case_ids": ["sapporo_japanese"],
+  "eval_config": {
+    "criteria": {
+      "tool_trajectory_avg_score": 1.0
+    }
+  }
+}
