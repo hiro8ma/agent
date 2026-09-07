@@ -3,26 +3,34 @@
 // ガードレールは条件に当たった行動を止める。HITL は判断を人へ回す。
 // 止めるか通すかを事前に決められない行動に使う。
 //
-// 承認を挟む手は 3 つある。使い分けは「聞かずに拒めるか」と
-// 「セッションをまたぐか」で決まる。
+// 書き口は 4 つあるが、下にある機構は 2 つだけになる。
 //
-//	functiontool.Config.RequireConfirmation   聞くか聞かないかの 2 値。追加コード不要
-//	hitl.Gate                                 Allow / Ask / Deny の 3 値。理由も返す
-//	hitl.ApprovalNode                         3 値 + Workflow の永続化に乗る
+//	ToolConfirmation 系
+//	  functiontool.Config.RequireConfirmation   2 値。追加コード不要
+//	  hitl.Gate                                 3 値。理由も返す
 //
-// RequireConfirmation は bool しか返せないため、
-// 「額が大きすぎるので聞かずに拒む」を表現できない。実測でも
-// 1 億円の返金が確認要求になり、承認されれば通った。
-// 拒否の下限がある行動には Gate 以上が要る。
+//	LongRunning 系
+//	  functiontool.Config.IsLongRunning         自分で承認基盤へ投げる
+//	  hitl.ApprovalNode                         Workflow の中断・再開に乗る
 //
-// ApprovalNode は Workflow のノードとして中断するため、
-// 承認待ちが Workflow の状態として保存される。
-// 1 回の対話で完結しない承認に使う。
+// 機構が違うのは、止まる場所と再開の経路が違うため。
+// ToolConfirmation はツール呼び出し 1 回の中で完結する。
+// LongRunning はイベントに LongRunningToolIDs を載せ、
+// その ID への応答で再開する。Workflow の永続化に乗るのは後者になる。
 //
-// RequireConfirmation と Gate は同じ機構
-// （RequestConfirmation と ToolConfirmation）を使う。
-// この機構は ADK v2.2.0 では experimental の扱いになる。
-// Gate を選んでも実験的な依存は避けられない。
+// 選ぶ順は 3 つの問いで決まる。
+//
+//  1. 聞かずに拒む条件があるか
+//     ある → Gate 以上。RequireConfirmation は bool しか返せない。
+//     実測でも 1 億円の返金が確認要求になり、承認されれば通った
+//  2. 1 回の対話で終わるか
+//     終わらない → ApprovalNode。承認待ちが Workflow の状態として残る
+//  3. 承認を外部へ投げるか
+//     投げる → IsLongRunning。Slack へ通知して依頼 ID を返し、
+//     後から届く応答で再開する
+//
+// ToolConfirmation は ADK v2.2.0 では experimental（default_on=True）。
+// Gate を選んでも実験的な依存は避けられない。避けるなら LongRunning 系へ。
 package hitl
 
 import (

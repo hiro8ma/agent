@@ -114,3 +114,39 @@ async def test_cannot_deny_outright():
     joined = str(responses)
     assert "confirmation" in joined, joined
     assert "rejected" not in joined, "拒否できるなら Gate は不要になる"
+
+
+def test_two_mechanisms_not_four():
+    """承認の書き口は 4 つでも、下の機構は 2 つであることを見る。
+
+    LongRunningFunctionTool は FunctionTool に is_long_running を
+    立てただけ。request_input もその実体になる。
+    どちらの系に乗るかで、止まる場所と再開の経路が変わる。
+    """
+    from google.adk.tools import (
+        FunctionTool,
+        LongRunningFunctionTool,
+        request_input,
+    )
+
+    def noop(x: str) -> dict:
+        """何もしない。
+
+        Args:
+            x: 値
+        """
+        return {}
+
+    # LongRunning 系は FunctionTool の派生で、フラグが立つ
+    assert issubclass(LongRunningFunctionTool, FunctionTool)
+    assert LongRunningFunctionTool(func=noop).is_long_running is True
+    assert FunctionTool(func=noop).is_long_running is False
+
+    # ADK が提供する request_input も LongRunning 系
+    assert isinstance(request_input, LongRunningFunctionTool)
+
+    # ToolConfirmation 系はフラグを立てない
+    confirmed = FunctionTool(func=noop, require_confirmation=True)
+    assert confirmed.is_long_running is False, (
+        "require_confirmation は LongRunning 系ではない"
+    )
