@@ -47,17 +47,20 @@ _BASE_INSTRUCTION = (
 
 
 def build_instruction(context: ReadonlyContext) -> str:
-    """直近に問い合わせた都市を Instruction へ差し込む。
+    """変わる部分だけを返す。不変部分は static_instruction にある。
 
     ReadonlyContext は State を読めるが書けない。
     Instruction の生成に副作用が無いことを型で表す。
+
+    以前は毎回 _BASE_INSTRUCTION も足して返していた。
+    system instruction がターンごとに変わるので、
+    Dev UI が context cache のミスを警告した。
     """
     last = context.state.get(LAST_CITY_KEY)
     if not last:
-        return _BASE_INSTRUCTION
+        return ""
     return (
-        _BASE_INSTRUCTION
-        + f"直近に問い合わせた都市は {last} です。"
+        f"直近に問い合わせた都市は {last} です。"
         "「前回の都市」「さっきの街」のように指されたら、この都市として扱います。"
     )
 
@@ -66,6 +69,10 @@ root_agent = Agent(
     name="weather_agent",
     model=MODEL,
     description="都市の天気と観光を答えるエージェント",
+    # 不変部分は static_instruction へ。system instruction が固定され、
+    # context cache の整列が保たれる。可変部分は instruction 側で
+    # user content として渡る。
+    static_instruction=_BASE_INSTRUCTION,
     instruction=build_instruction,
     tools=[get_weather, get_sightseeing],
     before_model_callback=block_credential_requests,

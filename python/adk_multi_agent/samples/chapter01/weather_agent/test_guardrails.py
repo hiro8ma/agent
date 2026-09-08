@@ -103,7 +103,7 @@ def test_tools_do_not_record_on_error() -> None:
 def test_redacts_current_gemini_key_format():
     """いま発行される鍵の形が秘匿されるかを見る。
 
-    2026 年の Gemini の鍵は AQ. 始まりで、AIzaSy の正規表現に一致しない。
+    2026 年の Gemini の鍵は AQ. 始まりで、旧形式の正規表現に一致しない。
     実鍵は置かず、形だけ実行時に組み立てる。
     """
     fake = "AQ" + "." + "A" * 50
@@ -131,3 +131,36 @@ def test_all_six_callbacks_are_wired():
         if name in ("before_tool_callback", "after_tool_callback"):
             continue  # このエージェントは before/after tool を使っていない
         assert getattr(root_agent, name, None) is not None, f"{name} が配線されていない"
+
+
+def test_static_instruction_holds_the_invariant_part():
+    """不変部分が static_instruction にあり、instruction が短いことを見る。
+
+    以前は instruction が毎回全文を返していた。system instruction が
+    ターンごとに変わるため、Dev UI が context cache のミスを警告した。
+    ツールが State を書くので、1 往復の中でも変わる。
+
+    static_instruction を設定すると instruction は user content 側へ
+    回るので、system instruction が固定される。
+    """
+    from samples.chapter01.weather_agent.agent import root_agent
+
+    static = root_agent.static_instruction
+    assert static, "static_instruction が空"
+    for phrase in ("天気だけ", "3 文以内", "上書き"):
+        assert phrase in static, f"不変部分に {phrase!r} が無い"
+
+    class _State(dict):
+        pass
+
+    class _Ctx:
+        def __init__(self, state):
+            self.state = state
+
+    empty = build_instruction(_Ctx(_State()))
+    assert empty == "", f"State が無いのに instruction が空でない: {empty!r}"
+
+    withstate = build_instruction(_Ctx(_State(**{LAST_CITY_KEY: "osaka"})))
+    assert "osaka" in withstate
+    # 可変部分だけを返す。全文を返すと static との二重掲載になる
+    assert "3 文以内" not in withstate, "不変部分が instruction 側にも入っている"

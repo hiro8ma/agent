@@ -29,13 +29,17 @@ SET_PATH = Path(__file__).parent / "weather_agent_v1.evalset.json"
 
 
 def _instruction_text() -> str:
-    """動的 Instruction を State なしで組み立てて中身を見る。"""
-    from google.adk.agents.readonly_context import ReadonlyContext
+    """モデルへ渡る指示の全体を組み立てて中身を見る。
+
+    不変部分は static_instruction、可変部分は instruction にある。
+    片方だけ見ると、指示が欠けているように見える。
+    """
 
     class _Empty:
         state: dict = {}
 
-    return root_agent.instruction(_Empty())
+    static = root_agent.static_instruction or ""
+    return f"{static}{root_agent.instruction(_Empty())}"
 
 
 @pytest.fixture(scope="module")

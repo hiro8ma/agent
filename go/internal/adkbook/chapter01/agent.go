@@ -62,6 +62,11 @@ const baseInstruction = "あなたは天気と観光を答えるエージェン�
 //
 // ReadonlyContext は State を読めるが書けない。
 // Instruction の生成に副作用が無いことを型で表す。
+//
+// Python 版は不変部分を static_instruction へ分けている。
+// system instruction がターンごとに変わると context cache が外れ、
+// Dev UI が警告を出すため。Go の llmagent.Config には
+// StaticInstruction が無いので、この分割はできない。
 func BuildInstruction(ctx agent.ReadonlyContext) (string, error) {
 	if ctx == nil {
 		return baseInstruction, nil
