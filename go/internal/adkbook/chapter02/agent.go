@@ -10,6 +10,7 @@ import (
 	"google.golang.org/adk/v2/agent/llmagent"
 	"google.golang.org/adk/v2/agent/workflowagents/parallelagent"
 	"google.golang.org/adk/v2/agent/workflowagents/sequentialagent"
+	"google.golang.org/adk/v2/model"
 	"google.golang.org/adk/v2/model/gemini"
 	"google.golang.org/adk/v2/tool"
 )
@@ -46,7 +47,11 @@ func New(ctx context.Context, apiKey string) (agent.Agent, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create model: %w", err)
 	}
+	return NewWithModel(m)
+}
 
+// NewWithModel はモデルを受け取って同じ構成を組む。API キー無しで流すために使う。
+func NewWithModel(m model.LLM) (agent.Agent, error) {
 	spotsTool, restaurantsTool, transportTool, err := newTools()
 	if err != nil {
 		return nil, err
@@ -108,14 +113,17 @@ func New(ctx context.Context, apiKey string) (agent.Agent, error) {
 	}
 
 	// --- 計画フェーズ。調査結果を読んで順に組み立てる ---
+	// 前段の結果は State の鍵で読む。履歴に頼ると IncludeContents を none にした時点で黙って消える。
 
 	scheduleAgent, err := llmagent.New(llmagent.Config{
 		Name:        "schedule_planner",
 		Model:       m,
 		Description: "旅行スケジュールの作成担当",
 		Instruction: "あなたは旅行スケジュールの作成担当です。" +
-			"これまでの調査結果（観光スポット・レストラン・交通手段）をもとに、" +
-			"効率的な日程表を作成してください。\n" +
+			"次の調査結果をもとに、効率的な日程表を作成してください。\n" +
+			"観光スポット: {spots_result}\n" +
+			"レストラン: {restaurants_result}\n" +
+			"交通手段: {transport_result}\n" +
 			"以下の形式で出力してください。\n" +
 			"- 日ごとに時間帯を区切る（午前・昼・午後・夕方・夜）\n" +
 			"- 各時間帯にスポットまたはレストランを配置\n" +
@@ -131,8 +139,11 @@ func New(ctx context.Context, apiKey string) (agent.Agent, error) {
 		Model:       m,
 		Description: "旅行予算の計算担当",
 		Instruction: "あなたは旅行予算の計算担当です。" +
-			"これまでの調査結果と作成された日程表をもとに、" +
-			"旅行全体の概算予算を計算してください。\n" +
+			"次の日程表と調査結果をもとに、旅行全体の概算予算を計算してください。\n" +
+			"日程表: {schedule_result}\n" +
+			"交通手段: {transport_result}\n" +
+			"レストラン: {restaurants_result}\n" +
+			"観光スポット: {spots_result}\n" +
 			"以下の項目ごとに金額を算出し、合計を出してください。\n" +
 			"- 交通費（往復 + 現地移動）\n" +
 			"- 食費（朝食・昼食・夕食 × 日数）\n" +
