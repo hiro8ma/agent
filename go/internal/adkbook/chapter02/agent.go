@@ -149,7 +149,8 @@ func NewWithModel(m model.LLM) (agent.Agent, error) {
 			"- 食費（朝食・昼食・夕食 × 日数）\n" +
 			"- 入場料・アクティビティ費\n" +
 			"- 合計（税・チップ込みの概算）",
-		OutputKey: keyBudget,
+		OutputKey:    keyBudget,
+		OutputSchema: budgetOutputSchema(),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("budget reporter: %w", err)
@@ -166,4 +167,33 @@ func NewWithModel(m model.LLM) (agent.Agent, error) {
 		return nil, fmt.Errorf("travel planner: %w", err)
 	}
 	return root, nil
+}
+
+func budgetOutputSchema() *genai.Schema {
+	return &genai.Schema{
+		Type:        genai.TypeObject,
+		Description: "旅行全体の概算予算",
+		Properties: map[string]*genai.Schema{
+			"currency": {
+				Type: genai.TypeString,
+				Enum: []string{"JPY"},
+			},
+			"transportation_yen": {Type: genai.TypeInteger},
+			"food_yen":           {Type: genai.TypeInteger},
+			"activities_yen":     {Type: genai.TypeInteger},
+			"total_yen":          {Type: genai.TypeInteger},
+			"assumptions": {
+				Type:  genai.TypeArray,
+				Items: &genai.Schema{Type: genai.TypeString},
+			},
+		},
+		Required: []string{
+			"currency",
+			"transportation_yen",
+			"food_yen",
+			"activities_yen",
+			"total_yen",
+			"assumptions",
+		},
+	}
 }
