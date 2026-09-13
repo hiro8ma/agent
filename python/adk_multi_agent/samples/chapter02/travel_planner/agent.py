@@ -14,7 +14,17 @@ DeprecationWarning が出る。案内されている代替は Workflow。
 
 実行方法:
     adk run samples/chapter02/travel_planner
+    adk run samples/chapter02/travel_planner "東京から京都に 2 泊 3 日" --jsonl
     uv run python -m samples.chapter02.travel_planner.live_run
+
+先祖のディレクトリにある .env を読ませたくないときは ADK_DISABLE_LOAD_DOTENV=1 を付ける。
+
+adk web の情報表示は、この構成では失敗する。理由は 2 つあり、どちらも adk run では起きない。
+
+    Root が LlmAgent でない    /apps/{app}/app-info が 400 を返す
+    動的 instruction がある    AgentInfo の instruction は str なので 500 になる
+
+2 つ目は Workflow とは無関係で、文字列以外の instruction がツリーのどこかに 1 つあれば起きる。
 """
 
 from __future__ import annotations

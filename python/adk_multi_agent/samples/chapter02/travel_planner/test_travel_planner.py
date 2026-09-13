@@ -20,10 +20,12 @@ from collections.abc import AsyncGenerator
 import pytest
 from google.adk import Agent
 from google.adk.agents import ParallelAgent, SequentialAgent
+from google.adk.agents.llm_agent import LlmAgent
 from google.adk.models import BaseLlm, LlmRequest, LlmResponse
 from google.adk.runners import InMemoryRunner
+from google.adk.utils.agent_info import get_agents_dict
 from google.genai import types
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from samples.chapter02.travel_planner.agent import root_agent
 from samples.chapter02.travel_planner.agents import (
@@ -227,6 +229,27 @@ def test_output_schema_and_tools_can_coexist():
     )
     assert agent.output_schema is TravelPlan
     assert agent.tools
+
+
+@pytest.mark.asyncio
+async def test_adk_web_cannot_describe_this_pipeline():
+    """adk web の情報表示が落ちる 2 経路を固定する。
+
+    1. Root が LlmAgent でない。/apps/{app}/app-info は 400 を返す
+    2. 動的 instruction がある。AgentInfo の instruction は str なので 500 になる
+
+    2 は Workflow とは無関係で、文字列以外の instruction が 1 つあれば起きる。
+    どちらも adk run では起きないので、確認は adk run ... --jsonl を主経路にする。
+    """
+    assert not isinstance(root_agent, LlmAgent)
+
+    with pytest.raises(ValidationError):
+        await get_agents_dict(schedule_planner)
+
+    # 文字列だけなら通る。落ちているのは動的 instruction であって構成ではない。
+    assert await get_agents_dict(
+        Agent(name="probe_static", model=MODEL_NAME, instruction="x")
+    )
 
 
 class ScriptedModel(BaseLlm):
