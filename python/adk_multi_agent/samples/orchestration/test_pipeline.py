@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from typing import AsyncGenerator
+from collections.abc import AsyncGenerator
 
 import pytest
 from google.adk import Agent
@@ -87,7 +87,8 @@ async def test_loop_without_max_iterations_does_not_stop():
             _agent("rev", "", "verdict", model),
         ],
     )
-    with pytest.raises(Exception):
+    # 止まるのは台本モデルの非常停止であって、LoopAgent の上限ではない
+    with pytest.raises(RuntimeError, match="emergency stop"):
         await _state(loop, "unbounded")
     assert model.calls > _EMERGENCY_STOP, f"止まった。呼び出し {model.calls} 回"
 

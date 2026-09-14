@@ -100,6 +100,7 @@ def test_tools_do_not_record_on_error() -> None:
     get_weather("那覇", ctx)
     assert LAST_CITY_KEY not in ctx.state
 
+
 def test_redacts_current_gemini_key_format():
     """いま発行される鍵の形が秘匿されるかを見る。
 

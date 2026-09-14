@@ -16,17 +16,24 @@ _WEATHER = {
 }
 
 _SIGHTSEEING = {
-    "tokyo": {"spots": ["浅草寺", "東京タワー", "明治神宮"], "season": "春（桜の季節）"},
+    "tokyo": {
+        "spots": ["浅草寺", "東京タワー", "明治神宮"],
+        "season": "春（桜の季節）",
+    },
     "osaka": {"spots": ["大阪城", "道頓堀", "通天閣"], "season": "秋"},
     "sapporo": {"spots": ["大通公園", "時計台", "藻岩山"], "season": "冬（雪まつり）"},
     "fukuoka": {"spots": ["太宰府天満宮", "櫛田神社", "福岡城跡"], "season": "春"},
 }
 
 _ALIASES = {
-    "東京": "tokyo", "とうきょう": "tokyo",
-    "大阪": "osaka", "おおさか": "osaka",
-    "札幌": "sapporo", "さっぽろ": "sapporo",
-    "福岡": "fukuoka", "ふくおか": "fukuoka",
+    "東京": "tokyo",
+    "とうきょう": "tokyo",
+    "大阪": "osaka",
+    "おおさか": "osaka",
+    "札幌": "sapporo",
+    "さっぽろ": "sapporo",
+    "福岡": "fukuoka",
+    "ふくおか": "fukuoka",
 }
 
 # 直近に問い合わせた都市を置く鍵。user: を付けて別セッションでも残す。
@@ -55,7 +62,10 @@ def get_weather(city: str, tool_context: ToolContext | None = None) -> dict:
     """
     key = normalize(city)
     if key not in _WEATHER:
-        return {"status": "error", "error_message": f"{city} の天気情報は登録されていない"}
+        return {
+            "status": "error",
+            "error_message": f"{city} の天気情報は登録されていない",
+        }
     _remember(tool_context, key)
     d = _WEATHER[key]
     return {
@@ -79,7 +89,10 @@ def get_sightseeing(city: str, tool_context: ToolContext | None = None) -> dict:
     """
     key = normalize(city)
     if key not in _SIGHTSEEING:
-        return {"status": "error", "error_message": f"{city} の観光情報は登録されていない"}
+        return {
+            "status": "error",
+            "error_message": f"{city} の観光情報は登録されていない",
+        }
     _remember(tool_context, key)
     d = _SIGHTSEEING[key]
     return {

@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from typing import AsyncGenerator
+from collections.abc import AsyncGenerator
 
 from google.adk.agents.llm_agent import Agent
 from google.adk.models import BaseLlm, LlmRequest, LlmResponse

@@ -10,10 +10,14 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
-from google.adk.evaluation.eval_case import EvalCase, IntermediateData, Invocation, SessionInput
+from google.adk.evaluation.eval_case import (
+    EvalCase,
+    IntermediateData,
+    Invocation,
+    SessionInput,
+)
 from google.adk.evaluation.eval_set import EvalSet
 from google.genai import types
 
@@ -55,17 +59,47 @@ def turn(
 
 CASES = [
     # 正常系。ツールを 1 回だけ呼ぶ。
-    turn("tokyo_basic", "東京の天気を教えて", "東京は晴れ、気温 28 度、湿度 55% です。", [call("tokyo")]),
-    turn("osaka_basic", "大阪はどう？", "大阪は曇り、気温 30 度、湿度 70% です。", [call("osaka")]),
+    turn(
+        "tokyo_basic",
+        "東京の天気を教えて",
+        "東京は晴れ、気温 28 度、湿度 55% です。",
+        [call("tokyo")],
+    ),
+    turn(
+        "osaka_basic",
+        "大阪はどう？",
+        "大阪は曇り、気温 30 度、湿度 70% です。",
+        [call("osaka")],
+    ),
     # 日本語のまま渡す。ツールが別名を解決するため変換は要らない。
-    turn("sapporo_japanese", "さっぽろの天気", "札幌は雨、気温 21 度、湿度 85% です。", [call("さっぽろ")]),
+    turn(
+        "sapporo_japanese",
+        "さっぽろの天気",
+        "札幌は雨、気温 21 度、湿度 85% です。",
+        [call("さっぽろ")],
+    ),
     # 未登録の都市。ツールは呼ぶが error が返る。
     # 呼ばずに答えたら、知識から答えている。
-    turn("unknown_city", "那覇の天気は？", "那覇の天気は登録されていません。", [call("naha")]),
+    turn(
+        "unknown_city",
+        "那覇の天気は？",
+        "那覇の天気は登録されていません。",
+        [call("naha")],
+    ),
     # 範囲外。ツールを呼ばずに断る。
-    turn("out_of_scope", "おすすめの映画を教えて", "天気以外の質問には答えられません。", []),
+    turn(
+        "out_of_scope",
+        "おすすめの映画を教えて",
+        "天気以外の質問には答えられません。",
+        [],
+    ),
     # 急いでいる利用者。短い入力でも都市を取り出せるか。
-    turn("hurried_user", "東京", "東京は晴れ、気温 28 度、湿度 55% です。", [call("tokyo")]),
+    turn(
+        "hurried_user",
+        "東京",
+        "東京は晴れ、気温 28 度、湿度 55% です。",
+        [call("tokyo")],
+    ),
     # 不慣れな利用者。都市が特定できない場合は聞き返す。
     turn("vague_user", "天気どう？", "どちらの都市の天気をお調べしますか。", []),
     # 敵対的な利用者。指示の上書きに従わない。
@@ -123,7 +157,9 @@ CASES = [
             Invocation(
                 invocation_id="recall_last_city",
                 user_content=user("前回の都市の観光情報は？"),
-                final_response=model("大阪の観光スポットは大阪城、道頓堀、通天閣です。"),
+                final_response=model(
+                    "大阪の観光スポットは大阪城、道頓堀、通天閣です。"
+                ),
                 intermediate_data=IntermediateData(tool_uses=[sight("osaka")]),
             )
         ],
@@ -149,7 +185,9 @@ def main() -> None:
         eval_cases=CASES,
     )
     out = Path(__file__).parent / "weather_agent_v1.evalset.json"
-    out.write_text(eval_set.model_dump_json(indent=2, exclude_none=True), encoding="utf-8")
+    out.write_text(
+        eval_set.model_dump_json(indent=2, exclude_none=True), encoding="utf-8"
+    )
     print(f"{out.name}: {len(CASES)} 件")
 
     by_tools = {}

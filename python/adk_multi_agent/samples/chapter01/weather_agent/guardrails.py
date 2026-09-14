@@ -27,7 +27,9 @@ _SECRET_PATTERNS = [
 
 
 def _refuse(text: str) -> LlmResponse:
-    return LlmResponse(content=types.Content(role="model", parts=[types.Part(text=text)]))
+    return LlmResponse(
+        content=types.Content(role="model", parts=[types.Part(text=text)])
+    )
 
 
 def _request_text(req: LlmRequest) -> str:
@@ -46,10 +48,14 @@ def block_credential_requests(
     text = _request_text(llm_request)
     for word in _BANNED:
         if word in text:
-            return _refuse("資格情報に関する質問には回答できません。天気か観光について聞いてください。")
+            return _refuse(
+                "資格情報に関する質問には回答できません。天気か観光について聞いてください。"
+            )
     for word in _INJECTION:
         if word in text:
-            return _refuse("その要求には応じられません。天気か観光について聞いてください。")
+            return _refuse(
+                "その要求には応じられません。天気か観光について聞いてください。"
+            )
     return None
 
 

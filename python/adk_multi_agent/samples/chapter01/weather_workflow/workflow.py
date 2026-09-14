@@ -25,16 +25,21 @@ from google.adk import Context, Event, Workflow
 # adk web は各エージェントのディレクトリを独立したパッケージとして読むため、
 # 兄弟パッケージからの import は ModuleNotFoundError になる。
 _ALIASES = {
-    "東京": "tokyo", "とうきょう": "tokyo",
-    "大阪": "osaka", "おおさか": "osaka",
-    "札幌": "sapporo", "さっぽろ": "sapporo",
-    "福岡": "fukuoka", "ふくおか": "fukuoka",
+    "東京": "tokyo",
+    "とうきょう": "tokyo",
+    "大阪": "osaka",
+    "おおさか": "osaka",
+    "札幌": "sapporo",
+    "さっぽろ": "sapporo",
+    "福岡": "fukuoka",
+    "ふくおか": "fukuoka",
 }
 
 
 def normalize(city: str) -> str:
     raw = city.strip()
     return _ALIASES.get(raw, raw.lower())
+
 
 _WEATHER = {
     "tokyo": ("晴れ", 28),

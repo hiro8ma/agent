@@ -19,3 +19,8 @@ dev = [
 [tool.pytest.ini_options]
 pythonpath = ["."]
 asyncio_mode = "auto"
+
+[tool.ruff.lint.per-file-ignores]
+# 台本モデルは pydantic の BaseLlm を継承するので、フィールドを ClassVar にはできない。
+"**/test_*.py" = ["RUF012"]
+"**/*_test.py" = ["RUF012"]

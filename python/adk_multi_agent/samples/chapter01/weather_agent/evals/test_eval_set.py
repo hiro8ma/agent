@@ -8,7 +8,6 @@ adk eval は API キーが要るため、ここでは形式と中身だけを見
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pytest
@@ -65,7 +64,9 @@ def test_tool_calls_reference_real_tool(eval_set: EvalSet) -> None:
 
         declared = {t.__name__ for t in root_agent.tools}
         for use in case.conversation[0].intermediate_data.tool_uses:
-            assert use.name in declared, f"{case.eval_id}: エージェントに未登録の {use.name}"
+            assert use.name in declared, (
+                f"{case.eval_id}: エージェントに未登録の {use.name}"
+            )
 
 
 def test_expected_answers_match_tool_output(eval_set: EvalSet) -> None:
@@ -114,7 +115,12 @@ def test_unknown_city_expects_tool_call(eval_set: EvalSet) -> None:
 
 
 def test_out_of_scope_expects_no_tool_call(eval_set: EvalSet) -> None:
-    for eval_id in ("out_of_scope", "vague_user", "prompt_injection", "credential_request"):
+    for eval_id in (
+        "out_of_scope",
+        "vague_user",
+        "prompt_injection",
+        "credential_request",
+    ):
         case = next(c for c in eval_set.eval_cases if c.eval_id == eval_id)
         uses = case.conversation[0].intermediate_data.tool_uses
         assert uses == [], f"{eval_id}: ツールを呼ぶ期待になっている"
@@ -206,6 +212,7 @@ def test_city_args_are_accepted_by_tool(eval_set: EvalSet) -> None:
                 f"{case.eval_id}: {use.name} が {city!r} を受け付けない"
             )
 
+
 def test_instruction_matches_the_tool_trajectories_the_eval_set_expects(
     eval_set: EvalSet,
 ) -> None:
@@ -231,4 +238,3 @@ def test_instruction_matches_the_tool_trajectories_the_eval_set_expects(
             )
     if ("get_sightseeing", "get_weather") in expected:
         assert "両方" in instruction, "両方呼ぶ場合の指示が Instruction に無い"
-
