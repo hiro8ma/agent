@@ -9,11 +9,11 @@ Python 版は `agent/python/adk_multi_agent/samples/chapterNN/` にある。
 
 | | 最新 | 使用 |
 |---|---|---|
-| Python `google-adk` | 2.8.0 | **2.2.0**（教材が固定） |
+| Python `google-adk` | 2.9.0 | **2.2.0**（教材が固定） |
 | Go `google.golang.org/adk/v2` | **2.2.0** | 2.2.0 |
 
 Go 版の最新が、たまたま教材の指定と同じ番号になる。
-Python は 6 マイナーバージョン先行しており、リリース間隔は約 2 週間。
+Python は 7 マイナーバージョン先行しており、リリース間隔は約 2 週間。
 
 ## 章ごとの対応
 
@@ -23,7 +23,7 @@ Go 版に評価のパッケージが無い。そこだけ自作のハーネス�
 |---|---|---|
 | 1 | 天気取得（最小構成） | `agent/llmagent` `tool/functiontool` |
 | 2 | 旅行プランナー（Sequential + Parallel） | `agent/workflowagents/{sequentialagent,parallelagent,loopagent}` |
-| 3 | サポート + Agent Skills | `tool` 系 15 パッケージ |
+| 3 | サポート + Agent Skills | `internal/adkbook/chapter03` + `tool/skilltoolset` |
 | 4 | Memory Engineering | `memory` `memory/vertexai` `tool/loadmemorytool` |
 | **5** | **経費精算 + 評価セット** | **無い → `internal/evalharness` で埋める** |
 | 6 | インフラ監視（MCP + CLI） | `tool/mcptoolset` |
