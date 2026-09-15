@@ -14,8 +14,10 @@ from types import MappingProxyType, SimpleNamespace
 import pytest
 from google.adk import Context
 from google.adk.agents.callback_context import CallbackContext
+from google.adk.agents.invocation_context import InvocationContext
 from google.adk.agents.readonly_context import ReadonlyContext
 from google.adk.tools import ToolContext
+from pydantic import BaseModel
 
 
 def _fake_invocation(state: dict) -> SimpleNamespace:
@@ -59,3 +61,29 @@ def test_readonly_state_is_a_view_not_a_copy():
     ctx = ReadonlyContext(_fake_invocation(session_state))
     session_state["city"] = "osaka"
     assert ctx.state["city"] == "osaka"
+
+
+def test_readonly_state_only_blocks_top_level_writes():
+    """MappingProxyType は入れ子の辞書まで不変にはしない。"""
+    session_state = {"profile": {"tier": "standard"}}
+    ctx = ReadonlyContext(_fake_invocation(session_state))
+
+    ctx.state["profile"]["tier"] = "premium"
+
+    assert session_state["profile"]["tier"] == "premium"
+
+
+def test_invocation_context_is_an_independent_runtime_model():
+    """ReadonlyContext の親ではなく、Runner が作る実行データである。"""
+    assert issubclass(InvocationContext, BaseModel)
+    assert not issubclass(InvocationContext, ReadonlyContext)
+    for name in (
+        "session_service",
+        "artifact_service",
+        "memory_service",
+        "credential_service",
+        "invocation_id",
+        "agent",
+        "session",
+    ):
+        assert name in InvocationContext.model_fields

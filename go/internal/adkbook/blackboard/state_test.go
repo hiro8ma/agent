@@ -81,6 +81,9 @@ func TestPrefixDecidesScope(t *testing.T) {
 	if _, ok := st["finding"]; ok {
 		t.Error("接頭辞なしの鍵が別セッションから見えた")
 	}
+	if _, ok := st["temp:draft"]; ok {
+		t.Error("temp: の鍵が呼び出し後に残った")
+	}
 	// user: と app: は越える。
 	if v, ok := st["user:profile"]; !ok || v != "この利用者のどのセッションでも" {
 		t.Errorf("user: が越えていない: %v", st)
