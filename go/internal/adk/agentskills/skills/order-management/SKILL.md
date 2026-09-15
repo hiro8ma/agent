@@ -3,7 +3,7 @@ name: order-management
 description: 注文状況の確認、キャンセル、配送追跡に対応するときに使う
 license: Apache-2.0
 metadata:
-  owner: adkbook-chapter03
+  owner: adk-agentskills
 ---
 
 # 注文管理

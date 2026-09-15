@@ -23,7 +23,7 @@ Go 版に評価のパッケージが無い。そこだけ自作のハーネス�
 |---|---|---|
 | 1 | 天気取得（最小構成） | `agent/llmagent` `tool/functiontool` |
 | 2 | 旅行プランナー（Sequential + Parallel） | `agent/workflowagents/{sequentialagent,parallelagent,loopagent}` |
-| 3 | サポート + Agent Skills | `internal/adkbook/chapter03` + `tool/skilltoolset` |
+| 3 | サポート + Agent Skills | `internal/adk/agentskills` + `tool/skilltoolset` |
 | 4 | Memory Engineering | `memory` `memory/vertexai` `tool/loadmemorytool` |
 | **5** | **経費精算 + 評価セット** | **無い → `internal/evalharness` で埋める** |
 | 6 | インフラ監視（MCP + CLI） | `tool/mcptoolset` |

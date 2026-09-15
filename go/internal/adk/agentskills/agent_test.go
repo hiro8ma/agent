@@ -1,4 +1,4 @@
-package chapter03
+package agentskills
 
 import (
 	"context"

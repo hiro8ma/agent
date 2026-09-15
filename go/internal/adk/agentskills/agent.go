@@ -1,5 +1,5 @@
-// Package chapter03 は Agent Skills の段階的な読み込みを扱う。
-package chapter03
+// Package agentskills は Agent Skills の段階的な読み込みを扱う。
+package agentskills
 
 import (
 	"context"
