@@ -6,7 +6,7 @@ export
 
 UV ?= uv
 PORT ?= 8000
-AGENTS ?= samples/chapter02
+AGENTS ?= samples/agents
 AGENT ?= travel_planner
 Q ?= 東京から京都に2泊3日。予算は1人8万円、歴史的な場所と和食が好き
 
@@ -41,4 +41,4 @@ run: ## adk run を 1 回実行（AGENT=... Q="..."）。無料枠では途中�
 	cd $(AGENTS) && $(ADK_ENV) $(UV) run adk run $(AGENT) "$(Q)" --jsonl
 
 live: ## 旅行プランナーを実機で 1 往復（429 を待つリトライ付き）
-	$(ADK_ENV) $(UV) run python -m samples.chapter02.travel_planner.live_run
+	$(ADK_ENV) $(UV) run python -m samples.agents.travel_planner.live_run

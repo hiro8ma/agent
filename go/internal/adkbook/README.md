@@ -34,7 +34,7 @@ Go 版に評価のパッケージが無い。そこだけ自作のハーネス�
 
 ## 2 言語で書くと見える差
 
-第 1 章の時点で 2 つ出ている。
+天気エージェントの時点で 2 つ出ている。
 
 | | Python | Go |
 |---|---|---|
@@ -52,6 +52,6 @@ Go 側のほうが「ボイラープレート」の量が多い。
 
 ```bash
 export GOOGLE_API_KEY=...
-go run ./cmd/adkbook-ch01           # 対話
-go run ./cmd/adkbook-ch01 web       # 開発 UI
+go run ./cmd/adkbook-weather           # 対話
+go run ./cmd/adkbook-weather web       # 開発 UI
 ```

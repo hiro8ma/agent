@@ -4,7 +4,7 @@ BIN_DIR := $(abspath ./bin)
 IMPLEMENTATIONS := genai genkit adk
 
 # ADK の Web UI / REST を起動する対象と口。UI 本体は adk-go にビルド済みで同梱されている。
-ADK_AGENT ?= adkbook-ch02
+ADK_AGENT ?= adkbook-travelplanner
 ADK_PORT ?= 8080
 ADK_KEY = GOOGLE_API_KEY=$${GOOGLE_API_KEY:-$$GEMINI_API_KEY}
 
@@ -49,7 +49,7 @@ demo-all: ## 3 実装を順番にデモ実行（比較用）
 		go run ./cmd/$$impl || true; \
 	done
 
-adk-web: ## ADK の Web UI を起動（ADK_AGENT=adkbook-ch02 ADK_PORT=8080）
+adk-web: ## ADK の Web UI を起動（ADK_AGENT=adkbook-travelplanner ADK_PORT=8080）
 	@echo "UI: http://localhost:$(ADK_PORT)/ui/   API: http://localhost:$(ADK_PORT)/api/list-apps"
 	$(ADK_KEY) go run ./cmd/$(ADK_AGENT) web -port $(ADK_PORT) api webui \
 		-api_server_address http://localhost:$(ADK_PORT)/api
