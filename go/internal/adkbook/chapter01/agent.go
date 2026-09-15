@@ -149,11 +149,16 @@ func buildConfig(m model.LLM, log *guardrail.Log) (llmagent.Config, error) {
 		InstructionProvider: BuildInstruction,
 		Tools:               []tool.Tool{weatherTool, sightseeingTool},
 
+		// 並べた順に走り、非 nil を返した時点で止まる。
+		// 語句の一致より、指示の上書きを狙う形を先に落とす。
 		BeforeModelCallbacks: []llmagent.BeforeModelCallback{
+			guardrail.DetectInjection(log, guardrail.InjectionPatterns,
+				"ご質問の内容をもう少し具体的にお教えください。"),
 			guardrail.BlockInput(log, []string{"パスワード", "APIキー", "秘密鍵"}),
 		},
 		AfterModelCallbacks: []llmagent.AfterModelCallback{
 			guardrail.RedactOutput(log, redactionPrefixes),
+			guardrail.MaskPII(log),
 		},
 		OnModelErrorCallbacks: []llmagent.OnModelErrorCallback{
 			guardrail.FallbackOnModelError(log,
