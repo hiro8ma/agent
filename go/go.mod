@@ -1,6 +1,6 @@
 module github.com/hiro8ma/agent/go
 
-go 1.26.5
+go 1.27.0
 
 require (
 	cloud.google.com/go/firestore v1.22.0

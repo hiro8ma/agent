@@ -7,7 +7,7 @@ agent モノレポの開発環境を [Dev Container Specification](https://conta
 | ツール | バージョン | 用途 |
 |---|---|---|
 | Bun | 1.3.11 | `ts/` のランタイム / パッケージマネージャ |
-| Go | 1.23.4 | `go/` のビルド |
+| Go | 1.27.0 | `go/` のビルド |
 | Python | 3.12 | `python/langchain/` のランタイム |
 | uv | 最新 | `python/langchain/` の依存管理 |
 | GitHub CLI | apt stable | PR / Issue 操作 |

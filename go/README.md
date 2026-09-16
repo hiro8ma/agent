@@ -95,7 +95,7 @@ make compose-up                 # build + 3 サービス起動
 
 ## Tech Stack
 
-- **Language** Go 1.25
+- **Language** Go 1.27
 - **SDK** google.golang.org/genai v1.51
 - **Frameworks** Firebase Genkit v1.4 / Google ADK v0.6
 - **Model** Gemini 2.0 Flash

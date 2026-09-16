@@ -81,7 +81,7 @@ Python はパッケージマネージャ（`pip` / `poetry` / `pipenv`）と仮�
 
 ## 開発環境（Devcontainer）
 
-`.devcontainer/devcontainer.json` で開発環境をコードとして定義している。VS Code / Cursor / GitHub Codespaces で `agent/` を開くとコンテナが自動構築され、Bun / Go 1.23 / Python 3.12 + uv / GitHub CLI が揃った状態で起動する。詳細は [`.devcontainer/README.md`](./.devcontainer/README.md) を参照。
+`.devcontainer/devcontainer.json` で開発環境をコードとして定義している。VS Code / Cursor / GitHub Codespaces で `agent/` を開くとコンテナが自動構築され、Bun / Go 1.27 / Python 3.12 + uv / GitHub CLI が揃った状態で起動する。詳細は [`.devcontainer/README.md`](./.devcontainer/README.md) を参照。
 
 ホスト OS / 個人マシンの状態に依存しない再現性を確保し、ルート README で示した「標準ツールチェーン体験を全言語で揃える」方針を開発環境レベルでも担保する。
 
