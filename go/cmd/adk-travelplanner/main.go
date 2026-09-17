@@ -13,7 +13,7 @@ import (
 	"google.golang.org/adk/v2/cmd/launcher"
 	"google.golang.org/adk/v2/cmd/launcher/full"
 
-	"github.com/hiro8ma/agent/go/internal/adkbook/travelplanner"
+	"github.com/hiro8ma/agent/go/internal/adk/travelplanner"
 )
 
 func main() {

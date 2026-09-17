@@ -52,6 +52,6 @@ Go 側のほうが「ボイラープレート」の量が多い。
 
 ```bash
 export GOOGLE_API_KEY=...
-go run ./cmd/adkbook-weather           # 対話
-go run ./cmd/adkbook-weather web       # 開発 UI
+go run ./cmd/adk-weather           # 対話
+go run ./cmd/adk-weather web       # 開発 UI
 ```

@@ -8,7 +8,7 @@ import (
 	"google.golang.org/adk/v2/agent/llmagent"
 	"google.golang.org/adk/v2/model"
 
-	"github.com/hiro8ma/agent/go/internal/adkbook/blackboard"
+	"github.com/hiro8ma/agent/go/internal/adk/blackboard"
 )
 
 const GlobalPolicy = "顧客の認証情報や決済情報を要求しません。" +

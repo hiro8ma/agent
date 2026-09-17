@@ -1,6 +1,8 @@
-// Package main は顧客対応エージェントのエントリ。
+// Package main は天気と観光のエージェントのエントリ。
 //
-// 振り分けの root に注文担当と技術サポートをぶら下げた木を launcher へ渡す。
+// Python 版の `adk run weather_agent` に対応する。
+// あちらはディレクトリから root_agent を探すが、
+// こちらは組み立てたエージェントを launcher へ明示的に渡す。
 package main
 
 import (
@@ -8,17 +10,12 @@ import (
 	"log"
 	"os"
 
-	"google.golang.org/genai"
-
 	"google.golang.org/adk/v2/agent"
 	"google.golang.org/adk/v2/cmd/launcher"
 	"google.golang.org/adk/v2/cmd/launcher/full"
-	"google.golang.org/adk/v2/model/gemini"
 
-	"github.com/hiro8ma/agent/go/internal/adkbook/supportcontext"
+	"github.com/hiro8ma/agent/go/internal/adk/weather"
 )
-
-const modelName = "gemini-3.5-flash"
 
 func main() {
 	ctx := context.Background()
@@ -31,12 +28,7 @@ func main() {
 		log.Fatal("GOOGLE_API_KEY または GEMINI_API_KEY を設定してください")
 	}
 
-	m, err := gemini.NewModel(ctx, modelName, &genai.ClientConfig{APIKey: apiKey})
-	if err != nil {
-		log.Fatalf("failed to build model: %v", err)
-	}
-
-	a, err := supportcontext.New(m)
+	a, err := weather.New(ctx, apiKey)
 	if err != nil {
 		log.Fatalf("failed to build agent: %v", err)
 	}
