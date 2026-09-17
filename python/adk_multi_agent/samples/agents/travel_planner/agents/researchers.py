@@ -12,7 +12,7 @@ from google.adk.agents import ParallelAgent
 
 from ..tools import restaurant_search_tool, spot_search_tool, transport_search_tool
 
-MODEL = "gemini-3.5-flash"
+MODEL = "gemini-3.8-flash"
 
 SPOT_KEY = "spot_research"
 RESTAURANT_KEY = "restaurant_research"

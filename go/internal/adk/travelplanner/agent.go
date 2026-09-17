@@ -16,7 +16,7 @@ import (
 )
 
 // ModelName は教材のメインモデル。既定に依存しない。
-const ModelName = "gemini-3.5-flash"
+const ModelName = "gemini-3.8-flash"
 
 // 出力を次の段へ渡す鍵。
 //

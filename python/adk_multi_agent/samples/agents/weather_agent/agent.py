@@ -23,7 +23,7 @@ from .guardrails import (
 )
 from .tools import LAST_CITY_KEY, get_sightseeing, get_weather
 
-MODEL = "gemini-3.5-flash"
+MODEL = "gemini-3.8-flash"
 
 _BASE_INSTRUCTION = (
     "あなたは天気と観光を答えるエージェントです。"

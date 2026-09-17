@@ -33,7 +33,7 @@ import (
 // ADK v2.2.0 の LlmAgent の既定は gemini-3-flash-preview になるが、
 // 暗黙の既定に依存しない。既定はバージョンで変わり、
 // 変わったことに気づけないまま結果だけが動く。
-const ModelName = "gemini-3.5-flash"
+const ModelName = "gemini-3.8-flash"
 
 // redactionPrefixes は出力から消す秘密の接頭辞。
 //

@@ -48,7 +48,7 @@ from samples.agents.travel_planner.tools import (
     spot_search_tool,
 )
 
-MODEL_NAME = "gemini-3.5-flash"
+MODEL_NAME = "gemini-3.8-flash"
 
 
 class FakeContext:

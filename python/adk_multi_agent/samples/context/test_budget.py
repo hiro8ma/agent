@@ -181,7 +181,7 @@ def test_app_accepts_compaction_and_cache_config():
     """App に載せる設定は 3 つ。Compaction は履歴、Cache はコストに効く。"""
     app = App(
         name="context_demo",
-        root_agent=Agent(name="demo", model="gemini-3.5-flash", instruction="x"),
+        root_agent=Agent(name="demo", model="gemini-3.8-flash", instruction="x"),
         events_compaction_config=EventsCompactionConfig(
             compaction_interval=3, overlap_size=1
         ),

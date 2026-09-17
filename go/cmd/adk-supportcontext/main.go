@@ -18,7 +18,7 @@ import (
 	"github.com/hiro8ma/agent/go/internal/adk/supportcontext"
 )
 
-const modelName = "gemini-3.5-flash"
+const modelName = "gemini-3.8-flash"
 
 func main() {
 	ctx := context.Background()

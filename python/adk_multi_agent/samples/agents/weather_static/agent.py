@@ -11,7 +11,7 @@ from google.adk import Agent
 
 from .tools import get_sightseeing, get_weather
 
-MODEL = "gemini-3.5-flash"
+MODEL = "gemini-3.8-flash"
 
 INSTRUCTION = (
     "あなたは天気と観光を答えるエージェントです。"

@@ -22,7 +22,7 @@ from langchain_core.messages import BaseMessage
 COST_PER_MTOK: dict[str, dict[str, float]] = {
     "gpt-4o-2024-11-20": {"input": 2.50, "output": 10.00},
     "gpt-4o-mini-2024-07-18": {"input": 0.15, "output": 0.60},
-    "gemini-3.5-flash": {"input": 0.30, "output": 2.50},
+    "gemini-3.8-flash": {"input": 0.30, "output": 2.50},
 }
 
 

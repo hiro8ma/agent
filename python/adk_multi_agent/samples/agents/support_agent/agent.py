@@ -41,7 +41,7 @@ from .callbacks import (
 )
 from .tools import cancel_order, get_order_status, get_product_details, search_products
 
-MODEL = "gemini-3.5-flash"
+MODEL = "gemini-3.8-flash"
 SKILLS_DIR = Path(__file__).resolve().parent / "skills"
 
 order_skill = load_skill_from_dir(SKILLS_DIR / "order-management")

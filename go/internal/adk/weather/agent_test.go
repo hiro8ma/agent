@@ -58,7 +58,7 @@ func TestGetWeatherReportsUnknownCityAsData(t *testing.T) {
 // 暗黙の既定に任せると、バージョンが上がったときに
 // 気づかないままモデルが変わる。
 func TestModelIsPinnedExplicitly(t *testing.T) {
-	if ModelName != "gemini-3.5-flash" {
+	if ModelName != "gemini-3.8-flash" {
 		t.Errorf("ModelName = %q（教材のメインモデルのはず）", ModelName)
 	}
 }

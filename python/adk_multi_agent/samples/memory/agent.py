@@ -26,7 +26,7 @@ from google.adk.agents.callback_context import CallbackContext
 from google.adk.sessions.state import State
 from google.adk.tools.preload_memory_tool import PreloadMemoryTool
 
-MODEL = "gemini-3.5-flash"
+MODEL = "gemini-3.8-flash"
 
 INSTRUCTION = """あなたは利用者の好みを覚える案内役です。
 過去の会話が必要な場合は、与えられた記憶だけを使って答えてください。

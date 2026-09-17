@@ -16,7 +16,7 @@ func TestConfigDoesNotLeakAPIKey(t *testing.T) {
 	cfg := &config{
 		port:         "19910",
 		geminiAPIKey: secret,
-		defaultModel: "googleai/gemini-3.5-flash",
+		defaultModel: "googleai/gemini-3.8-flash",
 	}
 
 	var buf bytes.Buffer

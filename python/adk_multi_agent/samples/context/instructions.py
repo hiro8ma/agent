@@ -7,7 +7,7 @@ from google.adk.agents.readonly_context import ReadonlyContext
 from google.adk.apps import App
 from google.adk.plugins.global_instruction_plugin import GlobalInstructionPlugin
 
-MODEL = "gemini-3.5-flash"
+MODEL = "gemini-3.8-flash"
 
 GLOBAL_POLICY = (
     "顧客の認証情報や決済情報を要求しません。"

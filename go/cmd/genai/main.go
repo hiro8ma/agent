@@ -17,7 +17,7 @@ import (
 )
 
 // gemini-2.x 系は 2026-10-16 に提供終了。現行の安定版に揃える。
-const modelName = "gemini-3.5-flash"
+const modelName = "gemini-3.8-flash"
 
 func main() {
 	ctx := context.Background()
