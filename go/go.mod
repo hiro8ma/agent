@@ -3,7 +3,7 @@ module github.com/hiro8ma/agent/go
 go 1.27.0
 
 require (
-	cloud.google.com/go/firestore v1.22.0
+	cloud.google.com/go/firestore v1.25.0
 	connectrpc.com/connect v1.20.0
 	github.com/firebase/genkit/go v1.11.0
 	github.com/glebarez/sqlite v1.11.0
