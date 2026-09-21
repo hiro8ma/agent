@@ -4,6 +4,8 @@
 // 呼べるかを確かめるテストが起動する。
 //
 //	go run ./cmd/a2a-interop-server -addr 127.0.0.1:18765
+//
+// 環境変数 A2A_INTEROP_TOKEN があれば、Agent Card に OAuth 2 を宣言し、そのトークンを Bearer で求める。
 package main
 
 import (
@@ -12,6 +14,7 @@ import (
 	"iter"
 	"log"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
@@ -45,6 +48,15 @@ func main() {
 		DefaultInputModes: []string{"text/plain"}, DefaultOutputModes: []string{"text/plain"},
 		Skills: []a2a.AgentSkill{{ID: "expense", Name: "経費", Description: "経費の受付", Tags: []string{"expense"}}},
 	}
-	srv := &http.Server{Addr: *addr, Handler: a2ainterop.NewHandler(a, card, "http://"+*addr), ReadHeaderTimeout: 5 * time.Second}
+	token := os.Getenv("A2A_INTEROP_TOKEN")
+	if token != "" {
+		a2ainterop.DeclareOAuth2(&card, "oauth2", "https://auth.example.com/oauth/token",
+			map[string]string{"expense:read": "経費の読み取り"}, "expense:read")
+	}
+	h := a2ainterop.NewHandler(a, card, "http://"+*addr)
+	if token != "" {
+		h = a2ainterop.RequireBearer(h, a2ainterop.StaticToken(token, "expense:read"), "expense:read")
+	}
+	srv := &http.Server{Addr: *addr, Handler: h, ReadHeaderTimeout: 5 * time.Second}
 	log.Fatal(srv.ListenAndServe())
 }
