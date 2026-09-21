@@ -155,10 +155,11 @@ func (x *AgentInfo) GetDescription() string {
 }
 
 type AskRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	AgentId       string                 `protobuf:"bytes,1,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
-	SessionId     string                 `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
-	Message       string                 `protobuf:"bytes,3,opt,name=message,proto3" json:"message,omitempty"`
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	AgentId string                 `protobuf:"bytes,1,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
+	// 空なら新しいセッションを作り、AskResult.session_id で返す
+	SessionId     string `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	Message       string `protobuf:"bytes,3,opt,name=message,proto3" json:"message,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -216,10 +217,13 @@ func (x *AskRequest) GetMessage() string {
 
 type AskResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 途中チャンク。最終メッセージでは空
-	AnswerDelta string `protobuf:"bytes,1,opt,name=answer_delta,json=answerDelta,proto3" json:"answer_delta,omitempty"`
-	// 最終メッセージでのみ設定される
-	Result        *AskResult `protobuf:"bytes,2,opt,name=result,proto3" json:"result,omitempty"`
+	// 途中は answer_delta、最後の 1 通だけ result。番号は変えていないので旧クライアントも読める
+	//
+	// Types that are valid to be assigned to Event:
+	//
+	//	*AskResponse_AnswerDelta
+	//	*AskResponse_Result
+	Event         isAskResponse_Event `protobuf_oneof:"event"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -254,19 +258,46 @@ func (*AskResponse) Descriptor() ([]byte, []int) {
 	return file_agent_v1_agent_proto_rawDescGZIP(), []int{4}
 }
 
+func (x *AskResponse) GetEvent() isAskResponse_Event {
+	if x != nil {
+		return x.Event
+	}
+	return nil
+}
+
 func (x *AskResponse) GetAnswerDelta() string {
 	if x != nil {
-		return x.AnswerDelta
+		if x, ok := x.Event.(*AskResponse_AnswerDelta); ok {
+			return x.AnswerDelta
+		}
 	}
 	return ""
 }
 
 func (x *AskResponse) GetResult() *AskResult {
 	if x != nil {
-		return x.Result
+		if x, ok := x.Event.(*AskResponse_Result); ok {
+			return x.Result
+		}
 	}
 	return nil
 }
+
+type isAskResponse_Event interface {
+	isAskResponse_Event()
+}
+
+type AskResponse_AnswerDelta struct {
+	AnswerDelta string `protobuf:"bytes,1,opt,name=answer_delta,json=answerDelta,proto3,oneof"`
+}
+
+type AskResponse_Result struct {
+	Result *AskResult `protobuf:"bytes,2,opt,name=result,proto3,oneof"`
+}
+
+func (*AskResponse_AnswerDelta) isAskResponse_Event() {}
+
+func (*AskResponse_Result) isAskResponse_Event() {}
 
 type AskResult struct {
 	state        protoimpl.MessageState `protogen:"open.v1"`
@@ -278,8 +309,10 @@ type AskResult struct {
 	ErrorMessage string                 `protobuf:"bytes,6,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
 	// 承認待ちのツール呼び出し。ExecuteConfirmedToolCall で実行する
 	PendingToolCalls []*PendingToolCall `protobuf:"bytes,7,rep,name=pending_tool_calls,json=pendingToolCalls,proto3" json:"pending_tool_calls,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// この往復を履歴に残せたか。false なら次の Ask はこの往復を覚えていない
+	HistorySaved  bool `protobuf:"varint,8,opt,name=history_saved,json=historySaved,proto3" json:"history_saved,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *AskResult) Reset() {
@@ -359,6 +392,13 @@ func (x *AskResult) GetPendingToolCalls() []*PendingToolCall {
 		return x.PendingToolCalls
 	}
 	return nil
+}
+
+func (x *AskResult) GetHistorySaved() bool {
+	if x != nil {
+		return x.HistorySaved
+	}
+	return false
 }
 
 type ToolCall struct {
@@ -637,10 +677,11 @@ const file_agent_v1_agent_proto_rawDesc = "" +
 	"\bagent_id\x18\x01 \x01(\tR\aagentId\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x02 \x01(\tR\tsessionId\x12\x18\n" +
-	"\amessage\x18\x03 \x01(\tR\amessage\"]\n" +
-	"\vAskResponse\x12!\n" +
-	"\fanswer_delta\x18\x01 \x01(\tR\vanswerDelta\x12+\n" +
-	"\x06result\x18\x02 \x01(\v2\x13.agent.v1.AskResultR\x06result\"\xb4\x02\n" +
+	"\amessage\x18\x03 \x01(\tR\amessage\"j\n" +
+	"\vAskResponse\x12#\n" +
+	"\fanswer_delta\x18\x01 \x01(\tH\x00R\vanswerDelta\x12-\n" +
+	"\x06result\x18\x02 \x01(\v2\x13.agent.v1.AskResultH\x00R\x06resultB\a\n" +
+	"\x05event\"\xd9\x02\n" +
 	"\tAskResult\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x16\n" +
@@ -650,7 +691,8 @@ const file_agent_v1_agent_proto_rawDesc = "" +
 	"tool_calls\x18\x04 \x03(\v2\x12.agent.v1.ToolCallR\ttoolCalls\x12*\n" +
 	"\x05usage\x18\x05 \x01(\v2\x14.agent.v1.TokenUsageR\x05usage\x12#\n" +
 	"\rerror_message\x18\x06 \x01(\tR\ferrorMessage\x12G\n" +
-	"\x12pending_tool_calls\x18\a \x03(\v2\x19.agent.v1.PendingToolCallR\x10pendingToolCalls\"M\n" +
+	"\x12pending_tool_calls\x18\a \x03(\v2\x19.agent.v1.PendingToolCallR\x10pendingToolCalls\x12#\n" +
+	"\rhistory_saved\x18\b \x01(\bR\fhistorySaved\"M\n" +
 	"\bToolCall\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12-\n" +
 	"\x05input\x18\x02 \x01(\v2\x17.google.protobuf.StructR\x05input\"v\n" +
@@ -728,6 +770,10 @@ func init() { file_agent_v1_agent_proto_init() }
 func file_agent_v1_agent_proto_init() {
 	if File_agent_v1_agent_proto != nil {
 		return
+	}
+	file_agent_v1_agent_proto_msgTypes[4].OneofWrappers = []any{
+		(*AskResponse_AnswerDelta)(nil),
+		(*AskResponse_Result)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{

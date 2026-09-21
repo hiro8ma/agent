@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"net/http"
 	"time"
 
 	"connectrpc.com/connect"
@@ -12,6 +13,7 @@ import (
 
 	agentv1 "github.com/hiro8ma/agent/go/gen/agent/v1"
 	"github.com/hiro8ma/agent/go/gen/agent/v1/agentv1connect"
+	"github.com/hiro8ma/agent/go/internal/lib/libconnect"
 )
 
 // Handler は Connect RPC（server streaming）で AgentService を公開する。
@@ -25,6 +27,13 @@ type Handler struct {
 }
 
 var _ agentv1connect.AgentServiceHandler = (*Handler)(nil)
+
+// NewConnectHandler は利用者の特定まで含めて公開する。一覧取得だけは利用者なしで呼べる。
+func NewConnectHandler(h *Handler, auth libconnect.Authenticator) (string, http.Handler) {
+	return agentv1connect.NewAgentServiceHandler(h, connect.WithInterceptors(
+		libconnect.ServerIdentity(auth, agentv1connect.AgentServiceListAgentsProcedure),
+	))
+}
 
 func NewHandler(registry *Registry, sessions SessionStore, executor ToolExecutor, logger *slog.Logger) *Handler {
 	return &Handler{registry: registry, sessions: sessions, executor: executor, logger: logger}
@@ -46,72 +55,98 @@ func (h *Handler) ListAgents(_ context.Context, _ *connect.Request[agentv1.ListA
 
 func (h *Handler) Ask(ctx context.Context, req *connect.Request[agentv1.AskRequest], stream *connect.ServerStream[agentv1.AskResponse]) error {
 	msg := req.Msg
-	if msg.GetAgentId() == "" || msg.GetSessionId() == "" || msg.GetMessage() == "" {
-		return connect.NewError(connect.CodeInvalidArgument, errors.New("agentId, sessionId and message are required"))
+	if msg.GetAgentId() == "" || msg.GetMessage() == "" {
+		return connect.NewError(connect.CodeInvalidArgument, errors.New("agentId and message are required"))
 	}
 	a, ok := h.registry.Get(msg.GetAgentId())
 	if !ok {
 		return connect.NewError(connect.CodeNotFound, errors.New("unknown agent: "+msg.GetAgentId()))
 	}
 
-	if err := h.budget.Check(msg.GetSessionId()); err != nil {
+	sessionID, err := h.resolveSession(ctx, msg)
+	if err != nil {
+		return err
+	}
+
+	if err := h.budget.Check(sessionID); err != nil {
 		return connect.NewError(connect.CodeResourceExhausted, err)
 	}
 
-	history, err := h.sessions.Load(ctx, msg.GetSessionId())
+	// 他人のセッションは保管先が拒否する。拒否の理由はそのまま Code に写す。
+	history, err := h.sessions.Load(ctx, sessionID)
 	if err != nil {
-		return connect.NewError(connect.CodeInternal, err)
+		return libconnect.Error(err)
 	}
 
 	start := time.Now()
-	input := &AskInput{SessionID: msg.GetSessionId(), UserMessage: msg.GetMessage(), History: history}
+	input := &AskInput{SessionID: sessionID, UserMessage: msg.GetMessage(), History: history}
 	var final *AskOutput
 	for chunk, out := range a.Ask(ctx, input) {
 		if out != nil {
 			final = out
 			break
 		}
-		if err := stream.Send(&agentv1.AskResponse{AnswerDelta: chunk.AnswerDelta}); err != nil {
+		if err := stream.Send(&agentv1.AskResponse{Event: &agentv1.AskResponse_AnswerDelta{AnswerDelta: chunk.AnswerDelta}}); err != nil {
 			return err
 		}
 	}
 	if final == nil {
 		return connect.NewError(connect.CodeInternal, errors.New("stream ended without result"))
 	}
+	final.SessionID = sessionID
 
-	h.budget.Add(msg.GetSessionId(), final.Usage)
+	h.budget.Add(sessionID, final.Usage)
+
+	// 最終応答を送る前に保存し、保存できたかを応答に載せる。送った後に保存すると、失敗を呼び出し元に伝えられない。
+	historySaved := false
+	if final.ErrorMessage == "" {
+		err := h.sessions.Append(ctx, sessionID,
+			Message{Role: "user", Text: msg.GetMessage()},
+			Message{Role: "model", Text: final.Answer},
+		)
+		historySaved = err == nil
+		if err != nil {
+			h.logger.Error("failed to append session", "sessionId", sessionID, "error", err)
+		}
+	}
 
 	attrs := []any{
 		"agentId", msg.GetAgentId(),
-		"sessionId", msg.GetSessionId(),
+		"sessionId", sessionID,
 		"latencyMs", time.Since(start).Milliseconds(),
 		"inputTokens", final.Usage.InputTokens,
 		"outputTokens", final.Usage.OutputTokens,
 		"toolCalls", len(final.ToolCalls),
 		"pendingToolCalls", len(final.PendingToolCalls),
 		"finishReason", final.FinishReason,
+		"historySaved", historySaved,
 		"error", final.ErrorMessage,
 	}
 	if h.budget != nil {
-		sessionUsed, totalUsed := h.budget.Used(msg.GetSessionId())
+		sessionUsed, totalUsed := h.budget.Used(sessionID)
 		attrs = append(attrs, "budget_session_used", sessionUsed, "budget_total_used", totalUsed)
 	}
 	h.logger.Info("ask_completed", attrs...)
 
-	if err := stream.Send(&agentv1.AskResponse{Result: toResult(final)}); err != nil {
-		return err
-	}
+	result := toResult(final)
+	result.HistorySaved = historySaved
+	return stream.Send(&agentv1.AskResponse{Event: &agentv1.AskResponse_Result{Result: result}})
+}
 
-	if final.ErrorMessage == "" {
-		err := h.sessions.Append(ctx, msg.GetSessionId(),
-			Message{Role: "user", Text: msg.GetMessage()},
-			Message{Role: "model", Text: final.Answer},
-		)
-		if err != nil {
-			h.logger.Error("failed to append session", "sessionId", msg.GetSessionId(), "error", err)
-		}
+// resolveSession は session_id が空なら、保管先に新しいセッションを作らせる。
+func (h *Handler) resolveSession(ctx context.Context, msg *agentv1.AskRequest) (string, error) {
+	if id := msg.GetSessionId(); id != "" {
+		return id, nil
 	}
-	return nil
+	creator, ok := h.sessions.(SessionCreator)
+	if !ok {
+		return "", connect.NewError(connect.CodeInvalidArgument, errors.New("sessionId is required"))
+	}
+	id, err := creator.Create(ctx, msg.GetAgentId())
+	if err != nil {
+		return "", libconnect.Error(err)
+	}
+	return id, nil
 }
 
 func (h *Handler) ExecuteConfirmedToolCall(ctx context.Context, req *connect.Request[agentv1.ExecuteConfirmedToolCallRequest]) (*connect.Response[agentv1.ExecuteConfirmedToolCallResponse], error) {

@@ -15,12 +15,13 @@ import (
 	"github.com/firebase/genkit/go/plugins/googlegenai"
 	"github.com/firebase/genkit/go/plugins/mcp"
 
-	"github.com/hiro8ma/agent/go/gen/agent/v1/agentv1connect"
 	"github.com/hiro8ma/agent/go/internal/agentcore"
+	conversation "github.com/hiro8ma/agent/go/internal/conversation/client"
 	"github.com/hiro8ma/agent/go/internal/genkitagent/agent"
 	"github.com/hiro8ma/agent/go/internal/genkitagent/backend"
 	"github.com/hiro8ma/agent/go/internal/genkitagent/knowledge"
 	"github.com/hiro8ma/agent/go/internal/genkitagent/session"
+	"github.com/hiro8ma/agent/go/internal/lib/libconnect"
 )
 
 type config struct {
@@ -29,7 +30,7 @@ type config struct {
 	vertexLocation   string
 	geminiAPIKey     string // Vertex AI の代わりに Gemini Developer API を使う場合
 	defaultModel     string
-	firestoreProject string // 空なら履歴・承認待ちはインメモリ
+	firestoreProject string // 空なら承認待ちはインメモリ
 	mcpServerURL     string // 空なら MCP 連携なし（Streamable HTTP の URL）
 	skillsDir        string // 空なら Agent Skills なし（SKILL.md を持つディレクトリの親）
 	budget           agentcore.BudgetLimits
@@ -113,7 +114,12 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		genkit.WithDefaultModel(cfg.defaultModel),
 	)
 
-	var sessions session.Store = session.NewInMemory()
+	sessions, where, err := conversation.FromEnv()
+	if err != nil {
+		return fmt.Errorf("conversation store: %w", err)
+	}
+	logger.Info("conversation store", "where", where)
+
 	var pending agent.PendingStore = session.NewInMemoryPending()
 	if cfg.firestoreProject != "" {
 		client, err := firestore.NewClient(ctx, cfg.firestoreProject)
@@ -121,9 +127,7 @@ func run(ctx context.Context, logger *slog.Logger) error {
 			return fmt.Errorf("new firestore client: %w", err)
 		}
 		defer func() { _ = client.Close() }()
-		fs := session.NewFirestore(client)
-		sessions = fs
-		pending = fs
+		pending = session.NewFirestore(client)
 	}
 
 	mcpTools, err := loadMCPTools(ctx, g, cfg.mcpServerURL)
@@ -175,8 +179,7 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	}
 
 	mux := http.NewServeMux()
-	path, handler := agentv1connect.NewAgentServiceHandler(core)
-	mux.Handle(path, handler)
+	mux.Handle(agentcore.NewConnectHandler(core, libconnect.HeaderAuthenticator))
 
 	logger.Info("starting agent server", "port", cfg.port, "model", cfg.defaultModel, "agents", len(registry.List()))
 	// Connect の streaming を TLS なしの HTTP/2 でも受ける。

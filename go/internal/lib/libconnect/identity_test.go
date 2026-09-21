@@ -32,7 +32,7 @@ func (whoami) Ask(ctx context.Context, _ *connect.Request[agentv1.AskRequest], s
 	if err != nil {
 		return libconnect.Error(err)
 	}
-	return stream.Send(&agentv1.AskResponse{AnswerDelta: string(id)})
+	return stream.Send(&agentv1.AskResponse{Event: &agentv1.AskResponse_AnswerDelta{AnswerDelta: string(id)}})
 }
 
 func newServer(t *testing.T) *httptest.Server {

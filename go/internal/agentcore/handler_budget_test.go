@@ -13,6 +13,7 @@ import (
 	agentv1 "github.com/hiro8ma/agent/go/gen/agent/v1"
 	"github.com/hiro8ma/agent/go/gen/agent/v1/agentv1connect"
 	"github.com/hiro8ma/agent/go/internal/agentcore"
+	"github.com/hiro8ma/agent/go/internal/lib/libconnect"
 )
 
 // stubAgent はモデルを呼ばずに固定の応答とトークン消費を返す。
@@ -61,23 +62,21 @@ func newTestServer(t *testing.T, limits agentcore.BudgetLimits, tokensPerCall in
 	}
 
 	mux := http.NewServeMux()
-	path, handler := agentv1connect.NewAgentServiceHandler(h)
-	mux.Handle(path, handler)
-
-	srv := httptest.NewServer(mux)
-	t.Cleanup(srv.Close)
-
+	mux.Handle(agentcore.NewConnectHandler(h, libconnect.HeaderAuthenticator))
+	srv := httptest.NewTestServer(t, mux)
 	return agentv1connect.NewAgentServiceClient(srv.Client(), srv.URL)
 }
 
 func ask(t *testing.T, c agentv1connect.AgentServiceClient, sessionID string) error {
 	t.Helper()
 
-	stream, err := c.Ask(context.Background(), connect.NewRequest(&agentv1.AskRequest{
+	req := connect.NewRequest(&agentv1.AskRequest{
 		AgentId:   "stub",
 		SessionId: sessionID,
 		Message:   "hello",
-	}))
+	})
+	req.Header().Set(libconnect.UserHeader, "alice")
+	stream, err := c.Ask(t.Context(), req)
 	if err != nil {
 		return err
 	}

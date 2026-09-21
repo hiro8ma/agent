@@ -13,12 +13,12 @@ import (
 	"google.golang.org/adk/v2/model/gemini"
 	"google.golang.org/genai"
 
-	"github.com/hiro8ma/agent/go/gen/agent/v1/agentv1connect"
 	"github.com/hiro8ma/agent/go/internal/adkagent"
 	"github.com/hiro8ma/agent/go/internal/agentcore"
+	conversation "github.com/hiro8ma/agent/go/internal/conversation/client"
 	"github.com/hiro8ma/agent/go/internal/genkitagent/backend"
 	"github.com/hiro8ma/agent/go/internal/genkitagent/knowledge"
-	"github.com/hiro8ma/agent/go/internal/genkitagent/session"
+	"github.com/hiro8ma/agent/go/internal/lib/libconnect"
 )
 
 type config struct {
@@ -145,15 +145,20 @@ func run(ctx context.Context, logger *slog.Logger) error {
 
 	registry := agentcore.NewRegistry(research, operations)
 
-	core := agentcore.NewHandler(registry, session.NewInMemory(), noopExecutor{}, logger)
+	sessions, where, err := conversation.FromEnv()
+	if err != nil {
+		return fmt.Errorf("conversation store: %w", err)
+	}
+	logger.Info("conversation store", "where", where)
+
+	core := agentcore.NewHandler(registry, sessions, noopExecutor{}, logger)
 	if cfg.budget.Enabled() {
 		core = core.WithBudget(agentcore.NewBudgetTracker(cfg.budget))
 		logger.Info("token budget enabled", "sessionTokens", cfg.budget.SessionTokens, "totalTokens", cfg.budget.TotalTokens)
 	}
 
 	mux := http.NewServeMux()
-	path, handler := agentv1connect.NewAgentServiceHandler(core)
-	mux.Handle(path, handler)
+	mux.Handle(agentcore.NewConnectHandler(core, libconnect.HeaderAuthenticator))
 
 	logger.Info("starting adk agent server", "port", cfg.port, "model", cfg.modelName, "agents", len(registry.List()))
 	// Connect の streaming を TLS なしの HTTP/2 でも受ける。

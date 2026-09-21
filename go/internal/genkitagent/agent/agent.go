@@ -61,6 +61,12 @@ var _ agentcore.Agent = (*Agent)(nil)
 // Ask はチャンク列と最終出力を 1 本のシーケンスで返す。
 // エラーも AskOutput.ErrorMessage に畳み込み、呼び出し側の分岐を 1 箇所にする。
 func (a *Agent) Ask(ctx context.Context, input *AskInput) iter.Seq2[*AskChunk, *AskOutput] {
+	// Flow は入力を JSON スキーマで検査し、nil のスライスを null として配列の型違いで拒否する。
+	if input.History == nil {
+		in := *input
+		in.History = []Message{}
+		input = &in
+	}
 	return func(yield func(*AskChunk, *AskOutput) bool) {
 		for v, err := range a.flow.Stream(ctx, input) {
 			if err != nil {

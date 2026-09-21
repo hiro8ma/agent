@@ -18,13 +18,16 @@ import (
 
 	agentv1 "github.com/hiro8ma/agent/go/gen/agent/v1"
 	"github.com/hiro8ma/agent/go/gen/agent/v1/agentv1connect"
+	"github.com/hiro8ma/agent/go/internal/lib/identity"
+	"github.com/hiro8ma/agent/go/internal/lib/libconnect"
 )
 
 func main() {
 	var (
 		baseURL    = flag.String("url", "http://localhost:19910", "サーバー URL")
 		agentID    = flag.String("agent", "operations", "エージェント ID")
-		sessionID  = flag.String("session", "local-session", "セッション ID")
+		sessionID  = flag.String("session", "", "セッション ID（空なら新しく作る）")
+		userID     = flag.String("user", "local-user", "利用者 ID（X-User-Id ヘッダで送る）")
 		list       = flag.Bool("list", false, "エージェント一覧を表示")
 		execCallID = flag.String("exec", "", "承認済みツール呼び出しを実行する toolCallId")
 	)
@@ -32,7 +35,13 @@ func main() {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
-	client := agentv1connect.NewAgentServiceClient(http.DefaultClient, *baseURL)
+	uid, err := identity.ParseUserID(*userID)
+	if err != nil {
+		log.Fatal(err)
+	}
+	ctx = identity.With(ctx, uid)
+	client := agentv1connect.NewAgentServiceClient(http.DefaultClient, *baseURL,
+		connect.WithInterceptors(libconnect.ForwardIdentity()))
 
 	switch {
 	case *list:
@@ -85,6 +94,10 @@ func ask(ctx context.Context, client agentv1connect.AgentServiceClient, agentID,
 }
 
 func printResult(result *agentv1.AskResult) {
+	fmt.Printf("[session] %s（続けるには -session %s）\n", result.GetSessionId(), result.GetSessionId())
+	if !result.GetHistorySaved() {
+		fmt.Fprintln(os.Stderr, "warning: この往復は履歴に残っていない")
+	}
 	if result.GetErrorMessage() != "" {
 		fmt.Fprintf(os.Stderr, "error: %s\n", result.GetErrorMessage())
 		return

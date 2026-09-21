@@ -28,15 +28,17 @@ message AgentInfo {
 
 message AskRequest {
   string agent_id = 1;
+  // 空なら新しいセッションを作り、AskResult.session_id で返す
   string session_id = 2;
   string message = 3;
 }
 
 message AskResponse {
-  // 途中チャンク。最終メッセージでは空
-  string answer_delta = 1;
-  // 最終メッセージでのみ設定される
-  AskResult result = 2;
+  // 途中は answer_delta、最後の 1 通だけ result。番号は変えていないので旧クライアントも読める
+  oneof event {
+    string answer_delta = 1;
+    AskResult result = 2;
+  }
 }
 
 message AskResult {
@@ -48,6 +50,8 @@ message AskResult {
   string error_message = 6;
   // 承認待ちのツール呼び出し。ExecuteConfirmedToolCall で実行する
   repeated PendingToolCall pending_tool_calls = 7;
+  // この往復を履歴に残せたか。false なら次の Ask はこの往復を覚えていない
+  bool history_saved = 8;
 }
 
 message ToolCall {
