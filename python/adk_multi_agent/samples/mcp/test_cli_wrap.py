@@ -16,7 +16,7 @@ def run_gcloud_command(command: str) -> dict:
     """教材のコードそのまま。"""
     args = ["gcloud", *shlex.split(command), "--format=json"]
     try:
-        result = subprocess.run(args, capture_output=True, text=True, timeout=30)
+        result = subprocess.run(args, capture_output=True, text=True, timeout=30, check=False)
         return {"stdout": result.stdout, "stderr": result.stderr, "return_code": result.returncode}
     except subprocess.TimeoutExpired:
         return {"stdout": "", "stderr": "タイムアウト", "return_code": -1}
