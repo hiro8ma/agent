@@ -50,6 +50,7 @@ var piiRules = []struct {
 	{regexp.MustCompile(`[\w.+-]+@[\w-]+\.[\w.-]+`), "[EMAIL_MASKED]"},
 	{regexp.MustCompile(`\b(?:\d[ -]?){13,16}\b`), "[CARD_MASKED]"},
 	{regexp.MustCompile(`\b0\d{1,4}-\d{1,4}-\d{4}\b`), "[PHONE_MASKED]"},
+	{regexp.MustCompile(`\b0\d{9,10}\b`), "[PHONE_MASKED]"},
 }
 
 // LastUserText は直近の利用者発話だけを返す。
