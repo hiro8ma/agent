@@ -18,6 +18,7 @@ const (
 	CodeNotFound        Code = "NOT_FOUND"
 	CodeInternal        Code = "INTERNAL"
 	CodeUnavailable     Code = "UNAVAILABLE"
+	CodeFailedPrecond   Code = "FAILED_PRECONDITION"
 )
 
 // Error は Code 付きエラー。

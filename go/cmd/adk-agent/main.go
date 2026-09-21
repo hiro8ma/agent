@@ -12,6 +12,8 @@ import (
 	"google.golang.org/adk/v2/model/gemini"
 	"google.golang.org/genai"
 
+	"github.com/hiro8ma/agent/go/internal/action"
+	actionclient "github.com/hiro8ma/agent/go/internal/action/client"
 	"github.com/hiro8ma/agent/go/internal/adkagent"
 	"github.com/hiro8ma/agent/go/internal/agentcore"
 	conversation "github.com/hiro8ma/agent/go/internal/conversation/client"
@@ -69,13 +71,6 @@ func envOr(key, fallback string) string {
 	return fallback
 }
 
-// noopExecutor は Phase 1 の仮実装。承認フローは Tool Confirmation API で Phase 2 に実装する。
-type noopExecutor struct{}
-
-func (noopExecutor) Execute(context.Context, string) (map[string]any, error) {
-	return nil, agentcore.ErrPendingNotFound
-}
-
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	if err := run(context.Background(), logger); err != nil {
@@ -113,7 +108,9 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("research tools: %w", err)
 	}
-	operationsTools, err := adkagent.OperationsTools(orders, geo)
+	gate, gateWhere := actionclient.FromEnv()
+	logger.Info("action gate", "where", gateWhere)
+	operationsTools, err := adkagent.OperationsTools(orders, geo, gate)
 	if err != nil {
 		return fmt.Errorf("operations tools: %w", err)
 	}
@@ -152,7 +149,7 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	}
 	logger.Info("conversation store", "where", where)
 
-	core := agentcore.NewHandler(registry, sessions, noopExecutor{}, logger)
+	core := agentcore.NewHandler(registry, sessions, action.Executor{Gate: gate, Orders: orders}, logger)
 	if cfg.budget.Enabled() {
 		core = core.WithBudget(agentcore.NewBudgetTracker(cfg.budget))
 		logger.Info("token budget enabled", "sessionTokens", cfg.budget.SessionTokens, "totalTokens", cfg.budget.TotalTokens)

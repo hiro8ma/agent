@@ -154,12 +154,13 @@ func (h *Handler) ExecuteConfirmedToolCall(ctx context.Context, req *connect.Req
 	if id == "" {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("toolCallId is required"))
 	}
+	// 他人の依頼、未承認、期限切れは、承認の窓口が付けた Code のまま返す。
 	result, err := h.executor.Execute(ctx, id)
 	if errors.Is(err, ErrPendingNotFound) {
-		return nil, connect.NewError(connect.CodeNotFound, err)
+		return nil, connect.NewError(connect.CodeNotFound, errors.New("承認待ちの依頼が無い"))
 	}
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, libconnect.Error(err)
 	}
 	h.logger.Info("tool_call_executed", "toolCallId", id)
 	return connect.NewResponse(&agentv1.ExecuteConfirmedToolCallResponse{Result: toStruct(result)}), nil

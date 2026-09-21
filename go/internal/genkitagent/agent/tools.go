@@ -5,6 +5,8 @@ import (
 
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
+
+	"github.com/hiro8ma/agent/go/internal/action"
 )
 
 type getOrderInput struct {
@@ -24,18 +26,16 @@ type updateOrderPaymentMethodInput struct {
 	PaymentMethod string `json:"paymentMethod" jsonschema_description:"変更後の支払い方法"`
 }
 
-const updateOrderPaymentMethodTool = "update_order_payment_method"
-
 // DefineResearchTools は技術調査エージェントのツール群。
 func DefineResearchTools(g *genkit.Genkit, knowledge KnowledgeSearcher) []ai.ToolRef {
 	return defineKnowledgeTools(g, knowledge)
 }
 
 // DefineOperationsTools は申請処理エージェントのツール群。
-func DefineOperationsTools(g *genkit.Genkit, orders OrderService, geo GeoService, pending PendingStore) []ai.ToolRef {
+func DefineOperationsTools(g *genkit.Genkit, orders OrderService, geo GeoService, gate action.Gate) []ai.ToolRef {
 	tools := defineOrderTools(g, orders)
 	tools = append(tools, defineGeoTools(g, geo)...)
-	return append(tools, defineWriteTools(g, pending)...)
+	return append(tools, defineWriteTools(g, gate, orders)...)
 }
 
 // ツールはエラーを返さず {"error": ...} を結果に含める。エラーで会話全体を落とさず、モデルに続きを判断させるため。
@@ -98,31 +98,16 @@ func defineKnowledgeTools(g *genkit.Genkit, knowledge KnowledgeSearcher) []ai.To
 }
 
 // defineWriteTools は書き込み系ツールを定義する。
-// 直接実行せず承認待ちとして登録し、ExecuteConfirmedToolCall による人間の承認後に実行する。
-func defineWriteTools(g *genkit.Genkit, pending PendingStore) []ai.ToolRef {
-	updatePaymentMethod := genkit.DefineTool(g, updateOrderPaymentMethodTool,
-		"注文の支払い方法を変更する。実行には人間の承認が必要で、このツールは承認依頼の登録だけを行う",
+// 実行してよいかは action の窓口が決める。承認待ちなら依頼の ID を返すだけで実行しない。
+func defineWriteTools(g *genkit.Genkit, gate action.Gate, orders OrderService) []ai.ToolRef {
+	updatePaymentMethod := genkit.DefineTool(g, action.ToolUpdatePaymentMethod,
+		"注文の支払い方法を変更する。承認が要る場合は承認の依頼だけを登録し、利用者に承認待ちであることを伝える",
 		func(ctx *ai.ToolContext, in updateOrderPaymentMethodInput) (map[string]any, error) {
-			if in.OrderID == "" || in.PaymentMethod == "" {
-				return toolResult(nil, errors.New(updateOrderPaymentMethodTool+": orderId and paymentMethod are required"))
-			}
-			p := PendingToolCall{
-				ID:   newToolCallID(),
-				Name: updateOrderPaymentMethodTool,
-				Input: map[string]any{
-					"orderId":       in.OrderID,
-					"paymentMethod": in.PaymentMethod,
-				},
-			}
-			if err := pending.Save(ctx, p); err != nil {
+			out, err := action.RequestPaymentChange(ctx, gate, orders, in.OrderID, in.PaymentMethod)
+			if err != nil {
 				return toolResult(nil, err)
 			}
-			return map[string]any{
-				"status":     "confirmation_required",
-				"toolCallId": p.ID,
-				"input":      p.Input,
-				"message":    "この操作は人間の承認後に実行されます。ユーザーには承認が必要である旨を伝えてください。",
-			}, nil
+			return out, nil
 		},
 	)
 	return []ai.ToolRef{updatePaymentMethod}

@@ -40,33 +40,3 @@ func (s *InMemory) Append(_ context.Context, sessionID string, messages ...agent
 	s.sessions[sessionID] = append(s.sessions[sessionID], messages...)
 	return nil
 }
-
-// InMemoryPending は承認待ちツール呼び出しのインメモリ実装。
-type InMemoryPending struct {
-	mu      sync.Mutex
-	pending map[string]agent.PendingToolCall
-}
-
-var _ agent.PendingStore = (*InMemoryPending)(nil)
-
-func NewInMemoryPending() *InMemoryPending {
-	return &InMemoryPending{pending: map[string]agent.PendingToolCall{}}
-}
-
-func (s *InMemoryPending) Save(_ context.Context, p agent.PendingToolCall) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.pending[p.ID] = p
-	return nil
-}
-
-func (s *InMemoryPending) Take(_ context.Context, id string) (*agent.PendingToolCall, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	p, ok := s.pending[id]
-	if !ok {
-		return nil, agent.ErrPendingNotFound
-	}
-	delete(s.pending, id)
-	return &p, nil
-}

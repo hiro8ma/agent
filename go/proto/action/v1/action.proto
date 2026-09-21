@@ -1,0 +1,117 @@
+syntax = "proto3";
+
+package action.v1;
+
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/hiro8ma/agent/go/gen/action/v1;actionv1";
+
+// ActionService は変更系の操作の承認を扱う。
+// 利用者は X-User-Id（認証済みの呼び出し元）から取る。リスクはこのサービスのルールで決め、呼び出し側に決めさせない。
+service ActionService {
+  // 操作を自動で実行してよいか、承認を待つか、拒否するかを決める。承認を待つなら依頼を作る
+  rpc Authorize(AuthorizeRequest) returns (AuthorizeResponse);
+  // 承認者（中リスクは依頼者本人）が承認か却下を記録する。エージェントのツールには出さない
+  rpc Decide(DecideRequest) returns (DecideResponse);
+  // 承認済みの依頼を依頼者本人に渡し、使用済みにする。実行はここで受け取った引数で行う
+  rpc Take(TakeRequest) returns (TakeResponse);
+  rpc ListRequests(ListRequestsRequest) returns (ListRequestsResponse);
+  rpc ListAudit(ListAuditRequest) returns (ListAuditResponse);
+}
+
+enum Risk {
+  RISK_UNSPECIFIED = 0;
+  RISK_LOW = 1;
+  RISK_MEDIUM = 2;
+  RISK_HIGH = 3;
+  RISK_FORBIDDEN = 4;
+}
+
+enum Outcome {
+  OUTCOME_UNSPECIFIED = 0;
+  OUTCOME_ALLOW = 1;
+  OUTCOME_PENDING = 2;
+  OUTCOME_FORBIDDEN = 3;
+}
+
+enum Status {
+  STATUS_UNSPECIFIED = 0;
+  STATUS_PENDING = 1;
+  STATUS_APPROVED = 2;
+  STATUS_REJECTED = 3;
+  STATUS_USED = 4;
+}
+
+message ApprovalRequest {
+  string id = 1;
+  string tool = 2;
+  google.protobuf.Struct args = 3;
+  string requester = 4;
+  Risk risk = 5;
+  Status status = 6;
+  string approver = 7;
+  google.protobuf.Timestamp create_time = 8;
+  google.protobuf.Timestamp expire_time = 9;
+}
+
+message AuthorizeRequest {
+  string tool = 1;
+  google.protobuf.Struct args = 2;
+}
+
+message AuthorizeResponse {
+  Outcome outcome = 1;
+  Risk risk = 2;
+  // outcome が OUTCOME_PENDING のときだけ
+  ApprovalRequest request = 3;
+}
+
+message DecideRequest {
+  string request_id = 1;
+  bool approve = 2;
+}
+
+message DecideResponse {
+  ApprovalRequest request = 1;
+}
+
+message TakeRequest {
+  string request_id = 1;
+}
+
+message TakeResponse {
+  ApprovalRequest request = 1;
+}
+
+enum View {
+  VIEW_UNSPECIFIED = 0;
+  // 自分が依頼したもの
+  VIEW_MINE = 1;
+  // 自分が判断できる承認待ち
+  VIEW_TO_APPROVE = 2;
+}
+
+message ListRequestsRequest {
+  View view = 1;
+}
+
+message ListRequestsResponse {
+  repeated ApprovalRequest requests = 1;
+}
+
+message ListAuditRequest {
+  string request_id = 1;
+}
+
+message AuditEntry {
+  string request_id = 1;
+  string action = 2;
+  string actor = 3;
+  google.protobuf.Timestamp time = 4;
+  string detail = 5;
+}
+
+message ListAuditResponse {
+  repeated AuditEntry entries = 1;
+}

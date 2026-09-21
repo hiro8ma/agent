@@ -16,6 +16,7 @@ var codes = map[liberrors.Code]connect.Code{
 	liberrors.CodeNotFound:        connect.CodeNotFound,
 	liberrors.CodeUnavailable:     connect.CodeUnavailable,
 	liberrors.CodeInternal:        connect.CodeInternal,
+	liberrors.CodeFailedPrecond:   connect.CodeFailedPrecondition,
 }
 
 // Error は内部のエラーを Connect のエラーに変換する。ハンドラはここを通して返す。

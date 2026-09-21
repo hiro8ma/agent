@@ -7,11 +7,17 @@ import (
 	"google.golang.org/adk/v2/tool"
 	"google.golang.org/adk/v2/tool/functiontool"
 
+	"github.com/hiro8ma/agent/go/internal/action"
 	"github.com/hiro8ma/agent/go/internal/agentcore"
 )
 
 type getOrderInput struct {
 	OrderID string `json:"orderId"`
+}
+
+type updatePaymentMethodInput struct {
+	OrderID       string `json:"orderId"`
+	PaymentMethod string `json:"paymentMethod"`
 }
 
 type resolveAreaNamesInput struct {
@@ -53,8 +59,8 @@ func ResearchTools(knowledge agentcore.KnowledgeSearcher) ([]tool.Tool, error) {
 }
 
 // OperationsTools は申請処理エージェントのツール群。
-// Phase 1 は照会系のみ。書き込み系（承認フロー）は Tool Confirmation API で Phase 2 に実装する。
-func OperationsTools(orders agentcore.OrderService, geo agentcore.GeoService) ([]tool.Tool, error) {
+// 書き込み系は action の窓口が実行してよいかを決め、承認待ちなら依頼の ID を返すだけで実行しない。
+func OperationsTools(orders agentcore.OrderService, geo agentcore.GeoService, gate action.Gate) ([]tool.Tool, error) {
 	getOrder, err := functiontool.New(functiontool.Config{
 		Name:        "get_order",
 		Description: "指定された ID の注文情報を取得する",
@@ -89,5 +95,19 @@ func OperationsTools(orders agentcore.OrderService, geo agentcore.GeoService) ([
 		return nil, err
 	}
 
-	return []tool.Tool{getOrder, resolveAreaNames}, nil
+	updatePaymentMethod, err := functiontool.New(functiontool.Config{
+		Name:        action.ToolUpdatePaymentMethod,
+		Description: "注文の支払い方法を変更する。承認が要る場合は承認の依頼だけを登録し、利用者に承認待ちであることを伝える",
+	}, func(ctx agent.Context, in updatePaymentMethodInput) (map[string]any, error) {
+		out, err := action.RequestPaymentChange(ctx, gate, orders, in.OrderID, in.PaymentMethod)
+		if err != nil {
+			return toolResult(nil, err)
+		}
+		return out, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return []tool.Tool{getOrder, resolveAreaNames, updatePaymentMethod}, nil
 }

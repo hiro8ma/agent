@@ -8,8 +8,6 @@ import (
 
 	"cloud.google.com/go/firestore"
 	"google.golang.org/api/iterator"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 
 	"github.com/hiro8ma/agent/go/internal/genkitagent/agent"
 )
@@ -17,7 +15,6 @@ import (
 const (
 	sessionCollection = "agent_sessions"
 	messageCollection = "messages"
-	pendingCollection = "agent_pending_tool_calls"
 )
 
 // Firestore はメッセージをサブコレクションで 1 件ずつ保持する。
@@ -27,10 +24,7 @@ type Firestore struct {
 	client *firestore.Client
 }
 
-var (
-	_ Store              = (*Firestore)(nil)
-	_ agent.PendingStore = (*Firestore)(nil)
-)
+var _ Store = (*Firestore)(nil)
 
 func NewFirestore(client *firestore.Client) *Firestore {
 	return &Firestore{client: client}
@@ -77,34 +71,4 @@ func (s *Firestore) Append(ctx context.Context, sessionID string, messages ...ag
 		}
 	}
 	return nil
-}
-
-func (s *Firestore) Save(ctx context.Context, p agent.PendingToolCall) error {
-	if _, err := s.client.Collection(pendingCollection).Doc(p.ID).Set(ctx, p); err != nil {
-		return fmt.Errorf("save pending %s: %w", p.ID, err)
-	}
-	return nil
-}
-
-func (s *Firestore) Take(ctx context.Context, id string) (*agent.PendingToolCall, error) {
-	ref := s.client.Collection(pendingCollection).Doc(id)
-	var p agent.PendingToolCall
-	err := s.client.RunTransaction(ctx, func(_ context.Context, tx *firestore.Transaction) error {
-		snap, err := tx.Get(ref)
-		if status.Code(err) == codes.NotFound {
-			return agent.ErrPendingNotFound
-		}
-		if err != nil {
-			return err
-		}
-		if err := snap.DataTo(&p); err != nil {
-			return err
-		}
-		return tx.Delete(ref)
-	})
-	if err != nil {
-		return nil, err
-	}
-	p.ID = id
-	return &p, nil
 }

@@ -12,6 +12,8 @@ import (
 	"github.com/firebase/genkit/go/plugins/middleware"
 
 	"github.com/hiro8ma/agent/go/internal/agentcore"
+
+	"github.com/hiro8ma/agent/go/internal/action"
 )
 
 const (
@@ -177,7 +179,7 @@ func extractToolCalls(resp *ai.ModelResponse) []ToolCall {
 	return calls
 }
 
-// extractPendingToolCalls は履歴中のツール応答から承認待ち（confirmation_required）を拾い上げる。
+// extractPendingToolCalls は履歴中のツール応答から承認待ちを拾い上げる。
 func extractPendingToolCalls(resp *ai.ModelResponse) []PendingToolCall {
 	if resp == nil || resp.Request == nil {
 		return nil
@@ -189,12 +191,12 @@ func extractPendingToolCalls(resp *ai.ModelResponse) []PendingToolCall {
 				continue
 			}
 			out, ok := p.ToolResponse.Output.(map[string]any)
-			if !ok || out["status"] != "confirmation_required" {
+			if !ok {
 				continue
 			}
-			id, _ := out["toolCallId"].(string)
-			input, _ := out["input"].(map[string]any)
-			pendings = append(pendings, PendingToolCall{ID: id, Name: p.ToolResponse.Name, Input: input})
+			if pending, ok := action.PendingFromResult(p.ToolResponse.Name, out); ok {
+				pendings = append(pendings, pending)
+			}
 		}
 	}
 	return pendings

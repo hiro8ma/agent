@@ -84,6 +84,7 @@ type Service struct {
 
 	mu       sync.Mutex
 	requests map[string]*Request
+	log      []AuditEntry
 }
 
 // NewService は tool 名ごとのルールと、高リスクを承認できる利用者と、承認の有効期限を受ける。
@@ -127,6 +128,7 @@ func (s *Service) Open(requester, tool string, args map[string]any, risk Risk) (
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.requests[r.ID] = r
+	s.auditLocked(r.ID, "open", requester, tool+" "+risk.String())
 	return r, nil
 }
 
@@ -154,6 +156,7 @@ func (s *Service) Decide(approver, id string, approve bool) error {
 	if approve {
 		r.Status = Approved
 	}
+	s.auditLocked(id, string(r.Status), approver, "")
 	return nil
 }
 
@@ -170,6 +173,7 @@ func (s *Service) Consume(requester, tool string, args map[string]any) (bool, er
 	for _, r := range s.requests {
 		if r.Status == Approved && r.Digest == digest && r.Requester == requester && now.Before(r.ExpiresAt) {
 			r.Status = Used
+			s.auditLocked(r.ID, "consume", requester, tool)
 			return true, nil
 		}
 	}

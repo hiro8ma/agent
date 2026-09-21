@@ -7,45 +7,43 @@ import (
 	"net/http"
 	"os"
 
-	"cloud.google.com/go/firestore"
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/core/api"
 	"github.com/firebase/genkit/go/genkit"
 	"github.com/firebase/genkit/go/plugins/googlegenai"
 	"github.com/firebase/genkit/go/plugins/mcp"
 
+	"github.com/hiro8ma/agent/go/internal/action"
+	actionclient "github.com/hiro8ma/agent/go/internal/action/client"
 	"github.com/hiro8ma/agent/go/internal/agentcore"
 	conversation "github.com/hiro8ma/agent/go/internal/conversation/client"
 	"github.com/hiro8ma/agent/go/internal/genkitagent/agent"
 	"github.com/hiro8ma/agent/go/internal/genkitagent/backend"
-	"github.com/hiro8ma/agent/go/internal/genkitagent/session"
 	knowledgeclient "github.com/hiro8ma/agent/go/internal/knowledge/client"
 	"github.com/hiro8ma/agent/go/internal/lib/libconnect"
 	"github.com/hiro8ma/agent/go/internal/lib/libserver"
 )
 
 type config struct {
-	port             string
-	vertexProjectID  string
-	vertexLocation   string
-	geminiAPIKey     string // Vertex AI の代わりに Gemini Developer API を使う場合
-	defaultModel     string
-	firestoreProject string // 空なら承認待ちはインメモリ
-	mcpServerURL     string // 空なら MCP 連携なし（Streamable HTTP の URL）
-	skillsDir        string // 空なら Agent Skills なし（SKILL.md を持つディレクトリの親）
-	budget           agentcore.BudgetLimits
+	port            string
+	vertexProjectID string
+	vertexLocation  string
+	geminiAPIKey    string // Vertex AI の代わりに Gemini Developer API を使う場合
+	defaultModel    string
+	mcpServerURL    string // 空なら MCP 連携なし（Streamable HTTP の URL）
+	skillsDir       string // 空なら Agent Skills なし（SKILL.md を持つディレクトリの親）
+	budget          agentcore.BudgetLimits
 }
 
 func loadConfig() (*config, error) {
 	c := &config{
-		port:             envOr("PORT", "19910"),
-		vertexProjectID:  os.Getenv("VERTEX_PROJECT_ID"),
-		vertexLocation:   envOr("VERTEX_LOCATION", "asia-northeast1"),
-		geminiAPIKey:     envOr("GEMINI_API_KEY", os.Getenv("GOOGLE_API_KEY")),
-		firestoreProject: os.Getenv("FIRESTORE_PROJECT_ID"),
-		mcpServerURL:     os.Getenv("MCP_SERVER_URL"),
-		skillsDir:        os.Getenv("SKILLS_DIR"),
-		budget:           agentcore.BudgetLimitsFromEnv(),
+		port:            envOr("PORT", "19910"),
+		vertexProjectID: os.Getenv("VERTEX_PROJECT_ID"),
+		vertexLocation:  envOr("VERTEX_LOCATION", "asia-northeast1"),
+		geminiAPIKey:    envOr("GEMINI_API_KEY", os.Getenv("GOOGLE_API_KEY")),
+		mcpServerURL:    os.Getenv("MCP_SERVER_URL"),
+		skillsDir:       os.Getenv("SKILLS_DIR"),
+		budget:          agentcore.BudgetLimitsFromEnv(),
 	}
 
 	// バックエンドは Vertex AI と Gemini Developer API の 2 択。
@@ -70,7 +68,6 @@ func (c *config) LogValue() slog.Value {
 		slog.String("vertexLocation", c.vertexLocation),
 		slog.String("geminiAPIKey", agentcore.MaskSecret(c.geminiAPIKey)),
 		slog.String("defaultModel", c.defaultModel),
-		slog.String("firestoreProject", c.firestoreProject),
 		slog.String("mcpServerURL", c.mcpServerURL),
 		slog.String("skillsDir", c.skillsDir),
 	)
@@ -120,15 +117,8 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	}
 	logger.Info("conversation store", "where", where)
 
-	var pending agent.PendingStore = session.NewInMemoryPending()
-	if cfg.firestoreProject != "" {
-		client, err := firestore.NewClient(ctx, cfg.firestoreProject)
-		if err != nil {
-			return fmt.Errorf("new firestore client: %w", err)
-		}
-		defer func() { _ = client.Close() }()
-		pending = session.NewFirestore(client)
-	}
+	gate, gateWhere := actionclient.FromEnv()
+	logger.Info("action gate", "where", gateWhere)
 
 	mcpTools, err := loadMCPTools(ctx, g, cfg.mcpServerURL)
 	if err != nil {
@@ -166,12 +156,12 @@ func run(ctx context.Context, logger *slog.Logger) error {
 			"注文やエリアの質問にはツールで事実を取得して簡潔に日本語で回答してください。" +
 			"変更系の操作は承認が必要です。承認待ちになった場合はその旨をユーザーに伝えてください。" +
 			"取得できなかった情報を推測で補わないでください。",
-		Tools:      agent.DefineOperationsTools(g, orders, geo, pending),
+		Tools:      agent.DefineOperationsTools(g, orders, geo, gate),
 		SkillPaths: skillPaths,
 	})
 
 	registry := agentcore.NewRegistry(research, operations)
-	executor := agent.NewExecutor(orders, pending)
+	executor := action.Executor{Gate: gate, Orders: orders}
 
 	core := agentcore.NewHandler(registry, sessions, executor, logger)
 	if cfg.budget.Enabled() {

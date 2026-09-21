@@ -15,7 +15,9 @@ import (
 	"google.golang.org/adk/v2/tool"
 	"google.golang.org/genai"
 
+	"github.com/hiro8ma/agent/go/internal/action"
 	"github.com/hiro8ma/agent/go/internal/agentcore"
+	"github.com/hiro8ma/agent/go/internal/lib/identity"
 )
 
 const defaultUser = "local-user"
@@ -77,7 +79,12 @@ func (a *Agent) Ask(ctx context.Context, input *agentcore.AskInput) iter.Seq2[*a
 		cfg := adkagentpkg.RunConfig{StreamingMode: adkagentpkg.StreamingModeSSE}
 
 		var finalText strings.Builder
-		for event, err := range a.runner.Run(ctx, defaultUser, input.SessionID, msg, cfg) {
+		// ADK の Session と、ツールから見える利用者を、API の境界で特定した利用者にそろえる。
+		user := defaultUser
+		if id, err := identity.From(ctx); err == nil {
+			user = string(id)
+		}
+		for event, err := range a.runner.Run(ctx, user, input.SessionID, msg, cfg) {
 			if err != nil {
 				out.FinishReason = "error"
 				out.ErrorMessage = err.Error()
@@ -99,6 +106,11 @@ func (a *Agent) Ask(ctx context.Context, input *agentcore.AskInput) iter.Seq2[*a
 				continue
 			}
 			for _, part := range event.Content.Parts {
+				if part.FunctionResponse != nil && !event.Partial {
+					if p, ok := action.PendingFromResult(part.FunctionResponse.Name, part.FunctionResponse.Response); ok {
+						out.PendingToolCalls = append(out.PendingToolCalls, p)
+					}
+				}
 				// FunctionCall は partial と非 partial の両イベントに現れるため、非 partial だけ記録する。
 				if part.FunctionCall != nil && !event.Partial {
 					out.ToolCalls = append(out.ToolCalls, agentcore.ToolCall{
