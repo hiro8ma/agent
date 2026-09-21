@@ -1,4 +1,4 @@
-.PHONY: help setup build fmt vet lint lint-fix lint-tools vuln tidy clean demo-genai demo-genkit demo-adk demo-all adk-web adk-api compose-up compose-down
+.PHONY: help setup build fmt vet lint lint-fix lint-tools vuln test test-live proto proto-check tidy clean demo-genai demo-genkit demo-adk demo-all adk-web adk-api compose-up compose-down
 
 BIN_DIR := $(abspath ./bin)
 GOLANGCI_LINT_VERSION := v2.13.2
@@ -78,6 +78,22 @@ lint: $(GOLANGCI_LINT) ## lint（staticcheck / modernize / gosec などを含む
 
 lint-fix: $(GOLANGCI_LINT) ## 自動で直せる指摘を直す
 	$(GOLANGCI_LINT) run --fix ./...
+
+# 待ち続けるテストがあっても、既定の 10 分より前に止めてどのテストかを出す。
+# .env の API キーを外し、実際のモデルを呼ぶテストは飛ばす。
+test: ## テスト（race 検出つき。モデルは呼ばない）
+	env -u GEMINI_API_KEY -u GOOGLE_API_KEY go test -race -timeout 5m ./...
+
+test-live: ## 実際のモデルを呼ぶテストも含める（無料枠の上限に当たりうる）
+	go test -timeout 10m ./...
+
+proto: ## proto から Go のコードを生成する
+	buf lint
+	buf generate
+
+proto-check: ## proto の lint と、main との互換を検査する
+	buf lint
+	buf breaking --against '../.git#branch=main,subdir=go'
 
 vuln: ## 既知の脆弱性を持つ依存を呼んでいないか調べる
 	go run golang.org/x/vuln/cmd/govulncheck@latest ./...
