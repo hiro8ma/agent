@@ -12,12 +12,15 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2acompat/a2av0"
 	"github.com/a2aproject/a2a-go/v2/a2asrv"
+	"google.golang.org/adk/v2/agent"
 	"google.golang.org/adk/v2/agent/llmagent"
 	"google.golang.org/adk/v2/model"
 	"google.golang.org/adk/v2/runner"
 	adka2a "google.golang.org/adk/v2/server/adka2a/v2"
 	"google.golang.org/adk/v2/session"
 	"google.golang.org/genai"
+
+	"github.com/hiro8ma/agent/go/internal/adk/a2ainterop"
 )
 
 // echo は受け取った文に「受け付けました」と返す台本のモデル。
@@ -32,38 +35,46 @@ func (echo) GenerateContent(_ context.Context, req *model.LLMRequest, _ bool) it
 	}
 }
 
-// newServer は ADK のエージェントを A2A v1.0 のサーバーとして立てる。/v0 には v0.3 の互換の口を置く。
-// withV0Interface が偽なら、Agent Card にプロトコル版 0.3 の接続先を書かない。
-func newServer(t *testing.T, withV0Interface bool) *httptest.Server {
+func testCard() a2a.AgentCard {
+	return a2a.AgentCard{
+		Name: "expense-agent", Description: "経費精算を扱う", Version: "1.0.0",
+		DefaultInputModes: []string{"text/plain"}, DefaultOutputModes: []string{"text/plain"},
+		Skills: []a2a.AgentSkill{{ID: "expense", Name: "経費", Description: "経費の照会", Tags: []string{"expense"}}},
+	}
+}
+
+func echoAgent(t *testing.T) agent.Agent {
 	t.Helper()
 	a, err := llmagent.New(llmagent.Config{Name: "expense_agent", Model: echo{}, Instruction: "x"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	exec := adka2a.NewExecutor(adka2a.ExecutorConfig{RunnerConfig: runner.Config{
-		AppName: "expense", Agent: a, SessionService: session.InMemoryService(),
-	}})
-	handler := a2asrv.NewHandler(exec)
+	return a
+}
 
+// newServer は ADK のエージェントを A2A v1.0 のサーバーとして立て、/v0 に v0.3 の互換の口を置く。
+func newServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewUnstartedServer(nil)
+	srv.Start()
+	t.Cleanup(srv.Close)
+	srv.Config.Handler = a2ainterop.NewHandler(echoAgent(t), testCard(), srv.URL)
+	return srv
+}
+
+// newServerWithoutV0Interface は Agent Card にプロトコル版 0.3 の接続先を書かないサーバー。
+func newServerWithoutV0Interface(t *testing.T) *httptest.Server {
+	t.Helper()
+	exec := adka2a.NewExecutor(adka2a.ExecutorConfig{RunnerConfig: runner.Config{
+		AppName: "expense", Agent: echoAgent(t), SessionService: session.InMemoryService(),
+	}})
 	mux := http.NewServeMux()
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
-	interfaces := []*a2a.AgentInterface{a2a.NewAgentInterface(srv.URL+"/", a2a.TransportProtocolJSONRPC)}
-	if withV0Interface {
-		v0 := a2a.NewAgentInterface(srv.URL+"/v0", a2a.TransportProtocolJSONRPC)
-		v0.ProtocolVersion = a2av0.Version
-		interfaces = append(interfaces, v0)
-	}
-	card := &a2a.AgentCard{
-		Name: "expense-agent", Description: "経費精算を扱う", Version: "1.0.0",
-		SupportedInterfaces: interfaces,
-		DefaultInputModes:   []string{"text/plain"}, DefaultOutputModes: []string{"text/plain"},
-		Skills: []a2a.AgentSkill{{ID: "expense", Name: "経費", Description: "経費の照会", Tags: []string{"expense"}}},
-	}
-	mux.Handle("/", a2asrv.NewJSONRPCHandler(handler))
-	mux.Handle("/v0", a2av0.NewJSONRPCHandler(handler))
-	// 互換の Agent Card は v1.0 と v0.3 の項目を 1 枚に並べる。標準の場所に 1 枚だけ置く。
-	mux.Handle(a2asrv.WellKnownAgentCardPath, a2asrv.NewAgentCardHandler(a2av0.NewStaticAgentCardProducer(card)))
+	card := testCard()
+	card.SupportedInterfaces = []*a2a.AgentInterface{a2a.NewAgentInterface(srv.URL+"/", a2a.TransportProtocolJSONRPC)}
+	mux.Handle("/", a2asrv.NewJSONRPCHandler(a2asrv.NewHandler(exec)))
+	mux.Handle(a2asrv.WellKnownAgentCardPath, a2asrv.NewAgentCardHandler(a2av0.NewStaticAgentCardProducer(&card)))
 	return srv
 }
 
@@ -111,7 +122,7 @@ const (
 
 func TestV1ClientTalksToV1Server(t *testing.T) {
 	t.Parallel()
-	srv := newServer(t, true)
+	srv := newServer(t)
 	res := post(t, srv.URL+"/", v1Send)
 	raw, _ := json.Marshal(res)
 	if res["error"] != nil || !strings.Contains(string(raw), "受け付けました: 先月の経費") {
@@ -124,7 +135,7 @@ func TestV1ClientTalksToV1Server(t *testing.T) {
 
 func TestV0ClientCannotTalkToV1ServerByDefault(t *testing.T) {
 	t.Parallel()
-	srv := newServer(t, true)
+	srv := newServer(t)
 	res := post(t, srv.URL+"/", v0Send)
 	e, ok := res["error"].(map[string]any)
 	if !ok {
@@ -137,7 +148,7 @@ func TestV0ClientCannotTalkToV1ServerByDefault(t *testing.T) {
 
 func TestV0ClientTalksThroughCompatEndpoint(t *testing.T) {
 	t.Parallel()
-	srv := newServer(t, true)
+	srv := newServer(t)
 	res := post(t, srv.URL+"/v0", v0Send)
 	raw, _ := json.Marshal(res)
 	if res["error"] != nil || !strings.Contains(string(raw), "受け付けました: 先月の経費") {
@@ -150,7 +161,7 @@ func TestV0ClientTalksThroughCompatEndpoint(t *testing.T) {
 
 func TestCompatAgentCardServesBothVersions(t *testing.T) {
 	t.Parallel()
-	srv := newServer(t, true)
+	srv := newServer(t)
 	card := get(t, srv.URL+a2asrv.WellKnownAgentCardPath)
 
 	// v0.3 のクライアントは直下の url と protocolVersion を読み、v1.0 のクライアントは supportedInterfaces を読む。
@@ -165,7 +176,7 @@ func TestCompatAgentCardServesBothVersions(t *testing.T) {
 
 func TestCompatAgentCardFailsWithoutV0Interface(t *testing.T) {
 	t.Parallel()
-	srv := newServer(t, false)
+	srv := newServerWithoutV0Interface(t)
 	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, srv.URL+a2asrv.WellKnownAgentCardPath, nil)
 	if err != nil {
 		t.Fatal(err)
