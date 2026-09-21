@@ -1,0 +1,19 @@
+{
+  "source": "modelcontextprotocol/servers src/filesystem/index.ts の registerTool の名前と注釈",
+  "tools": [
+    {"name": "read_file", "readOnlyHint": true},
+    {"name": "read_text_file", "readOnlyHint": true},
+    {"name": "read_media_file", "readOnlyHint": true},
+    {"name": "read_multiple_files", "readOnlyHint": true},
+    {"name": "write_file", "readOnlyHint": false, "destructiveHint": true},
+    {"name": "edit_file", "readOnlyHint": false, "destructiveHint": true},
+    {"name": "create_directory", "readOnlyHint": false, "destructiveHint": false},
+    {"name": "list_directory", "readOnlyHint": true},
+    {"name": "list_directory_with_sizes", "readOnlyHint": true},
+    {"name": "directory_tree", "readOnlyHint": true},
+    {"name": "move_file", "readOnlyHint": false, "destructiveHint": true},
+    {"name": "search_files", "readOnlyHint": true},
+    {"name": "get_file_info", "readOnlyHint": true},
+    {"name": "list_allowed_directories", "readOnlyHint": true}
+  ]
+}
