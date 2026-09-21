@@ -1,0 +1,613 @@
+{
+  "bigram": [
+    {
+      "candidate": "東京の天気は晴れで、気温は25度です。",
+      "reference": "東京の天気は晴れで、気温は25度です。",
+      "score": 1.0
+    },
+    {
+      "candidate": "東京の天気は雨で、気温は25度です。",
+      "reference": "東京の天気は晴れで、気温は25度です。",
+      "score": 0.8387096774193549
+    },
+    {
+      "candidate": "大阪は雪、気温は25度でした。",
+      "reference": "東京の天気は晴れで、気温は25度です。",
+      "score": 0.42857142857142855
+    },
+    {
+      "candidate": "東京は晴れ。",
+      "reference": "東京の天気は晴れで、気温は25度です。",
+      "score": 0.3
+    },
+    {
+      "candidate": "東京は２５度。",
+      "reference": "東京は25度",
+      "score": 1.0
+    },
+    {
+      "candidate": "ｶﾀｶﾅのコーヒー",
+      "reference": "カタカナのコーヒー",
+      "score": 1.0
+    },
+    {
+      "candidate": "がき",
+      "reference": "がき",
+      "score": 1.0
+    },
+    {
+      "candidate": "snake_case と CamelCase",
+      "reference": "snakecase と camelcase",
+      "score": 1.0
+    },
+    {
+      "candidate": "晴れ☀️です",
+      "reference": "晴れです",
+      "score": 1.0
+    },
+    {
+      "candidate": "",
+      "reference": "東京",
+      "score": 0.0
+    },
+    {
+      "candidate": "東",
+      "reference": "東京",
+      "score": 0.0
+    }
+  ],
+  "trajectory": [
+    {
+      "name": "同じ",
+      "match_type": "EXACT",
+      "actual": [
+        {
+          "name": "get_weather",
+          "args": {
+            "city": "tokyo"
+          }
+        }
+      ],
+      "expected": [
+        {
+          "name": "get_weather",
+          "args": {
+            "city": "tokyo"
+          }
+        }
+      ],
+      "score": 1.0
+    },
+    {
+      "name": "同じ",
+      "match_type": "IN_ORDER",
+      "actual": [
+        {
+          "name": "get_weather",
+          "args": {
+            "city": "tokyo"
+          }
+        }
+      ],
+      "expected": [
+        {
+          "name": "get_weather",
+          "args": {
+            "city": "tokyo"
+          }
+        }
+      ],
+      "score": 1.0
+    },
+    {
+      "name": "同じ",
+      "match_type": "ANY_ORDER",
+      "actual": [
+        {
+          "name": "get_weather",
+          "args": {
+            "city": "tokyo"
+          }
+        }
+      ],
+      "expected": [
+        {
+          "name": "get_weather",
+          "args": {
+            "city": "tokyo"
+          }
+        }
+      ],
+      "score": 1.0
+    },
+    {
+      "name": "引数の大小文字",
+      "match_type": "EXACT",
+      "actual": [
+        {
+          "name": "get_weather",
+          "args": {
+            "city": "Tokyo"
+          }
+        }
+      ],
+      "expected": [
+        {
+          "name": "get_weather",
+          "args": {
+            "city": "tokyo"
+          }
+        }
+      ],
+      "score": 0.0
+    },
+    {
+      "name": "引数の大小文字",
+      "match_type": "IN_ORDER",
+      "actual": [
+        {
+          "name": "get_weather",
+          "args": {
+            "city": "Tokyo"
+          }
+        }
+      ],
+      "expected": [
+        {
+          "name": "get_weather",
+          "args": {
+            "city": "tokyo"
+          }
+        }
+      ],
+      "score": 0.0
+    },
+    {
+      "name": "引数の大小文字",
+      "match_type": "ANY_ORDER",
+      "actual": [
+        {
+          "name": "get_weather",
+          "args": {
+            "city": "Tokyo"
+          }
+        }
+      ],
+      "expected": [
+        {
+          "name": "get_weather",
+          "args": {
+            "city": "tokyo"
+          }
+        }
+      ],
+      "score": 0.0
+    },
+    {
+      "name": "整数と小数",
+      "match_type": "EXACT",
+      "actual": [
+        {
+          "name": "search",
+          "args": {
+            "n": 2.0
+          }
+        }
+      ],
+      "expected": [
+        {
+          "name": "search",
+          "args": {
+            "n": 2
+          }
+        }
+      ],
+      "score": 1.0
+    },
+    {
+      "name": "整数と小数",
+      "match_type": "IN_ORDER",
+      "actual": [
+        {
+          "name": "search",
+          "args": {
+            "n": 2.0
+          }
+        }
+      ],
+      "expected": [
+        {
+          "name": "search",
+          "args": {
+            "n": 2
+          }
+        }
+      ],
+      "score": 1.0
+    },
+    {
+      "name": "整数と小数",
+      "match_type": "ANY_ORDER",
+      "actual": [
+        {
+          "name": "search",
+          "args": {
+            "n": 2.0
+          }
+        }
+      ],
+      "expected": [
+        {
+          "name": "search",
+          "args": {
+            "n": 2
+          }
+        }
+      ],
+      "score": 1.0
+    },
+    {
+      "name": "余分な呼び出し",
+      "match_type": "EXACT",
+      "actual": [
+        {
+          "name": "a",
+          "args": {}
+        },
+        {
+          "name": "get_weather",
+          "args": {
+            "city": "tokyo"
+          }
+        }
+      ],
+      "expected": [
+        {
+          "name": "get_weather",
+          "args": {
+            "city": "tokyo"
+          }
+        }
+      ],
+      "score": 0.0
+    },
+    {
+      "name": "余分な呼び出し",
+      "match_type": "IN_ORDER",
+      "actual": [
+        {
+          "name": "a",
+          "args": {}
+        },
+        {
+          "name": "get_weather",
+          "args": {
+            "city": "tokyo"
+          }
+        }
+      ],
+      "expected": [
+        {
+          "name": "get_weather",
+          "args": {
+            "city": "tokyo"
+          }
+        }
+      ],
+      "score": 1.0
+    },
+    {
+      "name": "余分な呼び出し",
+      "match_type": "ANY_ORDER",
+      "actual": [
+        {
+          "name": "a",
+          "args": {}
+        },
+        {
+          "name": "get_weather",
+          "args": {
+            "city": "tokyo"
+          }
+        }
+      ],
+      "expected": [
+        {
+          "name": "get_weather",
+          "args": {
+            "city": "tokyo"
+          }
+        }
+      ],
+      "score": 1.0
+    },
+    {
+      "name": "順番違い",
+      "match_type": "EXACT",
+      "actual": [
+        {
+          "name": "b",
+          "args": {}
+        },
+        {
+          "name": "a",
+          "args": {}
+        }
+      ],
+      "expected": [
+        {
+          "name": "a",
+          "args": {}
+        },
+        {
+          "name": "b",
+          "args": {}
+        }
+      ],
+      "score": 0.0
+    },
+    {
+      "name": "順番違い",
+      "match_type": "IN_ORDER",
+      "actual": [
+        {
+          "name": "b",
+          "args": {}
+        },
+        {
+          "name": "a",
+          "args": {}
+        }
+      ],
+      "expected": [
+        {
+          "name": "a",
+          "args": {}
+        },
+        {
+          "name": "b",
+          "args": {}
+        }
+      ],
+      "score": 0.0
+    },
+    {
+      "name": "順番違い",
+      "match_type": "ANY_ORDER",
+      "actual": [
+        {
+          "name": "b",
+          "args": {}
+        },
+        {
+          "name": "a",
+          "args": {}
+        }
+      ],
+      "expected": [
+        {
+          "name": "a",
+          "args": {}
+        },
+        {
+          "name": "b",
+          "args": {}
+        }
+      ],
+      "score": 1.0
+    },
+    {
+      "name": "足りない",
+      "match_type": "EXACT",
+      "actual": [
+        {
+          "name": "a",
+          "args": {}
+        }
+      ],
+      "expected": [
+        {
+          "name": "a",
+          "args": {}
+        },
+        {
+          "name": "b",
+          "args": {}
+        }
+      ],
+      "score": 0.0
+    },
+    {
+      "name": "足りない",
+      "match_type": "IN_ORDER",
+      "actual": [
+        {
+          "name": "a",
+          "args": {}
+        }
+      ],
+      "expected": [
+        {
+          "name": "a",
+          "args": {}
+        },
+        {
+          "name": "b",
+          "args": {}
+        }
+      ],
+      "score": 0.0
+    },
+    {
+      "name": "足りない",
+      "match_type": "ANY_ORDER",
+      "actual": [
+        {
+          "name": "a",
+          "args": {}
+        }
+      ],
+      "expected": [
+        {
+          "name": "a",
+          "args": {}
+        },
+        {
+          "name": "b",
+          "args": {}
+        }
+      ],
+      "score": 0.0
+    },
+    {
+      "name": "呼ばないことを期待",
+      "match_type": "EXACT",
+      "actual": [],
+      "expected": [],
+      "score": 1.0
+    },
+    {
+      "name": "呼ばないことを期待",
+      "match_type": "IN_ORDER",
+      "actual": [],
+      "expected": [],
+      "score": 1.0
+    },
+    {
+      "name": "呼ばないことを期待",
+      "match_type": "ANY_ORDER",
+      "actual": [],
+      "expected": [],
+      "score": 1.0
+    },
+    {
+      "name": "呼ばないはずが呼んだ",
+      "match_type": "EXACT",
+      "actual": [
+        {
+          "name": "a",
+          "args": {}
+        }
+      ],
+      "expected": [],
+      "score": 0.0
+    },
+    {
+      "name": "呼ばないはずが呼んだ",
+      "match_type": "IN_ORDER",
+      "actual": [
+        {
+          "name": "a",
+          "args": {}
+        }
+      ],
+      "expected": [],
+      "score": 1.0
+    },
+    {
+      "name": "呼ばないはずが呼んだ",
+      "match_type": "ANY_ORDER",
+      "actual": [
+        {
+          "name": "a",
+          "args": {}
+        }
+      ],
+      "expected": [],
+      "score": 1.0
+    },
+    {
+      "name": "入れ子の引数",
+      "match_type": "EXACT",
+      "actual": [
+        {
+          "name": "f",
+          "args": {
+            "x": {
+              "y": [
+                1,
+                2
+              ]
+            }
+          }
+        }
+      ],
+      "expected": [
+        {
+          "name": "f",
+          "args": {
+            "x": {
+              "y": [
+                1,
+                2
+              ]
+            }
+          }
+        }
+      ],
+      "score": 1.0
+    },
+    {
+      "name": "入れ子の引数",
+      "match_type": "IN_ORDER",
+      "actual": [
+        {
+          "name": "f",
+          "args": {
+            "x": {
+              "y": [
+                1,
+                2
+              ]
+            }
+          }
+        }
+      ],
+      "expected": [
+        {
+          "name": "f",
+          "args": {
+            "x": {
+              "y": [
+                1,
+                2
+              ]
+            }
+          }
+        }
+      ],
+      "score": 1.0
+    },
+    {
+      "name": "入れ子の引数",
+      "match_type": "ANY_ORDER",
+      "actual": [
+        {
+          "name": "f",
+          "args": {
+            "x": {
+              "y": [
+                1,
+                2
+              ]
+            }
+          }
+        }
+      ],
+      "expected": [
+        {
+          "name": "f",
+          "args": {
+            "x": {
+              "y": [
+                1,
+                2
+              ]
+            }
+          }
+        }
+      ],
+      "score": 1.0
+    }
+  ]
+}

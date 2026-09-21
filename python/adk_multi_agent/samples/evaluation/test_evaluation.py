@@ -205,3 +205,16 @@ async def test_multi_turn_feeds_the_agents_own_answers_not_the_expected_ones() -
     second = model.histories[1]
     assert "実際の応答 1" in second
     assert "期待する応答 1" not in second
+
+
+def test_go_parity_fixture_is_up_to_date() -> None:
+    """Go の adkeval が読む突き合わせ用の値が、いまの ADK の採点と一致する。
+
+    ずれたら python -m samples.evaluation.parity で書き直す。
+    """
+    from samples.evaluation.parity import build
+
+    fixture = HERE.parents[3] / "go/internal/evalharness/adkeval/testdata/parity.json"
+    assert json.loads(fixture.read_text()) == json.loads(
+        json.dumps(build(), ensure_ascii=False)
+    )
