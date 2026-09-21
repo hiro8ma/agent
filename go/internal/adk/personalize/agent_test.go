@@ -27,8 +27,8 @@ type scriptedModel struct {
 func (m *scriptedModel) Name() string { return "scripted" }
 
 func (m *scriptedModel) GenerateContent(_ context.Context, req *model.LLMRequest,
-	_ bool) iter.Seq2[*model.LLMResponse, error] {
-
+	_ bool,
+) iter.Seq2[*model.LLMResponse, error] {
 	m.instructions = append(m.instructions, systemText(req))
 	i := m.calls
 	m.calls++

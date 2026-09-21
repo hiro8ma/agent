@@ -17,7 +17,7 @@ func (d *Dataset) SampleBatch(B, T int, rng *rand.Rand) (x, y []int) {
 	}
 	x = make([]int, B*T)
 	y = make([]int, B*T)
-	for b := 0; b < B; b++ {
+	for b := range B {
 		start := rng.Intn(len(d.Tokens) - T - 1)
 		copy(x[b*T:(b+1)*T], d.Tokens[start:start+T])
 		copy(y[b*T:(b+1)*T], d.Tokens[start+1:start+T+1])

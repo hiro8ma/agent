@@ -87,7 +87,8 @@ func TestToolCallAccuracy(t *testing.T) {
 			// 呼び出しの妥当性とは別軸だが、タスク解決に貢献していない点は同じ。
 			name: "実行に失敗した呼び出しは減点する",
 			traj: Trajectory{Steps: []Step{{ToolCalls: []ToolCall{
-				{Name: "search_knowledge", Args: map[string]any{"query": "経費"}, Failed: true}}}}},
+				{Name: "search_knowledge", Args: map[string]any{"query": "経費"}, Failed: true},
+			}}}},
 			want:      0.0,
 			wantInDet: "実行に失敗",
 		},
@@ -215,9 +216,11 @@ func TestCostEfficiency(t *testing.T) {
 
 	t.Run("ツール呼び出し回数も上限に入る", func(t *testing.T) {
 		var steps []Step
-		for i := 0; i < 6; i++ {
-			steps = append(steps, Step{Tokens: 1,
-				ToolCalls: []ToolCall{call("search_knowledge", map[string]any{"query": "x"})}})
+		for range 6 {
+			steps = append(steps, Step{
+				Tokens:    1,
+				ToolCalls: []ToolCall{call("search_knowledge", map[string]any{"query": "x"})},
+			})
 		}
 		got := CostEfficiency(Trajectory{Steps: steps}, budget, 0.2)
 		if got.Passed {
@@ -258,10 +261,13 @@ func TestCostEfficiency(t *testing.T) {
 func TestScoreDirectionIsConsistent(t *testing.T) {
 	good := Trajectory{Steps: []Step{{
 		Tokens: 10, Duration: time.Millisecond,
-		ToolCalls: []ToolCall{call("search_knowledge", map[string]any{"query": "経費"})}}}}
+		ToolCalls: []ToolCall{call("search_knowledge", map[string]any{"query": "経費"})},
+	}}}
 	bad := Trajectory{Steps: []Step{
-		{Tokens: 5000, Duration: time.Minute,
-			ToolCalls: []ToolCall{call("unknown_tool", map[string]any{})}},
+		{
+			Tokens: 5000, Duration: time.Minute,
+			ToolCalls: []ToolCall{call("unknown_tool", map[string]any{})},
+		},
 		{Tokens: 5000, ToolCalls: []ToolCall{call("unknown_tool", map[string]any{})}},
 	}}
 	budget := CostBudget{MaxTokens: 1000, MaxToolCalls: 5, MaxDuration: 2 * time.Second}
@@ -270,12 +276,18 @@ func TestScoreDirectionIsConsistent(t *testing.T) {
 		name        string
 		goodV, badV float64
 	}{
-		{"ToolCallAccuracy",
-			ToolCallAccuracy(good, specs, 0.9).Value, ToolCallAccuracy(bad, specs, 0.9).Value},
-		{"StepEfficiency",
-			StepEfficiency(good, 1, 0.5).Value, StepEfficiency(bad, 1, 0.5).Value},
-		{"CostEfficiency",
-			CostEfficiency(good, budget, 0.2).Value, CostEfficiency(bad, budget, 0.2).Value},
+		{
+			"ToolCallAccuracy",
+			ToolCallAccuracy(good, specs, 0.9).Value, ToolCallAccuracy(bad, specs, 0.9).Value,
+		},
+		{
+			"StepEfficiency",
+			StepEfficiency(good, 1, 0.5).Value, StepEfficiency(bad, 1, 0.5).Value,
+		},
+		{
+			"CostEfficiency",
+			CostEfficiency(good, budget, 0.2).Value, CostEfficiency(bad, budget, 0.2).Value,
+		},
 	} {
 		if m.goodV <= m.badV {
 			t.Errorf("%s: 良い軌跡 %.2f が悪い軌跡 %.2f を上回らない。向きが逆の可能性がある",

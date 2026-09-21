@@ -44,10 +44,7 @@ func ExtractMentions(caption string) []Mention {
 
 			// 形の直前 12 バイトに色名があれば対応づける。
 			// 12 は「オレンジ色の」程度が入る長さ。
-			start := at - 12
-			if start < 0 {
-				start = 0
-			}
+			start := max(at-12, 0)
 			window := caption[start:at]
 
 			m := Mention{Shape: shape, Raw: sh}
@@ -75,8 +72,10 @@ func ExtractMentions(caption string) []Mention {
 func CHAIR(s Scene, caption string, threshold float64) Score {
 	mentions := ExtractMentions(caption)
 	if len(mentions) == 0 {
-		return Score{Metric: "CHAIR", Threshold: threshold,
-			Reason: "採点できない: 説明文に物体の言及がない"}
+		return Score{
+			Metric: "CHAIR", Threshold: threshold,
+			Reason: "採点できない: 説明文に物体の言及がない",
+		}
 	}
 
 	halluc := 0
@@ -112,8 +111,10 @@ func CHAIR(s Scene, caption string, threshold float64) Score {
 // 「黙っていれば満点」の実装が最高得点になる。対で測る。
 func Coverage(s Scene, caption string, threshold float64) Score {
 	if len(s.Objects) == 0 {
-		return Score{Metric: "Coverage", Threshold: threshold,
-			Reason: "採点できない: 画像に物体がない"}
+		return Score{
+			Metric: "Coverage", Threshold: threshold,
+			Reason: "採点できない: 画像に物体がない",
+		}
 	}
 
 	mentions := ExtractMentions(caption)
@@ -171,19 +172,23 @@ func MirrorConsistency(original, mirrored string, threshold float64) Score {
 	lm, rm := strings.Count(mirrored, "左"), strings.Count(mirrored, "右")
 
 	if lo+ro == 0 && lm+rm == 0 {
-		return Score{Metric: "MirrorConsistency", Threshold: threshold,
-			Reason: "採点できない: どちらの説明にも方向の記述がない"}
+		return Score{
+			Metric: "MirrorConsistency", Threshold: threshold,
+			Reason: "採点できない: どちらの説明にも方向の記述がない",
+		}
 	}
 
 	// 左右が同数だと、反転に追随した場合としなかった場合が同じ数になり区別できない。
 	// 左 1 右 1 の配置では満点が出るが何も測っていない。
 	// 判別できない条件では採点しない。
 	if lo == ro && lm == rm {
-		return Score{Metric: "MirrorConsistency", Threshold: threshold,
+		return Score{
+			Metric: "MirrorConsistency", Threshold: threshold,
 			Reason: fmt.Sprintf(
 				"採点できない: 左右の言及数が同数（元 左%d 右%d / 反転後 左%d 右%d）。"+
 					"反転に追随した場合としなかった場合を区別できない。"+
-					"左右で物体数の異なる配置を使う", lo, ro, lm, rm)}
+					"左右で物体数の異なる配置を使う", lo, ro, lm, rm),
+		}
 	}
 
 	// 元の「左」が反転後の「右」に、元の「右」が反転後の「左」に対応する。
@@ -242,8 +247,10 @@ func WER(want, got string) float64 {
 // 1 を超える CER があるため 0 で下限を切る。
 func OCRAccuracy(s Scene, extracted string, threshold float64) Score {
 	if len(s.Texts) == 0 {
-		return Score{Metric: "OCRAccuracy", Threshold: threshold,
-			Reason: "採点できない: 画像に文字がない"}
+		return Score{
+			Metric: "OCRAccuracy", Threshold: threshold,
+			Reason: "採点できない: 画像に文字がない",
+		}
 	}
 
 	var want []string
@@ -310,10 +317,7 @@ func levenshteinStr(a, b []string) int {
 }
 
 func min3(a, b, c int) int {
-	m := a
-	if b < m {
-		m = b
-	}
+	m := min(b, a)
 	if c < m {
 		m = c
 	}

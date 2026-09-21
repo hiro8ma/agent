@@ -15,6 +15,7 @@ package guardrail
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 
 	"google.golang.org/adk/v2/agent"
@@ -58,8 +59,8 @@ func LastUserText(req *model.LLMRequest) string {
 	if req == nil {
 		return ""
 	}
-	for i := len(req.Contents) - 1; i >= 0; i-- {
-		c := req.Contents[i]
+	for _, c := range slices.Backward(req.Contents) {
+
 		if c == nil || c.Role != "user" {
 			continue
 		}
@@ -93,8 +94,10 @@ func DetectInjection(log *Log, patterns []*regexp.Regexp, msg string) llmagent.B
 			return nil, nil
 		}
 		markState(ctx, InjectionFlagKey, hit.String())
-		log.add(Verdict{Stage: "before_model", Rule: "インジェクション", Blocked: true,
-			Detail: fmt.Sprintf("入力が %s に一致", hit.String())})
+		log.add(Verdict{
+			Stage: "before_model", Rule: "インジェクション", Blocked: true,
+			Detail: fmt.Sprintf("入力が %s に一致", hit.String()),
+		})
 		return refuse(msg), nil
 	}
 }
@@ -131,8 +134,10 @@ func MaskPII(log *Log) llmagent.AfterModelCallback {
 			log.add(Verdict{Stage: "after_model"})
 			return nil, nil
 		}
-		log.add(Verdict{Stage: "after_model", Rule: "個人情報", Blocked: true,
-			Detail: "出力の個人情報を伏せた"})
+		log.add(Verdict{
+			Stage: "after_model", Rule: "個人情報", Blocked: true,
+			Detail: "出力の個人情報を伏せた",
+		})
 		return resp, nil
 	}
 }
@@ -142,13 +147,7 @@ func MaskPII(log *Log) llmagent.AfterModelCallback {
 // state が nil のときは未確認として扱う。確認済みの印が読めない以上、
 // 通してしまうより止める方が安全側になる。
 func NeedsConfirmation(state session.ReadonlyState, toolName, flagKey string, targets []string) bool {
-	found := false
-	for _, t := range targets {
-		if t == toolName {
-			found = true
-			break
-		}
-	}
+	found := slices.Contains(targets, toolName)
 	if !found {
 		return false
 	}
@@ -177,8 +176,10 @@ func RequireConfirmation(log *Log, flagKey string, targets ...string) llmagent.B
 			log.add(Verdict{Stage: "before_tool"})
 			return nil, nil
 		}
-		log.add(Verdict{Stage: "before_tool", Rule: "要確認", Blocked: true,
-			Detail: fmt.Sprintf("%s は確認が要る", name)})
+		log.add(Verdict{
+			Stage: "before_tool", Rule: "要確認", Blocked: true,
+			Detail: fmt.Sprintf("%s は確認が要る", name),
+		})
 		return map[string]any{
 			"status":  "confirmation_required",
 			"tool":    name,

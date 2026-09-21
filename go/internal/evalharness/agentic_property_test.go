@@ -1,6 +1,7 @@
 package evalharness
 
 import (
+	"maps"
 	"testing"
 	"time"
 
@@ -112,7 +113,8 @@ func TestPropertyBadCallNeverImprovesAccuracy(t *testing.T) {
 		before := ToolCallAccuracy(tr, specs, 0.9).Value
 
 		tr.Steps = append(tr.Steps, Step{ToolCalls: []ToolCall{
-			{Name: "definitely_not_defined", Args: map[string]any{"x": 1}}}})
+			{Name: "definitely_not_defined", Args: map[string]any{"x": 1}},
+		}})
 		after := ToolCallAccuracy(tr, specs, 0.9).Value
 
 		if after > before {
@@ -174,7 +176,7 @@ func TestPropertyScoringIsDeterministic(t *testing.T) {
 		tr := genTrajectory(t)
 		opt := rapid.IntRange(1, 10).Draw(t, "optimal")
 
-		for i := 0; i < 5; i++ {
+		for range 5 {
 			a := ToolCallAccuracy(tr, specs, 0.9)
 			b := ToolCallAccuracy(tr, specs, 0.9)
 			if a.Value != b.Value || a.Reason != b.Reason {
@@ -210,9 +212,7 @@ func TestPropertySignatureIgnoresArgOrder(t *testing.T) {
 			args[k] = i
 		}
 		copied := map[string]any{}
-		for k, v := range args {
-			copied[k] = v
-		}
+		maps.Copy(copied, args)
 
 		a := ToolCall{Name: "t", Args: args}
 		b := ToolCall{Name: "t", Args: copied}

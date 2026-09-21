@@ -23,8 +23,10 @@ func ModelGuard(log *Log, banned, secrets []string) func(context.Context, *ai.Mo
 		text := promptText(p.Request)
 		for _, w := range banned {
 			if w != "" && strings.Contains(text, w) {
-				log.add(Verdict{Stage: "before_model", Rule: "禁止語", Blocked: true,
-					Detail: fmt.Sprintf("入力に %q が含まれる", w)})
+				log.add(Verdict{
+					Stage: "before_model", Rule: "禁止語", Blocked: true,
+					Detail: fmt.Sprintf("入力に %q が含まれる", w),
+				})
 				// next を呼ばなければモデルは呼ばれない。
 				return &ai.ModelResponse{
 					Message: ai.NewModelTextMessage(
@@ -57,8 +59,10 @@ func ModelGuard(log *Log, banned, secrets []string) func(context.Context, *ai.Mo
 			}
 		}
 		if hit != "" {
-			log.add(Verdict{Stage: "after_model", Rule: "伏せ字", Blocked: true,
-				Detail: fmt.Sprintf("出力の %q を伏せた", hit)})
+			log.add(Verdict{
+				Stage: "after_model", Rule: "伏せ字", Blocked: true,
+				Detail: fmt.Sprintf("出力の %q を伏せた", hit),
+			})
 		} else {
 			log.add(Verdict{Stage: "after_model"})
 		}
@@ -83,8 +87,10 @@ func ToolGuard(log *Log, required map[string][]string, emptyKeys ...string) func
 			for _, k := range keys {
 				v, present := args[k]
 				if !present || v == nil || v == "" {
-					log.add(Verdict{Stage: "before_tool", Rule: "必須引数", Blocked: true,
-						Detail: fmt.Sprintf("%s に %s が無い", name, k)})
+					log.add(Verdict{
+						Stage: "before_tool", Rule: "必須引数", Blocked: true,
+						Detail: fmt.Sprintf("%s に %s が無い", name, k),
+					})
 					return &ai.MultipartToolResponse{Output: map[string]any{
 						"error": fmt.Sprintf("%s は必須です。指定してから呼び直してください", k),
 					}}, nil
@@ -95,8 +101,10 @@ func ToolGuard(log *Log, required map[string][]string, emptyKeys ...string) func
 
 		res, err := next(ctx, p)
 		if err != nil {
-			log.add(Verdict{Stage: "after_tool", Rule: "実行失敗", Blocked: true,
-				Detail: fmt.Sprintf("%s: %v", name, err)})
+			log.add(Verdict{
+				Stage: "after_tool", Rule: "実行失敗", Blocked: true,
+				Detail: fmt.Sprintf("%s: %v", name, err),
+			})
 			return nil, err
 		}
 
@@ -106,8 +114,10 @@ func ToolGuard(log *Log, required map[string][]string, emptyKeys ...string) func
 			out, _ = res.Output.(map[string]any)
 		}
 		if empty(out, emptyKeys) {
-			log.add(Verdict{Stage: "after_tool", Rule: "空の結果", Blocked: true,
-				Detail: fmt.Sprintf("%s が空を返した", name)})
+			log.add(Verdict{
+				Stage: "after_tool", Rule: "空の結果", Blocked: true,
+				Detail: fmt.Sprintf("%s が空を返した", name),
+			})
 			return &ai.MultipartToolResponse{Output: map[string]any{
 				"error": "結果が空でした。条件を変えて呼び直すか、分からないと答えてください",
 			}}, nil

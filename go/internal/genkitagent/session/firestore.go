@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -52,7 +53,7 @@ func (s *Firestore) Load(ctx context.Context, sessionID string) ([]agent.Message
 	var history []agent.Message
 	for {
 		snap, err := iter.Next()
-		if err == iterator.Done {
+		if errors.Is(err, iterator.Done) {
 			return history, nil
 		}
 		if err != nil {

@@ -8,7 +8,6 @@ import (
 
 	"google.golang.org/adk/v2/memory"
 	vertexmemory "google.golang.org/adk/v2/memory/vertexai"
-	vertexaiutil "google.golang.org/adk/v2/util/vertexai"
 
 	"github.com/hiro8ma/agent/go/internal/adk/domain"
 )
@@ -40,11 +39,9 @@ func NewMemoryBankStore(ctx context.Context, at domain.BankLocation) (domain.Mem
 		return nil, fmt.Errorf("memory bank の接続先が不足している: %v", at.Missing())
 	}
 	svc, err := vertexmemory.NewService(ctx, &vertexmemory.ServiceConfig{
-		AgentEngineData: vertexaiutil.AgentEngineData{
-			ProjectID:       at.ProjectID,
-			Location:        at.Location,
-			ReasoningEngine: at.ReasoningEngine,
-		},
+		ProjectID:                     at.ProjectID,
+		Location:                      at.Location,
+		ReasoningEngine:               at.ReasoningEngine,
 		StateKeySessionLastUpdateTime: LastUpdateKey,
 		// 記憶の生成を待つ。待たないと次の対話に前回の記憶が間に合わない。
 		WaitForCompletion: true,

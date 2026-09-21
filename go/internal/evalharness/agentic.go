@@ -2,6 +2,7 @@ package evalharness
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -34,15 +35,16 @@ func (s AgentScore) String() string {
 	if !s.Scored {
 		return fmt.Sprintf("%s: 採点なし\n  %s", s.Metric, s.Reason)
 	}
-	out := fmt.Sprintf("%s: %.2f (閾値 %.2f) %s",
+	var out strings.Builder
+	fmt.Fprintf(&out, "%s: %.2f (閾値 %.2f) %s",
 		s.Metric, s.Value, s.Threshold, map[bool]string{true: "合格", false: "不合格"}[s.Passed])
 	if s.Reason != "" {
-		out += "\n  " + s.Reason
+		out.WriteString("\n  " + s.Reason)
 	}
 	for _, d := range s.Details {
-		out += "\n  - " + d
+		out.WriteString("\n  - " + d)
 	}
-	return out
+	return out.String()
 }
 
 // ---------- ツール呼び出し精度 ----------
@@ -68,14 +70,18 @@ func ToolCallAccuracy(t Trajectory, specs []ToolSpec, threshold float64) AgentSc
 	}
 
 	if err := t.Valid(); err != nil {
-		return AgentScore{Metric: "ToolCallAccuracy", Threshold: threshold,
-			Reason: "採点できない: " + err.Error()}
+		return AgentScore{
+			Metric: "ToolCallAccuracy", Threshold: threshold,
+			Reason: "採点できない: " + err.Error(),
+		}
 	}
 
 	calls := t.ToolCalls()
 	if len(calls) == 0 {
-		return AgentScore{Metric: "ToolCallAccuracy", Value: 1, Threshold: threshold,
-			Passed: true, Scored: true, Reason: "ツール呼び出しが無いため満点"}
+		return AgentScore{
+			Metric: "ToolCallAccuracy", Value: 1, Threshold: threshold,
+			Passed: true, Scored: true, Reason: "ツール呼び出しが無いため満点",
+		}
 	}
 
 	good := 0
@@ -145,13 +151,7 @@ func checkCall(c ToolCall, index map[string]ToolSpec) []string {
 			continue
 		}
 		s := fmt.Sprint(v)
-		found := false
-		for _, cand := range cands {
-			if s == cand {
-				found = true
-				break
-			}
-		}
+		found := slices.Contains(cands, s)
 		if !found {
 			problems = append(problems, fmt.Sprintf("%s の値 %q が候補にない", k, s))
 		}
@@ -182,8 +182,10 @@ func StepEfficiency(t Trajectory, optimalSteps int, threshold float64) AgentScor
 		optimalSteps = 1
 	}
 	if err := t.Valid(); err != nil {
-		return AgentScore{Metric: "StepEfficiency", Threshold: threshold,
-			Reason: "採点できない: " + err.Error()}
+		return AgentScore{
+			Metric: "StepEfficiency", Threshold: threshold,
+			Reason: "採点できない: " + err.Error(),
+		}
 	}
 
 	steps := len(t.Steps)
@@ -231,8 +233,10 @@ type CostBudget struct {
 // 上限を先に決めて、超えたら落とす。
 func CostEfficiency(t Trajectory, b CostBudget, threshold float64) AgentScore {
 	if err := t.Valid(); err != nil {
-		return AgentScore{Metric: "CostEfficiency", Threshold: threshold,
-			Reason: "採点できない: " + err.Error()}
+		return AgentScore{
+			Metric: "CostEfficiency", Threshold: threshold,
+			Reason: "採点できない: " + err.Error(),
+		}
 	}
 
 	type item struct {
@@ -248,12 +252,16 @@ func CostEfficiency(t Trajectory, b CostBudget, threshold float64) AgentScore {
 		items = append(items, item{"ツール呼び出し", float64(len(t.ToolCalls())), float64(b.MaxToolCalls), " 回"})
 	}
 	if b.MaxDuration > 0 {
-		items = append(items, item{"所要時間",
-			float64(t.TotalDuration().Milliseconds()), float64(b.MaxDuration.Milliseconds()), " ms"})
+		items = append(items, item{
+			"所要時間",
+			float64(t.TotalDuration().Milliseconds()), float64(b.MaxDuration.Milliseconds()), " ms",
+		})
 	}
 	if len(items) == 0 {
-		return AgentScore{Metric: "CostEfficiency", Threshold: threshold,
-			Reason: "上限が設定されていないため採点しない"}
+		return AgentScore{
+			Metric: "CostEfficiency", Threshold: threshold,
+			Reason: "上限が設定されていないため採点しない",
+		}
 	}
 
 	worst := 1.0

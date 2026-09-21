@@ -66,8 +66,10 @@ func (r *recorder) GenerateContent(_ context.Context, req *model.LLMRequest, _ b
 
 func run(t *testing.T, a agent.Agent, text string) error {
 	t.Helper()
-	r, err := runner.New(runner.Config{AppName: "ch02", Agent: a,
-		SessionService: session.InMemoryService(), AutoCreateSession: true})
+	r, err := runner.New(runner.Config{
+		AppName: "ch02", Agent: a,
+		SessionService: session.InMemoryService(), AutoCreateSession: true,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}

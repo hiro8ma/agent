@@ -77,7 +77,7 @@ func vectorFor(i int) []float32 {
 
 	v := make([]float32, dim)
 	var norm float64
-	for d := 0; d < dim; d++ {
+	for d := range dim {
 		// 中心が支配的で、揺らぎは小さい。同じクラスタの点同士が近くなる。
 		x := center() + jitter()*0.15
 		v[d] = float32(x)
@@ -141,8 +141,10 @@ func insertRows(t *testing.T, pool *pgxpool.Pool, table string, from, to, tenant
 }
 
 func baseCfg(table string) PgVectorConfig {
-	return PgVectorConfig{Table: table, EmbeddingColumn: "embedding",
-		TitleColumn: "title", ContentColumn: "content"}
+	return PgVectorConfig{
+		Table: table, EmbeddingColumn: "embedding",
+		TitleColumn: "title", ContentColumn: "content",
+	}
 }
 
 func TestIntegrationVerifyPassesOnCorrectSetup(t *testing.T) {

@@ -30,7 +30,7 @@ func TestSuccessRateExcludesBlocked(t *testing.T) {
 // 反復が跳ねる実行があると平均は実態を表さない。
 func TestP95NotMean(t *testing.T) {
 	var q Quality
-	for i := 0; i < 19; i++ {
+	for range 19 {
 		q.Add(Trajectory{Steps: []Step{step(100, 100)}}, true, false)
 	}
 	long := make([]Step, 20)

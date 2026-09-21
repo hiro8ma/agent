@@ -6,7 +6,6 @@ import (
 	"log"
 	"os"
 
-	"github.com/firebase/genkit/go/ai"
 	genkitsdk "github.com/firebase/genkit/go/genkit"
 	"github.com/firebase/genkit/go/plugins/googlegenai"
 
@@ -28,7 +27,7 @@ func main() {
 
 	g := genkitsdk.Init(ctx, genkitsdk.WithPlugins(&googlegenai.GoogleAI{}))
 
-	var model ai.Model = googlegenai.GoogleAIModel(g, modelName)
+	model := googlegenai.GoogleAIModel(g, modelName)
 
 	specs := []genkit.ToolSpec{
 		{Schema: tool.CalculatorSchema, Handler: tool.Calculator},

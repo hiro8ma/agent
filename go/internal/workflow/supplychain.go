@@ -69,11 +69,14 @@ func SupplyChainWorkflow(retry RetryPolicy) Workflow {
 		Name: "supply-chain",
 		Steps: []Step{
 			{Activity: inventoryActivity{}, Retry: retry, Input: ActivityInput{
-				Operation: "reserve", Messages: []string{"reserve stock for order"}}},
+				Operation: "reserve", Messages: []string{"reserve stock for order"},
+			}},
 			{Activity: transportationActivity{}, Retry: retry, Input: ActivityInput{
-				Operation: "schedule", Messages: []string{"book carrier"}}},
+				Operation: "schedule", Messages: []string{"book carrier"},
+			}},
 			{Activity: supplierActivity{}, Retry: retry, Input: ActivityInput{
-				Operation: "purchase", Messages: []string{"place purchase order"}}},
+				Operation: "purchase", Messages: []string{"place purchase order"},
+			}},
 		},
 	}
 }
@@ -83,7 +86,7 @@ func SupplyChainWorkflow(retry RetryPolicy) Workflow {
 type FlakyActivity struct {
 	Inner            Activity
 	FailBeforeSucces int
-	calls            int64
+	calls            atomic.Int64
 }
 
 // Name は内側 Activity 名を引き継ぐ。
@@ -91,7 +94,7 @@ func (f *FlakyActivity) Name() string { return f.Inner.Name() }
 
 // Execute は呼び出し回数が閾値以下のうちは error を返す。
 func (f *FlakyActivity) Execute(ctx context.Context, in ActivityInput) (ActivityResult, error) {
-	n := atomic.AddInt64(&f.calls, 1)
+	n := f.calls.Add(1)
 	if int(n) <= f.FailBeforeSucces {
 		return ActivityResult{}, liberrors.Newf(liberrors.CodeUnavailable,
 			"transient failure on %q (call %d)", f.Inner.Name(), n)

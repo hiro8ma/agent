@@ -24,8 +24,10 @@ func BlockInput(log *Log, banned []string) llmagent.BeforeModelCallback {
 		text := requestText(req)
 		for _, w := range banned {
 			if w != "" && strings.Contains(text, w) {
-				log.add(Verdict{Stage: "before_model", Rule: "禁止語", Blocked: true,
-					Detail: fmt.Sprintf("入力に %q が含まれる", w)})
+				log.add(Verdict{
+					Stage: "before_model", Rule: "禁止語", Blocked: true,
+					Detail: fmt.Sprintf("入力に %q が含まれる", w),
+				})
 				return refuse(fmt.Sprintf("この内容には回答できません（%s）", w)), nil
 			}
 		}
@@ -56,8 +58,10 @@ func RedactOutput(log *Log, secrets []string) llmagent.AfterModelCallback {
 			resp.Content.Parts[i].Text = t
 		}
 		if hit != "" {
-			log.add(Verdict{Stage: "after_model", Rule: "伏せ字", Blocked: true,
-				Detail: fmt.Sprintf("出力の %q を伏せた", hit)})
+			log.add(Verdict{
+				Stage: "after_model", Rule: "伏せ字", Blocked: true,
+				Detail: fmt.Sprintf("出力の %q を伏せた", hit),
+			})
 			return resp, nil
 		}
 		log.add(Verdict{Stage: "after_model"})
@@ -78,8 +82,10 @@ func RequireArgs(log *Log, toolName string, required ...string) llmagent.BeforeT
 		for _, k := range required {
 			v, ok := args[k]
 			if !ok || v == nil || v == "" {
-				log.add(Verdict{Stage: "before_tool", Rule: "必須引数", Blocked: true,
-					Detail: fmt.Sprintf("%s に %s が無い", toolName, k)})
+				log.add(Verdict{
+					Stage: "before_tool", Rule: "必須引数", Blocked: true,
+					Detail: fmt.Sprintf("%s に %s が無い", toolName, k),
+				})
 				// map を返すとツールを呼ばず、その値が結果になる。
 				return map[string]any{
 					"error": fmt.Sprintf("%s は必須です。指定してから呼び直してください", k),
@@ -97,13 +103,17 @@ func RequireArgs(log *Log, toolName string, required ...string) llmagent.BeforeT
 func RejectEmptyResult(log *Log, keys ...string) llmagent.AfterToolCallback {
 	return func(ctx agent.Context, t tool.Tool, args, result map[string]any, err error) (map[string]any, error) {
 		if err != nil {
-			log.add(Verdict{Stage: "after_tool", Rule: "実行失敗", Blocked: true,
-				Detail: fmt.Sprintf("%s: %v", t.Name(), err)})
+			log.add(Verdict{
+				Stage: "after_tool", Rule: "実行失敗", Blocked: true,
+				Detail: fmt.Sprintf("%s: %v", t.Name(), err),
+			})
 			return nil, nil
 		}
 		if empty(result, keys) {
-			log.add(Verdict{Stage: "after_tool", Rule: "空の結果", Blocked: true,
-				Detail: fmt.Sprintf("%s が空を返した", t.Name())})
+			log.add(Verdict{
+				Stage: "after_tool", Rule: "空の結果", Blocked: true,
+				Detail: fmt.Sprintf("%s が空を返した", t.Name()),
+			})
 			return map[string]any{
 				"error": "結果が空でした。条件を変えて呼び直すか、分からないと答えてください",
 			}, nil

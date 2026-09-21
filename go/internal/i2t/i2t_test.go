@@ -50,8 +50,10 @@ func TestRenderMatchesGroundTruth(t *testing.T) {
 // すべて同じ形で描いていても、中心の色だけ見るテストは通ってしまう。
 func TestShapesDiffer(t *testing.T) {
 	render := func(sh Shape) *image.RGBA {
-		return Scene{Width: 240, Height: 240,
-			Objects: []Object{{Shape: sh, Color: "黒", Pos: Position{1, 1}}}}.Render()
+		return Scene{
+			Width: 240, Height: 240,
+			Objects: []Object{{Shape: sh, Color: "黒", Pos: Position{1, 1}}},
+		}.Render()
 	}
 
 	count := func(img *image.RGBA) int {
@@ -68,7 +70,7 @@ func TestShapesDiffer(t *testing.T) {
 	}
 
 	sq, ci, tr := count(render(Square)), count(render(Circle)), count(render(Triangle))
-	if !(sq > ci && ci > tr) {
+	if sq <= ci || ci <= tr {
 		t.Errorf("面積の大小が四角 > 円 > 三角 になっていない: 四角 %d / 円 %d / 三角 %d", sq, ci, tr)
 	}
 }
@@ -213,16 +215,20 @@ func TestMirrorConsistency(t *testing.T) {
 		{"左右が同数なら追随していなくても採点しない", "左に円、右に四角", "左に円、右に四角", 0, false},
 		// 指標は方向語の出現回数を数える。物体ごとに位置を書く形にする。
 		// 実際のモデル出力も「左上：赤の円 / 左下：緑の三角 / 右中央：青の四角」の形になる。
-		{"非対称なら追随を検出できる",
+		{
+			"非対称なら追随を検出できる",
 			"左上に円、左下に四角、右中央に三角",
-			"右上に円、右下に四角、左中央に三角", 1.0, true},
+			"右上に円、右下に四角、左中央に三角", 1.0, true,
+		},
 		// 追随しない場合でも 0 にはならない。左 2 右 1 のまま変わらなければ
 		// diff = |2-1| + |1-2| = 2、総数 6 で 0.67 になる。
 		// 語数の一致は位置理解の弱い代理指標で、追随した 1.00 と
 		// 追随しない 0.67 を閾値で分ける形になる。
-		{"非対称で追随しなければ下がる",
+		{
+			"非対称で追随しなければ下がる",
 			"左上に円、左下に四角、右中央に三角",
-			"左上に円、左下に四角、右中央に三角", 2.0 / 3.0, true},
+			"左上に円、左下に四角、右中央に三角", 2.0 / 3.0, true,
+		},
 	}
 
 	for _, tt := range tests {

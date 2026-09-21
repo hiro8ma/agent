@@ -2,7 +2,7 @@ package evalharness
 
 import (
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 )
@@ -48,7 +48,7 @@ func (q Quality) P95Latency() time.Duration {
 		return 0
 	}
 	s := append([]time.Duration(nil), q.Latencies...)
-	sort.Slice(s, func(i, j int) bool { return s[i] < s[j] })
+	slices.Sort(s)
 	i := (len(s)*95 + 99) / 100
 	if i >= len(s) {
 		i = len(s) - 1

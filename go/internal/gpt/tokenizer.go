@@ -1,6 +1,6 @@
 package gpt
 
-import "sort"
+import "slices"
 
 // CharTokenizer は文字レベルのトークナイザ。
 // コーパスに出現した文字（rune）を語彙として ID を割り当てる。
@@ -18,7 +18,7 @@ func NewCharTokenizer(text string) *CharTokenizer {
 	for r := range seen {
 		itos = append(itos, r)
 	}
-	sort.Slice(itos, func(i, j int) bool { return itos[i] < itos[j] })
+	slices.Sort(itos)
 	stoi := make(map[rune]int, len(itos))
 	for i, r := range itos {
 		stoi[r] = i

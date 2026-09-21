@@ -345,25 +345,37 @@ func TestRetryAfter(t *testing.T) {
 		want   float64 // 秒。指示 + 1 秒
 	}{
 		{"クォータ超過は待てる", quota, true, 49.011058885},
-		{"待ち時間の指示が無ければ待たない",
-			errors.New("Error 429, Status: RESOURCE_EXHAUSTED"), false, 0},
-		{"認証エラーは待たない",
-			errors.New("Error 401, Message: API key not valid"), false, 0},
+		{
+			"待ち時間の指示が無ければ待たない",
+			errors.New("Error 429, Status: RESOURCE_EXHAUSTED"), false, 0,
+		},
+		{
+			"認証エラーは待たない",
+			errors.New("Error 401, Message: API key not valid"), false, 0,
+		},
 		// 待ち時間の指示を含むが 429 ではないケース。
 		// 正規表現だけで判断すると、待っても解消しないエラーで待たされる。
-		{"待ち時間の指示があっても 429 でなければ待たない",
-			errors.New("Error 400, Message: rate policy. Please retry in 5.0s."), false, 0},
+		{
+			"待ち時間の指示があっても 429 でなければ待たない",
+			errors.New("Error 400, Message: rate policy. Please retry in 5.0s."), false, 0,
+		},
 		// 日次上限は秒単位では回復しない。retryDelay に従って待ち直しても無駄になる。
 		// 実際に 4 回再試行で 18.6 分待って全滅した経路。
-		{"日次上限は待たない",
+		{
+			"日次上限は待たない",
 			errors.New(`Error 429, Status: RESOURCE_EXHAUSTED, ` +
 				`quotaId:GenerateRequestsPerDayPerProjectPerModel-FreeTier, ` +
-				`Please retry in 48.0s.`), false, 0},
-		{"サーバエラーは待たない",
-			errors.New("Error 500, Message: internal"), false, 0},
+				`Please retry in 48.0s.`), false, 0,
+		},
+		{
+			"サーバエラーは待たない",
+			errors.New("Error 500, Message: internal"), false, 0,
+		},
 		// 混雑は時間をおけば解消する。サーバは待ち時間を返さないため固定で待つ。
-		{"混雑は待つ",
-			errors.New("Error 503, Message: high demand, Status: UNAVAILABLE"), true, 10},
+		{
+			"混雑は待つ",
+			errors.New("Error 503, Message: high demand, Status: UNAVAILABLE"), true, 10,
+		},
 	}
 
 	for _, tt := range tests {

@@ -161,13 +161,7 @@ func (s *PgVector) EfSearch(limit int) int {
 	if sel <= 0 || sel > 1 {
 		sel = 1
 	}
-	need := int(float64(limit)/sel) * 2
-	if need < hnswDefaultEfSearch {
-		need = hnswDefaultEfSearch
-	}
-	if need > s.cfg.EfSearchCap {
-		need = s.cfg.EfSearchCap
-	}
+	need := min(max(int(float64(limit)/sel)*2, hnswDefaultEfSearch), s.cfg.EfSearchCap)
 	return need
 }
 

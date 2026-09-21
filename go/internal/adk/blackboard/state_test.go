@@ -14,6 +14,7 @@ package blackboard
 
 import (
 	"context"
+	"maps"
 	"testing"
 
 	"google.golang.org/adk/v2/session"
@@ -48,10 +49,7 @@ func get(t *testing.T, svc session.Service, id string) map[string]any {
 
 // flatten は State を素の map へ写す。
 func flatten(st session.State) map[string]any {
-	out := map[string]any{}
-	for k, v := range st.All() {
-		out[k] = v
-	}
+	out := maps.Collect(st.All())
 	return out
 }
 
@@ -121,7 +119,6 @@ func TestForgettingPrefixFailsSilently(t *testing.T) {
 		t.Error("user: が越えていない")
 	}
 	t.Logf("次のセッションでは preference が消え、user:tier だけ残る")
-
 }
 
 // TestAppScopeLeaksAcrossUsers は app: が利用者をまたぐことを確かめる。
@@ -149,5 +146,4 @@ func TestAppScopeLeaksAcrossUsers(t *testing.T) {
 		t.Fatal("app: が利用者をまたがなかった。前提が違う")
 	}
 	t.Logf("利用者 B から利用者 A の値が見える: %v", v)
-
 }

@@ -8,8 +8,10 @@ import (
 var base = time.Date(2026, 8, 31, 10, 0, 0, 0, time.UTC)
 
 func fact(subj, stmt, src string, conf float64, at time.Time, ttl time.Duration) Fact {
-	return Fact{Subject: subj, Statement: stmt, Source: src,
-		Confidence: conf, WrittenAt: at, TTL: ttl}
+	return Fact{
+		Subject: subj, Statement: stmt, Source: src,
+		Confidence: conf, WrittenAt: at, TTL: ttl,
+	}
 }
 
 // 検証を通り抜けた 1 件が、以後の読み出し全てに乗る。
@@ -23,7 +25,7 @@ func TestOneBadFactContaminatesEveryRecall(t *testing.T) {
 	loose.Write(fact("user1", "在宅勤務は無制限", "", 0.30, base.Add(time.Minute), 0)) // 出典なし・低確度
 
 	bad := 0
-	for i := 0; i < reads; i++ {
+	for range reads {
 		for _, f := range loose.Recall("user1") {
 			if f.Statement == "在宅勤務は無制限" {
 				bad++
@@ -43,7 +45,7 @@ func TestOneBadFactContaminatesEveryRecall(t *testing.T) {
 	}
 
 	bad = 0
-	for i := 0; i < reads; i++ {
+	for range reads {
 		for _, f := range strict.Recall("user1") {
 			if f.Statement == "在宅勤務は無制限" {
 				bad++

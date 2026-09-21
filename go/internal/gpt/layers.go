@@ -7,12 +7,12 @@ import "math"
 
 // encoderForward: out[b,t,:] = wte[token] + wpe[t]
 func encoderForward(out []float64, idx []int, wte, wpe []float64, B, T, C int) {
-	for b := 0; b < B; b++ {
-		for t := 0; t < T; t++ {
+	for b := range B {
+		for t := range T {
 			o := (b*T + t) * C
 			tok := idx[b*T+t] * C
 			pos := t * C
-			for c := 0; c < C; c++ {
+			for c := range C {
 				out[o+c] = wte[tok+c] + wpe[pos+c]
 			}
 		}
@@ -20,12 +20,12 @@ func encoderForward(out []float64, idx []int, wte, wpe []float64, B, T, C int) {
 }
 
 func encoderBackward(dwte, dwpe []float64, dout []float64, idx []int, B, T, C int) {
-	for b := 0; b < B; b++ {
-		for t := 0; t < T; t++ {
+	for b := range B {
+		for t := range T {
 			o := (b*T + t) * C
 			tok := idx[b*T+t] * C
 			pos := t * C
-			for c := 0; c < C; c++ {
+			for c := range C {
 				d := dout[o+c]
 				dwte[tok+c] += d
 				dwpe[pos+c] += d
@@ -37,22 +37,22 @@ func encoderBackward(dwte, dwpe []float64, dout []float64, idx []int, B, T, C in
 // mean と rstd は backward で再利用するためキャッシュする。
 func layernormForward(out, mean, rstd, inp, weight, bias []float64, N, C int) {
 	const eps = 1e-5
-	for n := 0; n < N; n++ {
+	for n := range N {
 		x := inp[n*C : (n+1)*C]
 		m := 0.0
-		for c := 0; c < C; c++ {
+		for c := range C {
 			m += x[c]
 		}
 		m /= float64(C)
 		v := 0.0
-		for c := 0; c < C; c++ {
+		for c := range C {
 			d := x[c] - m
 			v += d * d
 		}
 		v /= float64(C)
 		s := 1.0 / math.Sqrt(v+eps)
 		o := out[n*C : (n+1)*C]
-		for c := 0; c < C; c++ {
+		for c := range C {
 			o[c] = (x[c]-m)*s*weight[c] + bias[c]
 		}
 		mean[n] = m
@@ -61,7 +61,7 @@ func layernormForward(out, mean, rstd, inp, weight, bias []float64, N, C int) {
 }
 
 func layernormBackward(dinp, dweight, dbias, dout, inp, weight, mean, rstd []float64, N, C int) {
-	for n := 0; n < N; n++ {
+	for n := range N {
 		x := inp[n*C : (n+1)*C]
 		do := dout[n*C : (n+1)*C]
 		di := dinp[n*C : (n+1)*C]
@@ -69,7 +69,7 @@ func layernormBackward(dinp, dweight, dbias, dout, inp, weight, mean, rstd []flo
 
 		dnormMean := 0.0
 		dnormNormMean := 0.0
-		for c := 0; c < C; c++ {
+		for c := range C {
 			norm := (x[c] - m) * s
 			dnorm := weight[c] * do[c]
 			dnormMean += dnorm
@@ -78,7 +78,7 @@ func layernormBackward(dinp, dweight, dbias, dout, inp, weight, mean, rstd []flo
 		dnormMean /= float64(C)
 		dnormNormMean /= float64(C)
 
-		for c := 0; c < C; c++ {
+		for c := range C {
 			norm := (x[c] - m) * s
 			dnorm := weight[c] * do[c]
 			dbias[c] += do[c]
@@ -90,16 +90,16 @@ func layernormBackward(dinp, dweight, dbias, dout, inp, weight, mean, rstd []flo
 
 // matmulForward: out[n,o] = bias[o] + Σ_c inp[n,c] * weight[o*C+c]
 func matmulForward(out, inp, weight, bias []float64, N, C, OC int) {
-	for n := 0; n < N; n++ {
+	for n := range N {
 		x := inp[n*C : (n+1)*C]
 		o := out[n*OC : (n+1)*OC]
-		for oc := 0; oc < OC; oc++ {
+		for oc := range OC {
 			val := 0.0
 			if bias != nil {
 				val = bias[oc]
 			}
 			w := weight[oc*C : (oc+1)*C]
-			for c := 0; c < C; c++ {
+			for c := range C {
 				val += x[c] * w[c]
 			}
 			o[oc] = val
@@ -108,18 +108,18 @@ func matmulForward(out, inp, weight, bias []float64, N, C, OC int) {
 }
 
 func matmulBackward(dinp, dweight, dbias, dout, inp, weight []float64, N, C, OC int) {
-	for n := 0; n < N; n++ {
+	for n := range N {
 		do := dout[n*OC : (n+1)*OC]
 		di := dinp[n*C : (n+1)*C]
 		x := inp[n*C : (n+1)*C]
-		for oc := 0; oc < OC; oc++ {
+		for oc := range OC {
 			d := do[oc]
 			if dbias != nil {
 				dbias[oc] += d
 			}
 			w := weight[oc*C : (oc+1)*C]
 			dw := dweight[oc*C : (oc+1)*C]
-			for c := 0; c < C; c++ {
+			for c := range C {
 				di[c] += w[c] * d
 				dw[c] += x[c] * d
 			}
@@ -131,9 +131,9 @@ func matmulBackward(dinp, dweight, dbias, dout, inp, weight []float64, N, C, OC 
 func attentionForward(out, preatt, att, qkv []float64, B, T, C, NH int) {
 	HS := C / NH
 	scale := 1.0 / math.Sqrt(float64(HS))
-	for b := 0; b < B; b++ {
-		for t := 0; t < T; t++ {
-			for h := 0; h < NH; h++ {
+	for b := range B {
+		for t := range T {
+			for h := range NH {
 				q := qkv[(b*T+t)*3*C+h*HS:]
 				pre := preatt[((b*NH+h)*T+t)*T:]
 				at := att[((b*NH+h)*T+t)*T:]
@@ -142,7 +142,7 @@ func attentionForward(out, preatt, att, qkv []float64, B, T, C, NH int) {
 				for t2 := 0; t2 <= t; t2++ {
 					k := qkv[(b*T+t2)*3*C+C+h*HS:]
 					val := 0.0
-					for i := 0; i < HS; i++ {
+					for i := range HS {
 						val += q[i] * k[i]
 					}
 					val *= scale
@@ -165,13 +165,13 @@ func attentionForward(out, preatt, att, qkv []float64, B, T, C, NH int) {
 					at[t2] = 0
 				}
 				o := out[(b*T+t)*C+h*HS:]
-				for i := 0; i < HS; i++ {
+				for i := range HS {
 					o[i] = 0
 				}
 				for t2 := 0; t2 <= t; t2++ {
 					v := qkv[(b*T+t2)*3*C+2*C+h*HS:]
 					a := at[t2]
-					for i := 0; i < HS; i++ {
+					for i := range HS {
 						o[i] += a * v[i]
 					}
 				}
@@ -183,9 +183,9 @@ func attentionForward(out, preatt, att, qkv []float64, B, T, C, NH int) {
 func attentionBackward(dqkv, dpreatt, datt, dout, qkv, att []float64, B, T, C, NH int) {
 	HS := C / NH
 	scale := 1.0 / math.Sqrt(float64(HS))
-	for b := 0; b < B; b++ {
-		for t := 0; t < T; t++ {
-			for h := 0; h < NH; h++ {
+	for b := range B {
+		for t := range T {
+			for h := range NH {
 				at := att[((b*NH+h)*T+t)*T:]
 				dat := datt[((b*NH+h)*T+t)*T:]
 				dpre := dpreatt[((b*NH+h)*T+t)*T:]
@@ -196,7 +196,7 @@ func attentionBackward(dqkv, dpreatt, datt, dout, qkv, att []float64, B, T, C, N
 				for t2 := 0; t2 <= t; t2++ {
 					v := qkv[(b*T+t2)*3*C+2*C+h*HS:]
 					dv := dqkv[(b*T+t2)*3*C+2*C+h*HS:]
-					for i := 0; i < HS; i++ {
+					for i := range HS {
 						dat[t2] += v[i] * do[i]
 						dv[i] += at[t2] * do[i]
 					}
@@ -214,7 +214,7 @@ func attentionBackward(dqkv, dpreatt, datt, dout, qkv, att []float64, B, T, C, N
 					k := qkv[(b*T+t2)*3*C+C+h*HS:]
 					dk := dqkv[(b*T+t2)*3*C+C+h*HS:]
 					d := dpre[t2] * scale
-					for i := 0; i < HS; i++ {
+					for i := range HS {
 						dq[i] += k[i] * d
 						dk[i] += q[i] * d
 					}
@@ -260,7 +260,7 @@ func residualBackward(da, db, dout []float64) {
 
 // softmaxForward: logits [N,V] -> probs [N,V]
 func softmaxForward(probs, logits []float64, N, V int) {
-	for n := 0; n < N; n++ {
+	for n := range N {
 		l := logits[n*V : (n+1)*V]
 		p := probs[n*V : (n+1)*V]
 		maxv := math.Inf(-1)
@@ -284,18 +284,18 @@ func softmaxForward(probs, logits []float64, N, V int) {
 
 // crossentropyForward: losses[n] = -log(probs[n, target[n]])
 func crossentropyForward(losses, probs []float64, targets []int, N, V int) {
-	for n := 0; n < N; n++ {
+	for n := range N {
 		losses[n] = -math.Log(probs[n*V+targets[n]])
 	}
 }
 
 // crossentropySoftmaxBackward: dlogits = (probs - onehot) * dloss
 func crossentropySoftmaxBackward(dlogits, probs []float64, targets []int, N, V int, dloss float64) {
-	for n := 0; n < N; n++ {
+	for n := range N {
 		p := probs[n*V : (n+1)*V]
 		dl := dlogits[n*V : (n+1)*V]
 		tgt := targets[n]
-		for i := 0; i < V; i++ {
+		for i := range V {
 			ind := 0.0
 			if i == tgt {
 				ind = 1.0

@@ -30,7 +30,7 @@ func TestGradCheck(t *testing.T) {
 	const relTol = 1e-4
 	checked := 0
 	for _, p := range m.Params() {
-		for k := 0; k < 3; k++ {
+		for range 3 {
 			i := rng.Intn(len(p.Data))
 			orig := p.Data[i]
 

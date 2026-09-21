@@ -134,7 +134,7 @@ func TestAfterToolRejectsEmpty(t *testing.T) {
 func TestLogCountsBothSides(t *testing.T) {
 	log := NewLog()
 	cb := BlockInput(log, []string{"禁止"})
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		cb(nil, req("普通の質問"))
 	}
 	if got := log.Passed()["before_model"]; got != 5 {

@@ -53,8 +53,7 @@ func Convert(err error) *Error {
 	if err == nil {
 		return nil
 	}
-	var e *Error
-	if errors.As(err, &e) {
+	if e, ok := errors.AsType[*Error](err); ok {
 		return e
 	}
 	return &Error{Code: CodeUnknown, Msg: err.Error(), Err: err}

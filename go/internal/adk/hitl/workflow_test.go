@@ -197,7 +197,7 @@ func TestDefaultRerunOnResumeNeverSeesTheReply(t *testing.T) {
 		want string
 	}{
 		{"既定（nil = handoff）", workflow.NodeConfig{}, "approved が出てはいけない"},
-		{"&true（re-entry）", workflow.NodeConfig{RerunOnResume: ptr(true)}, "approved が出るはず"},
+		{"&true（re-entry）", workflow.NodeConfig{RerunOnResume: new(true)}, "approved が出るはず"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			node := workflow.NewEmittingFunctionNode[Request, Result]("ctl", body, tc.cfg)
@@ -220,4 +220,5 @@ func TestDefaultRerunOnResumeNeverSeesTheReply(t *testing.T) {
 	}
 }
 
-func ptr[T any](v T) *T { return &v }
+//go:fix inline
+func ptr[T any](v T) *T { return new(v) }

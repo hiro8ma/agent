@@ -10,7 +10,7 @@ import (
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/types/known/structpb"
 
-	"github.com/hiro8ma/agent/go/gen/agent/v1"
+	agentv1 "github.com/hiro8ma/agent/go/gen/agent/v1"
 	"github.com/hiro8ma/agent/go/gen/agent/v1/agentv1connect"
 )
 

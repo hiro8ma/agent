@@ -37,8 +37,8 @@ func (m *counting) Calls() int {
 }
 
 func (m *counting) GenerateContent(_ context.Context, _ *model.LLMRequest,
-	_ bool) iter.Seq2[*model.LLMResponse, error] {
-
+	_ bool,
+) iter.Seq2[*model.LLMResponse, error] {
 	m.mu.Lock()
 	i := m.calls
 	m.calls++

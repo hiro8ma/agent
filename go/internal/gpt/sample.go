@@ -17,7 +17,7 @@ func (m *Model) Generate(prompt []int, maxNewTokens int, temperature float64, to
 	}
 	V := m.Cfg.VocabSize
 
-	for n := 0; n < maxNewTokens; n++ {
+	for range maxNewTokens {
 		// コンテキスト長を超えたら末尾 BlockSize 分に切り詰める
 		ctx := tokens
 		if len(ctx) > m.Cfg.BlockSize {

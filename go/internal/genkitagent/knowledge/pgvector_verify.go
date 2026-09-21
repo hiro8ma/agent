@@ -3,6 +3,7 @@ package knowledge
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
@@ -167,11 +168,8 @@ func (s *PgVector) verifyIndexRecall(ctx context.Context) error {
 
 		hit := 0
 		for _, id := range indexed {
-			for _, e := range exact {
-				if id == e {
-					hit++
-					break
-				}
+			if slices.Contains(exact, id) {
+				hit++
 			}
 		}
 		total += float64(hit) / float64(len(exact))
@@ -237,8 +235,8 @@ func (s *PgVector) sampleQueries(ctx context.Context, conn *pgxpool.Conn, n int)
 // そこは近似索引が構造的に弱く、索引が正しくても再現率が 0 になる。
 // 中点をデータの密な場所に置き、かつ既存の行とは一致させない。
 func (s *PgVector) midpointWithNeighbor(ctx context.Context, conn *pgxpool.Conn,
-	seed pgvector.Vector) (*pgvector.Vector, error) {
-
+	seed pgvector.Vector,
+) (*pgvector.Vector, error) {
 	if _, err := conn.Exec(ctx, "SET enable_indexscan = off"); err != nil {
 		return nil, fmt.Errorf("pgvector: verify: 標本の厳密検索: %w", err)
 	}
@@ -277,8 +275,8 @@ func (s *PgVector) midpointWithNeighbor(ctx context.Context, conn *pgxpool.Conn,
 }
 
 func (s *PgVector) topIDs(ctx context.Context, conn *pgxpool.Conn, q pgvector.Vector,
-	topK int, useIndex bool) ([]string, error) {
-
+	topK int, useIndex bool,
+) ([]string, error) {
 	setting := "SET enable_indexscan = off"
 	if useIndex {
 		setting = "SET enable_seqscan = off"

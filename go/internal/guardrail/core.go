@@ -13,6 +13,7 @@ package guardrail
 
 import (
 	"fmt"
+	"maps"
 	"strings"
 	"sync"
 )
@@ -41,6 +42,7 @@ type Log struct {
 
 // NewLog は空の記録を返す。
 func NewLog() *Log { return &Log{passed: map[string]int{}} }
+
 func (l *Log) add(v Verdict) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -63,9 +65,7 @@ func (l *Log) Passed() map[string]int {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	out := make(map[string]int, len(l.passed))
-	for k, v := range l.passed {
-		out[k] = v
-	}
+	maps.Copy(out, l.passed)
 	return out
 }
 

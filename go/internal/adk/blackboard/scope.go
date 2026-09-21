@@ -6,6 +6,7 @@ package blackboard
 
 import (
 	"fmt"
+	"maps"
 	"sort"
 	"strings"
 
@@ -102,10 +103,7 @@ func (i Issue) String() string {
 //	宣言に無い鍵  宣言せずに書かれた
 //	未書き込み    宣言されているが書かれていない
 func Verify(st session.State, schema Schema) []Issue {
-	actual := map[string]any{}
-	for k, v := range st.All() {
-		actual[k] = v
-	}
+	actual := maps.Collect(st.All())
 
 	var issues []Issue
 	seen := map[string]bool{}
@@ -114,8 +112,10 @@ func Verify(st session.State, schema Schema) []Issue {
 		name, got := split(key)
 		want, declared := schema[name]
 		if !declared {
-			issues = append(issues, Issue{Key: key, Got: got,
-				Reason: fmt.Sprintf("宣言に無い（%s で書かれている）", got)})
+			issues = append(issues, Issue{
+				Key: key, Got: got,
+				Reason: fmt.Sprintf("宣言に無い（%s で書かれている）", got),
+			})
 			continue
 		}
 		seen[name] = true
@@ -137,8 +137,10 @@ func Verify(st session.State, schema Schema) []Issue {
 
 	for name := range schema {
 		if !seen[name] {
-			issues = append(issues, Issue{Key: schema.Key(name),
-				Reason: "宣言されているが書かれていない"})
+			issues = append(issues, Issue{
+				Key:    schema.Key(name),
+				Reason: "宣言されているが書かれていない",
+			})
 		}
 	}
 

@@ -39,8 +39,10 @@ type Position struct {
 	Row int // 0=上 1=中央 2=下
 }
 
-var colNames = [3]string{"左", "中央", "右"}
-var rowNames = [3]string{"上", "中央", "下"}
+var (
+	colNames = [3]string{"左", "中央", "右"}
+	rowNames = [3]string{"上", "中央", "下"}
+)
 
 // Describe は位置を日本語で表す。「左上」「中央」「右下」など。
 func (p Position) Describe() string {
@@ -246,8 +248,8 @@ func drawText(img *image.RGBA, s string, cx, cy int) {
 			if tmp.RGBAAt(x, y).R > 128 {
 				continue // 白は描かない
 			}
-			for sy := 0; sy < scale; sy++ {
-				for sx := 0; sx < scale; sx++ {
+			for sy := range scale {
+				for sx := range scale {
 					px := cx - b.Dx()*scale/2 + x*scale + sx
 					py := cy - b.Dy()*scale/2 + y*scale + sy
 					if image.Pt(px, py).In(img.Bounds()) {
@@ -264,11 +266,4 @@ func abs(x int) int {
 		return -x
 	}
 	return x
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }
