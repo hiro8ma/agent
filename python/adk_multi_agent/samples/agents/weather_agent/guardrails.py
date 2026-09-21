@@ -26,6 +26,10 @@ _SECRET_PATTERNS = [
 ]
 
 
+# モデルの失敗を決まった文に置き換えた応答の印。Go の guardrail.ModelErrorFallback と同じ値。
+MODEL_ERROR_FALLBACK = "MODEL_ERROR_FALLBACK"
+
+
 def _refuse(text: str) -> LlmResponse:
     return LlmResponse(
         content=types.Content(role="model", parts=[types.Part(text=text)])
@@ -86,8 +90,12 @@ def fallback_on_model_error(
 
     失敗をそのまま上へ返すと、利用者には停止としてしか見えない。
     次の行動が分かる文を返す。
+    評価や監視が普通の応答と取り違えないよう error_code で印を付け、元のエラーの文言は外に出さない。
     """
-    return _refuse("いま天気を取得できません。少し時間をおいて試してください。")
+    response = _refuse("いま天気を取得できません。少し時間をおいて試してください。")
+    response.error_code = MODEL_ERROR_FALLBACK
+    response.error_message = "モデルの呼び出しに失敗し、決まった文で答えた"
+    return response
 
 
 def structure_tool_error(

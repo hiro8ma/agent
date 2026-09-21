@@ -163,9 +163,16 @@ func FallbackOnModelError(log *Log, msg string) llmagent.OnModelErrorCallback {
 			Blocked: true,
 			Detail:  err.Error(),
 		})
-		return refuse(msg), nil
+		resp := refuse(msg)
+		// 評価や監視が、決まった文を普通の応答と取り違えないように印を付ける。元のエラーの文言は外に出さない。
+		resp.ErrorCode = ModelErrorFallback
+		resp.ErrorMessage = "モデルの呼び出しに失敗し、決まった文で答えた"
+		return resp, nil
 	}
 }
+
+// ModelErrorFallback は、モデルの失敗を決まった文に置き換えた応答に付ける ErrorCode。
+const ModelErrorFallback = "MODEL_ERROR_FALLBACK"
 
 // StructureToolError はツールの失敗を構造化した結果へ落とす。
 //

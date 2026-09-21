@@ -165,3 +165,49 @@ def test_static_instruction_holds_the_invariant_part():
     assert "osaka" in withstate
     # 可変部分だけを返す。全文を返すと static との二重掲載になる
     assert "3 文以内" not in withstate, "不変部分が instruction 側にも入っている"
+
+
+async def test_model_error_fallback_is_marked() -> None:
+    """モデルの失敗を置き換えた応答には error_code が付き、元のエラーの文言は外に出ない。"""
+    from collections.abc import AsyncGenerator
+
+    from google.adk.agents import Agent
+    from google.adk.models import BaseLlm
+    from google.adk.runners import InMemoryRunner
+
+    from samples.agents.weather_agent.guardrails import (
+        MODEL_ERROR_FALLBACK,
+        fallback_on_model_error,
+    )
+
+    class Failing(BaseLlm):
+        async def generate_content_async(
+            self, llm_request: LlmRequest, stream: bool = False
+        ) -> AsyncGenerator[LlmResponse, None]:
+            raise RuntimeError(
+                "429 RESOURCE_EXHAUSTED quota exceeded for project p-123"
+            )
+            yield  # pragma: no cover
+
+    agent = Agent(
+        name="weather_agent",
+        model=Failing(model="gemini-3.8-flash"),
+        instruction="x",
+        on_model_error_callback=fallback_on_model_error,
+    )
+    runner = InMemoryRunner(agent=agent, app_name="weather")
+    await runner.session_service.create_session(
+        app_name="weather", user_id="u1", session_id="s1"
+    )
+    message = types.Content(role="user", parts=[types.Part(text="東京の天気は？")])
+    events = [
+        ev
+        async for ev in runner.run_async(
+            user_id="u1", session_id="s1", new_message=message
+        )
+    ]
+
+    last = events[-1]
+    assert last.content.parts[0].text.startswith("いま天気を取得できません")
+    assert last.error_code == MODEL_ERROR_FALLBACK
+    assert "p-123" not in (last.error_message or "")
