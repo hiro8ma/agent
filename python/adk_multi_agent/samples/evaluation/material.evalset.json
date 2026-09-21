@@ -1,0 +1,15 @@
+{
+  "eval_set_id": "weather_eval",
+  "eval_cases": [
+    {
+      "eval_id": "tokyo_weather",
+      "conversation": [
+        {
+          "user_content": {"role": "user", "parts": [{"text": "東京の今日の天気を教えてください"}]},
+          "final_response": {"role": "model", "parts": [{"text": "東京の天気は晴れで、気温は25度です。"}]},
+          "intermediate_data": {"tool_uses": [{"name": "get_weather", "args": {"location": "Tokyo"}}]}
+        }
+      ]
+    }
+  ]
+}
