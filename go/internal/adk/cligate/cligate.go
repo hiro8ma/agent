@@ -103,6 +103,9 @@ func (g Gate) Run(ctx context.Context, argv []string) (Result, error) {
 	if cmd.Env == nil {
 		cmd.Env = []string{}
 	}
+	killGroup(cmd)
+	// グループを止めても出力を握る者が残った場合に備え、読み取りを待つ時間に上限を置く。
+	cmd.WaitDelay = time.Second
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	err = cmd.Run()

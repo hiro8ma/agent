@@ -112,3 +112,17 @@ func TestExitCodeIsReturnedNotAsError(t *testing.T) {
 		t.Errorf("r = %+v, err = %v", r, err)
 	}
 }
+
+func TestTimeoutDoesNotWaitForGrandchildren(t *testing.T) {
+	t.Parallel()
+	// 孫のプロセスが標準出力をつかんだまま残ると、親を止めても出力の読み取りが終わらない。
+	// 時間切れを短くしすぎると、シェルが孫を起動する前に止まって再現しない。
+	bin, _ := fakeGcloud(t, "sleep 10 & sleep 10")
+	g := gate(bin)
+	g.Timeout = time.Second
+	start := time.Now()
+	_, err := g.Run(t.Context(), []string{"storage", "buckets", "list"})
+	if elapsed := time.Since(start); err == nil || elapsed > 3*time.Second {
+		t.Errorf("err = %v, 経過 %v（時間切れが効いていない）", err, elapsed)
+	}
+}
