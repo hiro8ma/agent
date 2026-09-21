@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"time"
 
 	"cloud.google.com/go/firestore"
 	"github.com/firebase/genkit/go/ai"
@@ -13,8 +14,6 @@ import (
 	"github.com/firebase/genkit/go/genkit"
 	"github.com/firebase/genkit/go/plugins/googlegenai"
 	"github.com/firebase/genkit/go/plugins/mcp"
-	"golang.org/x/net/http2"
-	"golang.org/x/net/http2/h2c"
 
 	"github.com/hiro8ma/agent/go/gen/agent/v1/agentv1connect"
 	"github.com/hiro8ma/agent/go/internal/agentcore"
@@ -180,7 +179,18 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	mux.Handle(path, handler)
 
 	logger.Info("starting agent server", "port", cfg.port, "model", cfg.defaultModel, "agents", len(registry.List()))
-	return http.ListenAndServe(":"+cfg.port, h2c.NewHandler(mux, &http2.Server{}))
+	// Connect の streaming を TLS なしの HTTP/2 でも受ける。
+	protocols := new(http.Protocols)
+	protocols.SetHTTP1(true)
+	protocols.SetUnencryptedHTTP2(true)
+	// streaming は長く続くので WriteTimeout は置かず、ヘッダの読み取りだけを区切る。
+	srv := &http.Server{
+		Addr:              ":" + cfg.port,
+		Handler:           mux,
+		Protocols:         protocols,
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+	return srv.ListenAndServe()
 }
 
 // defineToolRefs は research エージェント用のツール群。

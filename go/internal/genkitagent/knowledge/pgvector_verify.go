@@ -67,12 +67,11 @@ func (s *PgVector) verifyVectorTypeRegistered(ctx context.Context) error {
 // 後者は Seq Scan が正しい選択なので落とす理由が無い。
 // 強制せずに判定すると、小規模なテーブルや絞り込みの強い構成で誤検知する。
 func (s *PgVector) verifyIndexUsed(ctx context.Context) error {
-	zero := make([]float32, 0)
 	dim, err := s.dimension(ctx)
 	if err != nil {
 		return err
 	}
-	zero = make([]float32, dim)
+	zero := make([]float32, dim)
 	zero[0] = 1 // 全要素 0 のベクトルはコサイン距離が未定義になる
 
 	conn, err := s.pool.Acquire(ctx)
@@ -85,7 +84,7 @@ func (s *PgVector) verifyIndexUsed(ctx context.Context) error {
 	if _, err := conn.Exec(ctx, "SET enable_seqscan = off"); err != nil {
 		return fmt.Errorf("pgvector: verify: enable_seqscan の設定: %w", err)
 	}
-	defer conn.Exec(ctx, "RESET enable_seqscan")
+	defer resetOrClose(ctx, conn, "enable_seqscan")
 
 	sql, args := s.buildQuery(toVector(zero), 1)
 	rows, err := conn.Query(ctx, "EXPLAIN "+sql, args...)
@@ -240,7 +239,7 @@ func (s *PgVector) midpointWithNeighbor(ctx context.Context, conn *pgxpool.Conn,
 	if _, err := conn.Exec(ctx, "SET enable_indexscan = off"); err != nil {
 		return nil, fmt.Errorf("pgvector: verify: 標本の厳密検索: %w", err)
 	}
-	defer conn.Exec(ctx, "RESET enable_indexscan")
+	defer resetOrClose(ctx, conn, "enable_indexscan")
 
 	rows, err := conn.Query(ctx, fmt.Sprintf(
 		"SELECT %s FROM %s ORDER BY %s <=> $1 LIMIT 2",
@@ -289,8 +288,8 @@ func (s *PgVector) topIDs(ctx context.Context, conn *pgxpool.Conn, q pgvector.Ve
 	if _, err := conn.Exec(ctx, setting); err != nil {
 		return nil, fmt.Errorf("pgvector: verify: プランの強制: %w", err)
 	}
-	defer conn.Exec(ctx, "RESET enable_indexscan")
-	defer conn.Exec(ctx, "RESET enable_seqscan")
+	defer resetOrClose(ctx, conn, "enable_indexscan")
+	defer resetOrClose(ctx, conn, "enable_seqscan")
 
 	// プリペアドステートメントにするとプランがキャッシュされ、5 回目以降は
 	// ジェネリックプランに切り替わって enable_seqscan / enable_indexscan が効かなくなる。
@@ -376,4 +375,12 @@ func (s *PgVector) dimension(ctx context.Context) (int, error) {
 			s.cfg.Table, s.cfg.EmbeddingColumn)
 	}
 	return mod, nil
+}
+
+// resetOrClose はプランの強制を戻す。戻せなければ接続を閉じ、強制の残った接続をプールへ返さない。
+func resetOrClose(ctx context.Context, conn *pgxpool.Conn, param string) {
+	ctx = context.WithoutCancel(ctx)
+	if _, err := conn.Exec(ctx, "RESET "+param); err != nil {
+		_ = conn.Conn().Close(ctx)
+	}
 }

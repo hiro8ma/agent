@@ -107,7 +107,9 @@ func setup(t *testing.T, pool *pgxpool.Pool, table string, rows, tenants int) {
 		id int PRIMARY KEY, tenant_id text NOT NULL,
 		title text NOT NULL, content text NOT NULL, embedding vector(%d) NOT NULL)`, table, dim))
 	t.Cleanup(func() {
-		pool.Exec(context.Background(), fmt.Sprintf("DROP TABLE IF EXISTS %s CASCADE", table))
+		if _, err := pool.Exec(context.Background(), fmt.Sprintf("DROP TABLE IF EXISTS %s CASCADE", table)); err != nil {
+			t.Logf("後片付けの DROP TABLE に失敗: %v", err)
+		}
 	})
 
 	if rows == 0 {

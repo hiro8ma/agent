@@ -8,9 +8,8 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"time"
 
-	"golang.org/x/net/http2"
-	"golang.org/x/net/http2/h2c"
 	"google.golang.org/adk/v2/model/gemini"
 	"google.golang.org/genai"
 
@@ -157,5 +156,16 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	mux.Handle(path, handler)
 
 	logger.Info("starting adk agent server", "port", cfg.port, "model", cfg.modelName, "agents", len(registry.List()))
-	return http.ListenAndServe(":"+cfg.port, h2c.NewHandler(mux, &http2.Server{}))
+	// Connect の streaming を TLS なしの HTTP/2 でも受ける。
+	protocols := new(http.Protocols)
+	protocols.SetHTTP1(true)
+	protocols.SetUnencryptedHTTP2(true)
+	// streaming は長く続くので WriteTimeout は置かず、ヘッダの読み取りだけを区切る。
+	srv := &http.Server{
+		Addr:              ":" + cfg.port,
+		Handler:           mux,
+		Protocols:         protocols,
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+	return srv.ListenAndServe()
 }

@@ -110,7 +110,7 @@ func ensureParentDir(dsn string) error {
 	if dir == "." || dir == "" {
 		return nil
 	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o750); err != nil { //nolint:gosec // DSN は運用者が .env で与える値で、利用者の入力ではない
 		return fmt.Errorf("session の保管先ディレクトリ作成: %w", err)
 	}
 	return nil

@@ -65,7 +65,8 @@ func remember(ctx agent.Context, key string) {
 	if st == nil {
 		return
 	}
-	st.Set(LastCityKey, key)
+	// 直近の都市は次の質問の補完にだけ使う。書けなくても天気は答えられる。
+	_ = st.Set(LastCityKey, key)
 }
 
 // WeatherInput はツールの入力。

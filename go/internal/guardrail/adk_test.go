@@ -124,7 +124,7 @@ func TestAfterToolRejectsEmpty(t *testing.T) {
 	}
 
 	// 実行が失敗した場合も記録する。
-	cb(nil, ft, nil, map[string]any{"documents": []any{"a"}}, context.Canceled)
+	_, _ = cb(nil, ft, nil, map[string]any{"documents": []any{"a"}}, context.Canceled)
 	if n := len(log.Blocked()); n != 5 {
 		t.Fatalf("止めた記録が %d 件。空 4 件 + 失敗 1 件を期待", n)
 	}
@@ -135,7 +135,7 @@ func TestLogCountsBothSides(t *testing.T) {
 	log := NewLog()
 	cb := BlockInput(log, []string{"禁止"})
 	for range 5 {
-		cb(nil, req("普通の質問"))
+		_, _ = cb(nil, req("普通の質問"))
 	}
 	if got := log.Passed()["before_model"]; got != 5 {
 		t.Fatalf("通過 %d 件。5 件を期待", got)

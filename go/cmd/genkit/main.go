@@ -27,7 +27,7 @@ func main() {
 
 	g := genkitsdk.Init(ctx, genkitsdk.WithPlugins(&googlegenai.GoogleAI{}))
 
-	model := googlegenai.GoogleAIModel(g, modelName)
+	model := genkitsdk.LookupModel(g, "googleai/"+modelName)
 
 	specs := []genkit.ToolSpec{
 		{Schema: tool.CalculatorSchema, Handler: tool.Calculator},

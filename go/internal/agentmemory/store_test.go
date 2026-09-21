@@ -21,8 +21,8 @@ func TestOneBadFactContaminatesEveryRecall(t *testing.T) {
 
 	// 検証なしの保管庫。
 	loose := NewStore(nil, nil)
-	loose.Write(fact("user1", "在宅勤務は週 3 日まで", "就業規則 v2", 0.95, base, 0))
-	loose.Write(fact("user1", "在宅勤務は無制限", "", 0.30, base.Add(time.Minute), 0)) // 出典なし・低確度
+	mustWrite(t, loose, fact("user1", "在宅勤務は週 3 日まで", "就業規則 v2", 0.95, base, 0))
+	mustWrite(t, loose, fact("user1", "在宅勤務は無制限", "", 0.30, base.Add(time.Minute), 0)) // 出典なし・低確度
 
 	bad := 0
 	for range reads {
@@ -39,7 +39,7 @@ func TestOneBadFactContaminatesEveryRecall(t *testing.T) {
 
 	// 書き込み時に検証する保管庫。
 	strict := NewStore([]Rule{RequireSource, MinConfidence(0.6)}, nil)
-	strict.Write(fact("user1", "在宅勤務は週 3 日まで", "就業規則 v2", 0.95, base, 0))
+	mustWrite(t, strict, fact("user1", "在宅勤務は週 3 日まで", "就業規則 v2", 0.95, base, 0))
 	if err := strict.Write(fact("user1", "在宅勤務は無制限", "", 0.30, base.Add(time.Minute), 0)); err == nil {
 		t.Fatal("出典の無い Fact を保存した")
 	}
@@ -76,7 +76,7 @@ func TestWriteValidationCannotCatchStaleFacts(t *testing.T) {
 	// 読み出しだけを検証する保管庫。時刻を進める。
 	now := base
 	s := NewStore(nil, []Rule{NotExpired(func() time.Time { return now })})
-	s.Write(f)
+	mustWrite(t, s, f)
 
 	if got := len(s.Recall("user1")); got != 1 {
 		t.Fatalf("書いた直後に %d 件", got)
@@ -94,13 +94,13 @@ func TestWriteValidationCannotCatchStaleFacts(t *testing.T) {
 func TestContradictionAppearsLater(t *testing.T) {
 	s := NewStore([]Rule{RequireSource, MinConfidence(0.6)}, nil)
 
-	s.Write(fact("user1", "希望勤務地は東京", "面談 1 回目", 0.90, base, 0))
+	mustWrite(t, s, fact("user1", "希望勤務地は東京", "面談 1 回目", 0.90, base, 0))
 	if len(s.Contradictions()) != 0 {
 		t.Fatal("1 件目で矛盾が出た")
 	}
 
 	// 2 件目も単体では正しい。組にして初めて矛盾になる。
-	s.Write(fact("user1", "希望勤務地は大阪", "面談 2 回目", 0.90, base.Add(time.Hour), 0))
+	mustWrite(t, s, fact("user1", "希望勤務地は大阪", "面談 2 回目", 0.90, base.Add(time.Hour), 0))
 
 	c := s.Contradictions()
 	if len(c["user1"]) != 2 {
@@ -127,5 +127,12 @@ func TestRejectHedgedStatements(t *testing.T) {
 	t.Logf("拒否理由: %v", err)
 	if s.Len() != 0 {
 		t.Errorf("%d 件保存された", s.Len())
+	}
+}
+
+func mustWrite(t *testing.T, s *Store, f Fact) {
+	t.Helper()
+	if err := s.Write(f); err != nil {
+		t.Fatalf("Write() error = %v", err)
 	}
 }
