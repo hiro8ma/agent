@@ -18,10 +18,48 @@ type EvalSet struct {
 	EvalCases []EvalCase `json:"eval_cases"`
 }
 
-// EvalCase は 1 件のケース。Conversation の順に利用者の発話を流す。
+// EvalCase は 1 件のケース。Conversation の順に利用者の発話を流すか、
+// ConversationScenario に従って LLM が利用者役を演じる。
 type EvalCase struct {
-	EvalID       string       `json:"eval_id"`
-	Conversation []Invocation `json:"conversation"`
+	EvalID               string       `json:"eval_id"`
+	Conversation         []Invocation `json:"conversation"`
+	ConversationScenario *Scenario    `json:"conversation_scenario,omitempty"`
+}
+
+// Scenario は利用者役に渡す台本。ADK の ConversationScenario と同じ形。
+type Scenario struct {
+	StartingPrompt   string   `json:"starting_prompt"`
+	ConversationPlan string   `json:"conversation_plan"`
+	UserPersona      *Persona `json:"user_persona,omitempty"`
+}
+
+// Persona は利用者役の振る舞い。ADK の UserPersona と同じ形。
+//
+// ViolationRubrics は利用者役がペルソナどおりに振る舞えたかを見る基準で、エージェントを採点する基準ではない。
+// エージェントに起きてはいけないこと（アンチゴール）は Options.Forbidden で見る。
+type Persona struct {
+	ID          string     `json:"id"`
+	Description string     `json:"description"`
+	Behaviors   []Behavior `json:"behaviors"`
+}
+
+// UnmarshalJSON は、ペルソナが ID の文字列（"NOVICE" など）で書かれていたら止める。
+// Python の ADK は読み込み時に組み込みのペルソナへ展開するが、Go は組み込みのペルソナの中身を持たない。
+func (p *Persona) UnmarshalJSON(b []byte) error {
+	var id string
+	if json.Unmarshal(b, &id) == nil {
+		return fmt.Errorf("adkeval: ペルソナ %q が ID のまま。Python の EvalSet で読み書きしてオブジェクトに展開する", id)
+	}
+	type plain Persona
+	return json.Unmarshal(b, (*plain)(p))
+}
+
+// Behavior はペルソナの 1 つの振る舞い。
+type Behavior struct {
+	Name                 string   `json:"name"`
+	Description          string   `json:"description"`
+	BehaviorInstructions []string `json:"behavior_instructions"`
+	ViolationRubrics     []string `json:"violation_rubrics"`
 }
 
 // Invocation は 1 ターン。評価セットでは期待値、推論の結果では実際の値を持つ。
@@ -80,8 +118,14 @@ func Load(path string) (*EvalSet, error) {
 		return nil, fmt.Errorf("adkeval: %s にケースが無い", path)
 	}
 	for _, c := range set.EvalCases {
+		if c.ConversationScenario != nil {
+			if c.ConversationScenario.StartingPrompt == "" {
+				return nil, fmt.Errorf("adkeval: %s の starting_prompt が空", c.EvalID)
+			}
+			continue
+		}
 		if len(c.Conversation) == 0 {
-			return nil, fmt.Errorf("adkeval: %s の conversation が空", c.EvalID)
+			return nil, fmt.Errorf("adkeval: %s の conversation も conversation_scenario も無い", c.EvalID)
 		}
 		for i, turn := range c.Conversation {
 			if turn.UserContent.Text() == "" {
