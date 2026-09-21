@@ -5,6 +5,7 @@ go 1.27.0
 require (
 	cloud.google.com/go/firestore v1.22.0
 	connectrpc.com/connect v1.20.0
+	github.com/a2aproject/a2a-go/v2 v2.4.0
 	github.com/firebase/genkit/go v1.11.0
 	github.com/glebarez/sqlite v1.11.0
 	github.com/google/uuid v1.6.0
@@ -34,7 +35,6 @@ require (
 	cloud.google.com/go/longrunning v1.2.0 // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/detectors/gcp v1.33.0 // indirect
 	github.com/a2aproject/a2a-go v0.3.15 // indirect
-	github.com/a2aproject/a2a-go/v2 v2.4.0 // indirect
 	github.com/awalterschulze/gographviz v2.0.3+incompatible // indirect
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
 	github.com/buger/jsonparser v1.1.1 // indirect
