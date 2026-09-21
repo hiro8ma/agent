@@ -52,6 +52,13 @@ type SessionStore interface {
 	Append(ctx context.Context, sessionID string, messages ...Message) error
 }
 
+// SessionCreator はセッション ID を発行できる保管先。
+// Ask で session_id が空なら、これを満たす保管先に作らせる。
+type SessionCreator interface {
+	SessionStore
+	Create(ctx context.Context, agentID string) (string, error)
+}
+
 // ToolExecutor は承認済みツール呼び出しの実行。
 // 承認待ちが存在しない（または実行済みの）場合は ErrPendingNotFound を返す。
 type ToolExecutor interface {

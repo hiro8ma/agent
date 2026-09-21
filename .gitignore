@@ -51,3 +51,4 @@ __pycache__/
 
 # adk web / adk run が作るローカルのセッション DB
 .adk/
+.conversation/

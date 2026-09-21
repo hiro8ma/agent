@@ -1,0 +1,85 @@
+syntax = "proto3";
+
+package conversation.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/hiro8ma/agent/go/gen/conversation/v1;conversationv1";
+
+// ConversationService は会話の履歴を持つ。
+// 利用者はリクエスト本文ではなく X-User-Id ヘッダ（認証済みの呼び出し元）から取る。
+// セッションは作った利用者だけが読み書きできる。
+service ConversationService {
+  // セッションを作る。ID はサーバーが決める
+  rpc CreateSession(CreateSessionRequest) returns (CreateSessionResponse);
+  // 1 往復分のメッセージを追記する。セッションが無ければ呼び出し元の所有で作る
+  rpc AppendTurn(AppendTurnRequest) returns (AppendTurnResponse);
+  // 古い順に返す。page_token は前回の next_page_token
+  rpc ListMessages(ListMessagesRequest) returns (ListMessagesResponse);
+  // アシスタントのメッセージへの評価
+  rpc SubmitFeedback(SubmitFeedbackRequest) returns (SubmitFeedbackResponse);
+}
+
+enum Role {
+  ROLE_UNSPECIFIED = 0;
+  ROLE_USER = 1;
+  ROLE_MODEL = 2;
+}
+
+enum Rating {
+  RATING_UNSPECIFIED = 0;
+  RATING_GOOD = 1;
+  RATING_BAD = 2;
+}
+
+message Session {
+  string id = 1;
+  string agent_id = 2;
+  google.protobuf.Timestamp create_time = 3;
+}
+
+message Message {
+  string id = 1;
+  Role role = 2;
+  string text = 3;
+  google.protobuf.Timestamp create_time = 4;
+}
+
+message CreateSessionRequest {
+  string agent_id = 1;
+}
+
+message CreateSessionResponse {
+  Session session = 1;
+}
+
+message AppendTurnRequest {
+  string session_id = 1;
+  string agent_id = 2;
+  // 追記するメッセージ。id と create_time はサーバーが決める
+  repeated Message messages = 3;
+}
+
+message AppendTurnResponse {
+  repeated Message messages = 1;
+}
+
+message ListMessagesRequest {
+  string session_id = 1;
+  int32 page_size = 2;
+  string page_token = 3;
+}
+
+message ListMessagesResponse {
+  repeated Message messages = 1;
+  string next_page_token = 2;
+}
+
+message SubmitFeedbackRequest {
+  string session_id = 1;
+  string message_id = 2;
+  Rating rating = 3;
+  string comment = 4;
+}
+
+message SubmitFeedbackResponse {}
