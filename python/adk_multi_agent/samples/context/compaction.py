@@ -15,12 +15,18 @@ def build_compaction_app(
     *,
     model: str | BaseLlm = MODEL,
     summarizer: BaseEventsSummarizer | None = None,
+    summarizer_model: BaseLlm | None = None,
     compaction_interval: int = 20,
     overlap_size: int = 2,
     token_threshold: int = 30_000,
     event_retention_size: int = 10,
 ) -> App:
     """Invocation 数と直近の入力トークン数で圧縮する App を作る。"""
+    if summarizer is None:
+        summary_llm = summarizer_model or (
+            model if isinstance(model, BaseLlm) else Gemini(model=model)
+        )
+        summarizer = LlmEventSummarizer(llm=summary_llm)
     agent = Agent(
         name="support_agent",
         model=model,
@@ -34,6 +40,6 @@ def build_compaction_app(
             overlap_size=overlap_size,
             token_threshold=token_threshold,
             event_retention_size=event_retention_size,
-            summarizer=summarizer or LlmEventSummarizer(llm=Gemini(model=MODEL)),
+            summarizer=summarizer,
         ),
     )
