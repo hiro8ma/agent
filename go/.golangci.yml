@@ -1,0 +1,51 @@
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  default: standard
+  enable:
+    - bodyclose
+    - errorlint
+    - gosec
+    - modernize
+    - noctx
+    - usetesting
+  # contextcheck はツール定義のクロージャを誤検知する。nilerr はツールがエラーを結果としてモデルに返す設計と衝突する。
+  settings:
+    gosec:
+      excludes:
+        - G104 # errcheck と重複する
+        - G115 # 数値計算の int 変換を一律に警告し、範囲が決まっている箇所まで拾う
+    staticcheck:
+      checks:
+        - all
+        - -ST1000
+        - -ST1003
+        - -ST1016
+        - -ST1020
+        - -ST1021
+        - -ST1022
+        - -ST1005 # エラー文が固有名詞（Google など）で始まる
+  exclusions:
+    generated: strict
+    presets:
+      - std-error-handling
+    rules:
+      - path: _test\.go
+        linters:
+          - gosec
+      - path: (internal|cmd)/gpt/
+        text: G404 # 学習の再現性のため math/rand を種付きで使う
+        linters:
+          - gosec
+
+formatters:
+  enable:
+    - gofumpt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/hiro8ma/agent/go
