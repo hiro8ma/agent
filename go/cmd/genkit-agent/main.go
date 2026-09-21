@@ -18,8 +18,8 @@ import (
 	conversation "github.com/hiro8ma/agent/go/internal/conversation/client"
 	"github.com/hiro8ma/agent/go/internal/genkitagent/agent"
 	"github.com/hiro8ma/agent/go/internal/genkitagent/backend"
-	"github.com/hiro8ma/agent/go/internal/genkitagent/knowledge"
 	"github.com/hiro8ma/agent/go/internal/genkitagent/session"
+	knowledgeclient "github.com/hiro8ma/agent/go/internal/knowledge/client"
 	"github.com/hiro8ma/agent/go/internal/lib/libconnect"
 	"github.com/hiro8ma/agent/go/internal/lib/libserver"
 )
@@ -140,7 +140,8 @@ func run(ctx context.Context, logger *slog.Logger) error {
 
 	orders := backend.NewInMemoryOrders()
 	geo := backend.NewInMemoryGeo()
-	kn := knowledge.NewInMemory()
+	kn, knWhere := knowledgeclient.FromEnv()
+	logger.Info("knowledge searcher", "where", knWhere)
 
 	var skillPaths []string
 	if cfg.skillsDir != "" {

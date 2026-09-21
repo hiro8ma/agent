@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+package knowledge.v1;
+
+option go_package = "github.com/hiro8ma/agent/go/gen/knowledge/v1;knowledgev1";
+
+// KnowledgeService は組織で共有する文書を検索する。
+// エージェントはこれを関数ツールとして呼ぶ。Gemini の組み込みの検索と違い、
+// 呼び出しと結果がエージェント側に見えるので、記録や伏せ字の層を置ける。
+service KnowledgeService {
+  rpc Search(SearchRequest) returns (SearchResponse);
+}
+
+message SearchRequest {
+  string query = 1;
+  // 1 から 20。0 なら 5
+  int32 limit = 2;
+}
+
+message SearchResponse {
+  repeated Document documents = 1;
+}
+
+message Document {
+  string title = 1;
+  string content = 2;
+}
