@@ -1,1 +1,4 @@
 reference/
+
+# 経費精算のハンズオンが作る SQLite
+expense_hub.sqlite3
