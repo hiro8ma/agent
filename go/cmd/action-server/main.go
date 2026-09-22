@@ -15,12 +15,17 @@ import (
 	"github.com/hiro8ma/agent/go/internal/action"
 	"github.com/hiro8ma/agent/go/internal/action/adapter"
 	"github.com/hiro8ma/agent/go/internal/lib/libconnect"
+	"github.com/hiro8ma/agent/go/internal/lib/liblog"
 	"github.com/hiro8ma/agent/go/internal/lib/libotel"
 	"github.com/hiro8ma/agent/go/internal/lib/libserver"
 )
 
 func main() {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	logger, err := liblog.InitFromEnv("action-server")
+	if err != nil {
+		slog.Error("ロガーを作れない", "error", err)
+		os.Exit(1)
+	}
 	if err := run(context.Background(), logger); err != nil {
 		logger.Error("server exited", "error", err)
 		os.Exit(1)

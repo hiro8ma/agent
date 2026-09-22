@@ -21,6 +21,7 @@ import (
 	"github.com/hiro8ma/agent/go/internal/genkitagent/backend"
 	knowledgeclient "github.com/hiro8ma/agent/go/internal/knowledge/client"
 	"github.com/hiro8ma/agent/go/internal/lib/libconnect"
+	"github.com/hiro8ma/agent/go/internal/lib/liblog"
 	"github.com/hiro8ma/agent/go/internal/lib/libotel"
 	"github.com/hiro8ma/agent/go/internal/lib/libserver"
 )
@@ -87,7 +88,11 @@ func envOr(key, fallback string) string {
 }
 
 func main() {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	logger, err := liblog.InitFromEnv("genkit-agent")
+	if err != nil {
+		slog.Error("ロガーを作れない", "error", err)
+		os.Exit(1)
+	}
 	if err := run(context.Background(), logger); err != nil {
 		logger.Error("server exited", "error", err)
 		os.Exit(1)
