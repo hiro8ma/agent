@@ -108,7 +108,7 @@ func (h *Handler) Ask(ctx context.Context, req *connect.Request[agentv1.AskReque
 		)
 		historySaved = err == nil
 		if err != nil {
-			h.logger.Error("failed to append session", "sessionId", sessionID, "error", err)
+			h.logger.ErrorContext(ctx, "failed to append session", "sessionId", sessionID, "error", err)
 		}
 	}
 
@@ -128,7 +128,11 @@ func (h *Handler) Ask(ctx context.Context, req *connect.Request[agentv1.AskReque
 		sessionUsed, totalUsed := h.budget.Used(sessionID)
 		attrs = append(attrs, "budget_session_used", sessionUsed, "budget_total_used", totalUsed)
 	}
-	h.logger.Info("ask_completed", attrs...)
+	level := slog.LevelInfo
+	if final.ErrorMessage != "" {
+		level = slog.LevelWarn
+	}
+	h.logger.Log(ctx, level, "ask_completed", attrs...)
 
 	result := toResult(final)
 	result.HistorySaved = historySaved
@@ -164,7 +168,7 @@ func (h *Handler) ExecuteConfirmedToolCall(ctx context.Context, req *connect.Req
 	if err != nil {
 		return nil, libconnect.Error(err)
 	}
-	h.logger.Info("tool_call_executed", "toolCallId", id)
+	h.logger.InfoContext(ctx, "tool_call_executed", "toolCallId", id)
 	return connect.NewResponse(&agentv1.ExecuteConfirmedToolCallResponse{Result: toStruct(result)}), nil
 }
 

@@ -1,4 +1,4 @@
-.PHONY: help setup build fmt vet lint lint-fix lint-tools vuln test test-live proto proto-check tidy clean demo-genai demo-genkit demo-adk demo-all adk-web adk-api compose-up compose-down
+.PHONY: help setup build fmt vet lint lint-fix lint-tools vuln test test-live proto proto-check tidy clean demo-genai demo-genkit demo-adk demo-all adk-web adk-api compose-up compose-down up down load open
 
 BIN_DIR := $(abspath ./bin)
 GOLANGCI_LINT_VERSION := v2.13.2
@@ -104,8 +104,22 @@ tidy: ## go mod tidy
 clean: ## 成果物削除
 	rm -rf $(BIN_DIR)
 
-compose-up: ## docker compose 起動
+compose-up: ## エージェントのアプリを docker compose で起動（build/compose.yaml。観測の一式は up）
 	$(DOCKER_COMPOSE) up --build
 
-compose-down: ## docker compose 停止
+compose-down: ## エージェントのアプリの docker compose を停止
 	$(DOCKER_COMPOSE) down
+
+OPS_DIR := ../ops
+
+up: ## 観測の一式（Grafana / Prometheus / Tempo / Loki / Collector）とサービスを起動する。負荷は load
+	$(MAKE) -C $(OPS_DIR) up run
+
+down: ## up で起動したサービスと観測の一式を止める
+	$(MAKE) -C $(OPS_DIR) down
+
+load: ## 台本のモデルのエージェントに負荷をかける（LOAD_RPS / LOAD_DURATION）
+	$(MAKE) -C $(OPS_DIR) load
+
+open: ## Grafana のダッシュボードを開く
+	$(MAKE) -C $(OPS_DIR) open

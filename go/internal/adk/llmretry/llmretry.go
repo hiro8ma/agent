@@ -27,6 +27,8 @@ type Policy struct {
 	// Sleep と Jitter はテストで差し替える。
 	Sleep  func(ctx context.Context, d time.Duration) error
 	Jitter func(d time.Duration) time.Duration
+	// OnRetry は再試行を決めたときに、待つ前に呼ぶ。メトリクスの記録に使う。
+	OnRetry func(ctx context.Context, model string, err error)
 }
 
 // DefaultPolicy は対話で使う既定値。
@@ -161,6 +163,9 @@ func (r *retrying) GenerateContent(ctx context.Context, req *model.LLMRequest, s
 			if yielded || !d.Retry {
 				yield(nil, failed)
 				return
+			}
+			if r.p.OnRetry != nil {
+				r.p.OnRetry(ctx, req.Model, failed)
 			}
 			if err := r.p.sleep(ctx, d.Wait); err != nil {
 				yield(nil, errors.Join(failed, err))

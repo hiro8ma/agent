@@ -9,16 +9,21 @@ import (
 	"net/http"
 	"os"
 
+	"go.opentelemetry.io/otel"
 	"google.golang.org/adk/v2/model/gemini"
+	"google.golang.org/adk/v2/plugin"
 	"google.golang.org/genai"
 
 	"github.com/hiro8ma/agent/go/internal/action"
 	actionclient "github.com/hiro8ma/agent/go/internal/action/client"
+	"github.com/hiro8ma/agent/go/internal/adk/llmretry"
 	"github.com/hiro8ma/agent/go/internal/adkagent"
 	"github.com/hiro8ma/agent/go/internal/agentcore"
 	conversation "github.com/hiro8ma/agent/go/internal/conversation/client"
 	"github.com/hiro8ma/agent/go/internal/genkitagent/backend"
 	knowledgeclient "github.com/hiro8ma/agent/go/internal/knowledge/client"
+	"github.com/hiro8ma/agent/go/internal/lib/genaimetrics"
+	"github.com/hiro8ma/agent/go/internal/lib/genaimetrics/adkmetrics"
 	"github.com/hiro8ma/agent/go/internal/lib/libconnect"
 	"github.com/hiro8ma/agent/go/internal/lib/liblog"
 	"github.com/hiro8ma/agent/go/internal/lib/libotel"
@@ -104,10 +109,28 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		clientCfg = &genai.ClientConfig{Backend: genai.BackendGeminiAPI, APIKey: cfg.geminiAPIKey}
 	}
 
-	m, err := gemini.NewModel(ctx, cfg.modelName, clientCfg)
+	gm, err := gemini.NewModel(ctx, cfg.modelName, clientCfg)
 	if err != nil {
 		return fmt.Errorf("gemini model init: %w", err)
 	}
+	metricsCfg, err := genaimetrics.ConfigFromEnv()
+	if err != nil {
+		return err
+	}
+	rec, err := genaimetrics.New(otel.GetMeterProvider(), metricsCfg)
+	if err != nil {
+		return err
+	}
+	metrics, err := adkmetrics.Plugin(rec, adkmetrics.WithEscalation(func(_ string, r map[string]any) bool {
+		return r["status"] == action.StatusPending
+	}))
+	if err != nil {
+		return err
+	}
+	retry := llmretry.DefaultPolicy()
+	retry.OnRetry = rec.Retry
+	m := llmretry.Wrap(gm, retry)
+	plugins := []*plugin.Plugin{metrics}
 
 	orders := backend.NewInMemoryOrders()
 	geo := backend.NewInMemoryGeo()
@@ -131,8 +154,9 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		Instruction: "あなたは技術調査を支援するアシスタントです。" +
 			"社内ナレッジ（search_knowledge）と利用可能なツールで事実を集め、出典がわかる形で簡潔に日本語で回答してください。" +
 			"取得できなかった情報を推測で補わないでください。",
-		Model: m,
-		Tools: researchTools,
+		Model:   m,
+		Tools:   researchTools,
+		Plugins: plugins,
 	})
 	if err != nil {
 		return fmt.Errorf("research agent: %w", err)
@@ -144,8 +168,9 @@ func run(ctx context.Context, logger *slog.Logger) error {
 			"注文やエリアの質問にはツールで事実を取得して簡潔に日本語で回答してください。" +
 			"変更系の操作は現在対応していません。依頼された場合はその旨を伝えてください。" +
 			"取得できなかった情報を推測で補わないでください。",
-		Model: m,
-		Tools: operationsTools,
+		Model:   m,
+		Tools:   operationsTools,
+		Plugins: plugins,
 	})
 	if err != nil {
 		return fmt.Errorf("operations agent: %w", err)

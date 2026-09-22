@@ -40,6 +40,14 @@ linters:
         text: G404 # 学習の再現性のため math/rand を種付きで使う
         linters:
           - gosec
+      - path: cmd/ops-
+        text: G404 # 負荷の混ぜ方と遅延のばらつきにだけ使い、推測されても害が無い
+        linters:
+          - gosec
+      - path: internal/lib/genaimetrics/
+        text: G101 # メトリクスの名前（gen_ai.client.token.usage）の token を秘密と誤検知する
+        linters:
+          - gosec
 
 formatters:
   enable:

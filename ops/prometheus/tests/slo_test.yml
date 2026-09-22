@@ -1,0 +1,82 @@
+# promtool test rules で、合成の系列を入れて各アラートが発火するか（と、正常なら発火しないか）を確かめる。
+rule_files:
+  - ../rules/slo.yml
+
+evaluation_interval: 1m
+
+tests:
+  - name: 劣化した系列では全てのアラートが発火する
+    interval: 1m
+    input_series:
+      - series: 'rpc_server_duration_milliseconds_count{service_name="svc"}'
+        values: '0+100x120'
+      - series: 'rpc_server_duration_milliseconds_count{service_name="svc", rpc_connect_rpc_error_code="unavailable"}'
+        values: '0+20x120'
+      - series: 'rpc_server_duration_milliseconds_bucket{service_name="svc", le="1000"}'
+        values: '0+10x120'
+      - series: 'rpc_server_duration_milliseconds_bucket{service_name="svc", le="60000"}'
+        values: '0+120x120'
+      - series: 'rpc_server_duration_milliseconds_bucket{service_name="svc", le="+Inf"}'
+        values: '0+120x120'
+      - series: 'gen_ai_client_operation_duration_seconds_count{service_name="svc", gen_ai_operation_name="chat"}'
+        values: '0+80x120'
+      - series: 'gen_ai_client_operation_duration_seconds_count{service_name="svc", gen_ai_operation_name="chat", error_type="503"}'
+        values: '0+20x120'
+      - series: 'gen_ai_client_operation_duration_seconds_count{service_name="svc", gen_ai_operation_name="execute_tool"}'
+        values: '0+80x120'
+      - series: 'gen_ai_client_operation_duration_seconds_count{service_name="svc", gen_ai_operation_name="execute_tool", error_type="tool_error"}'
+        values: '0+20x120'
+      - series: 'gen_ai_client_cost_total{service_name="svc"}'
+        values: '0+1x120'
+      - series: 'gen_ai_client_cost_budget{service_name="svc"}'
+        values: '5x120'
+      - series: 'gen_ai_agent_invocations_total{service_name="svc", gen_ai_agent_outcome="completed"}'
+        values: '0+10x120'
+      - series: 'gen_ai_agent_invocations_total{service_name="svc", gen_ai_agent_outcome="escalated"}'
+        values: '0+10x120'
+    promql_expr_test:
+      - expr: count by (alertname, severity, layer) (ALERTS{alertstate="firing"})
+        eval_time: 100m
+        exp_samples:
+          - labels: '{alertname="AvailabilityFastBurn", severity="critical", layer="infra"}'
+            value: 1
+          - labels: '{alertname="LatencyP99High", severity="critical", layer="infra"}'
+            value: 1
+          - labels: '{alertname="GenAIErrorRatioHigh", severity="high", layer="agent"}'
+            value: 1
+          - labels: '{alertname="ToolSuccessLow", severity="high", layer="agent"}'
+            value: 1
+          - labels: '{alertname="DailyCostOverBudget", severity="high", layer="agent"}'
+            value: 1
+          - labels: '{alertname="EscalationRateHigh", severity="medium", layer="business"}'
+            value: 1
+
+  - name: 正常な系列ではどのアラートも発火しない
+    interval: 1m
+    input_series:
+      - series: 'rpc_server_duration_milliseconds_count{service_name="svc"}'
+        values: '0+100x120'
+      - series: 'rpc_server_duration_milliseconds_count{service_name="svc", rpc_connect_rpc_error_code="unauthenticated"}'
+        values: '0+20x120'
+      - series: 'rpc_server_duration_milliseconds_bucket{service_name="svc", le="1000"}'
+        values: '0+120x120'
+      - series: 'rpc_server_duration_milliseconds_bucket{service_name="svc", le="+Inf"}'
+        values: '0+120x120'
+      - series: 'gen_ai_client_operation_duration_seconds_count{service_name="svc", gen_ai_operation_name="chat"}'
+        values: '0+100x120'
+      - series: 'gen_ai_client_operation_duration_seconds_count{service_name="svc", gen_ai_operation_name="execute_tool"}'
+        values: '0+100x120'
+      - series: 'gen_ai_client_operation_duration_seconds_count{service_name="svc", gen_ai_operation_name="execute_tool", error_type="denied"}'
+        values: '0+50x120'
+      - series: 'gen_ai_client_cost_total{service_name="svc"}'
+        values: '0+0.01x120'
+      - series: 'gen_ai_client_cost_budget{service_name="svc"}'
+        values: '5x120'
+      - series: 'gen_ai_agent_invocations_total{service_name="svc", gen_ai_agent_outcome="completed"}'
+        values: '0+10x120'
+    promql_expr_test:
+      - expr: count(ALERTS{alertstate="firing"}) or vector(0)
+        eval_time: 100m
+        exp_samples:
+          - labels: '{}'
+            value: 0

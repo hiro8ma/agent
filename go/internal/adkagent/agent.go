@@ -10,6 +10,7 @@ import (
 	adkagentpkg "google.golang.org/adk/v2/agent"
 	"google.golang.org/adk/v2/agent/llmagent"
 	"google.golang.org/adk/v2/model"
+	"google.golang.org/adk/v2/plugin"
 	"google.golang.org/adk/v2/runner"
 	"google.golang.org/adk/v2/session"
 	"google.golang.org/adk/v2/tool"
@@ -29,6 +30,10 @@ type Definition struct {
 	Instruction string
 	Model       model.LLM
 	Tools       []tool.Tool
+	// Plugins はランナーに渡す。計測や権限など、エージェントをまたいで同じに効かせるもの。
+	Plugins []*plugin.Plugin
+	// BeforeModelCallbacks はガードレールなど、このエージェントのモデルの呼び出しの前に置く検査。
+	BeforeModelCallbacks []llmagent.BeforeModelCallback
 }
 
 // Agent は 1 つの Definition を ADK Runner として公開する。
@@ -46,6 +51,8 @@ func New(def Definition) (*Agent, error) {
 		Instruction: def.Instruction,
 		Model:       def.Model,
 		Tools:       def.Tools,
+
+		BeforeModelCallbacks: def.BeforeModelCallbacks,
 	})
 	if err != nil {
 		return nil, err
@@ -55,6 +62,7 @@ func New(def Definition) (*Agent, error) {
 		Agent:             ag,
 		SessionService:    session.InMemoryService(),
 		AutoCreateSession: true,
+		PluginConfig:      runner.PluginConfig{Plugins: def.Plugins},
 	})
 	if err != nil {
 		return nil, err

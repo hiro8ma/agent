@@ -1,0 +1,105 @@
+# SLO の目標、SLI、アラート。目標の値はこのファイルの slo-objectives だけに書き、アラートとダッシュボードはその系列を読む。
+# SLI はサービス名（service_name）ごとに計算する。特定のサービスの名前は書かない。
+groups:
+  - name: slo-objectives
+    rules:
+      - record: slo:availability:objective
+        expr: vector(0.995)
+      - record: slo:latency_p99_seconds:objective
+        expr: vector(30)
+      - record: slo:error_ratio:objective
+        expr: vector(0.05)
+      - record: slo:tool_success:objective
+        expr: vector(0.95)
+      - record: slo:daily_cost_budget_ratio:objective
+        expr: vector(1.2)
+      - record: slo:escalation_ratio:objective
+        expr: vector(0.2)
+
+  - name: sli
+    rules:
+      # 可用性。サーバー側の失敗（Connect の unknown / internal / unavailable / data_loss / deadline_exceeded / unimplemented）でない割合。利用者側の誤り（認証なしなど）は失敗に数えない
+      - record: sli:rpc_requests:rate5m
+        expr: sum by (service_name) (rate(rpc_server_duration_milliseconds_count[5m]))
+      - record: sli:rpc_server_errors:rate5m
+        expr: sum by (service_name) (rate(rpc_server_duration_milliseconds_count{rpc_connect_rpc_error_code=~"unknown|internal|unavailable|data_loss|deadline_exceeded|unimplemented"}[5m])) or sum by (service_name) (rate(rpc_server_duration_milliseconds_count[5m])) * 0
+      - record: sli:availability:ratio_rate5m
+        expr: 1 - sli:rpc_server_errors:rate5m / sli:rpc_requests:rate5m
+      - record: sli:availability:ratio_rate1h
+        expr: |
+          1 - (
+            sum by (service_name) (rate(rpc_server_duration_milliseconds_count{rpc_connect_rpc_error_code=~"unknown|internal|unavailable|data_loss|deadline_exceeded|unimplemented"}[1h]))
+            or sum by (service_name) (rate(rpc_server_duration_milliseconds_count[1h])) * 0
+          ) / sum by (service_name) (rate(rpc_server_duration_milliseconds_count[1h]))
+      - record: slo:availability:burn_rate5m
+        expr: (1 - sli:availability:ratio_rate5m) / scalar(1 - slo:availability:objective)
+      - record: slo:availability:burn_rate1h
+        expr: (1 - sli:availability:ratio_rate1h) / scalar(1 - slo:availability:objective)
+
+      - record: sli:rpc_latency_p99_seconds:5m
+        expr: histogram_quantile(0.99, sum by (le, service_name) (rate(rpc_server_duration_milliseconds_bucket[5m]))) / 1000
+
+      # エラー率。モデルの呼び出しとツールの実行のうち失敗した割合。権限の拒否（denied）は仕組みが働いた結果なので失敗に数えない
+      - record: sli:genai_operation_errors:ratio_rate5m
+        expr: |
+          sum by (service_name) (rate(gen_ai_client_operation_duration_seconds_count{error_type!="", error_type!="denied"}[5m]))
+          / sum by (service_name) (rate(gen_ai_client_operation_duration_seconds_count{error_type!="denied"}[5m]))
+
+      # ツールの成功率。拒否は分母から外す
+      - record: sli:tool_success:ratio_rate5m
+        expr: |
+          1 - (
+            sum by (service_name) (rate(gen_ai_client_operation_duration_seconds_count{gen_ai_operation_name="execute_tool", error_type="tool_error"}[5m]))
+            or sum by (service_name) (rate(gen_ai_client_operation_duration_seconds_count{gen_ai_operation_name="execute_tool"}[5m])) * 0
+          ) / sum by (service_name) (rate(gen_ai_client_operation_duration_seconds_count{gen_ai_operation_name="execute_tool", error_type!="denied"}[5m]))
+
+      # 1 日の費用の予算に対する割合。予算はサービスが gen_ai.client.cost.budget で出す
+      - record: sli:daily_cost_budget:ratio
+        expr: |
+          sum by (service_name) (increase(gen_ai_client_cost_total[1d]))
+          / on (service_name) max by (service_name) (gen_ai_client_cost_budget)
+
+      # エスカレーション率（1 時間の窓）。業務の指標なので短い窓で見ない
+      - record: sli:escalation:ratio_rate1h
+        expr: |
+          sum by (service_name) (rate(gen_ai_agent_invocations_total{gen_ai_agent_outcome="escalated"}[1h]))
+          / sum by (service_name) (rate(gen_ai_agent_invocations_total[1h]))
+
+  - name: slo-alerts
+    rules:
+      - alert: AvailabilityFastBurn
+        expr: slo:availability:burn_rate1h > 14.4 and slo:availability:burn_rate5m > 14.4
+        for: 2m
+        labels: {severity: critical, layer: infra}
+        annotations:
+          summary: "{{ $labels.service_name }} のエラーバジェットを 1 時間あたり 14.4 倍の速さで消費している"
+      - alert: LatencyP99High
+        expr: sli:rpc_latency_p99_seconds:5m > scalar(slo:latency_p99_seconds:objective)
+        for: 5m
+        labels: {severity: critical, layer: infra}
+        annotations:
+          summary: "{{ $labels.service_name }} の P99 が {{ $value | humanizeDuration }}"
+      - alert: GenAIErrorRatioHigh
+        expr: sli:genai_operation_errors:ratio_rate5m > scalar(slo:error_ratio:objective)
+        for: 5m
+        labels: {severity: high, layer: agent}
+        annotations:
+          summary: "{{ $labels.service_name }} のモデルとツールの失敗率が {{ $value | humanizePercentage }}"
+      - alert: ToolSuccessLow
+        expr: sli:tool_success:ratio_rate5m < scalar(slo:tool_success:objective)
+        for: 10m
+        labels: {severity: high, layer: agent}
+        annotations:
+          summary: "{{ $labels.service_name }} のツールの成功率が {{ $value | humanizePercentage }}"
+      - alert: DailyCostOverBudget
+        expr: sli:daily_cost_budget:ratio > scalar(slo:daily_cost_budget_ratio:objective)
+        for: 5m
+        labels: {severity: high, layer: agent}
+        annotations:
+          summary: "{{ $labels.service_name }} の今日の費用が予算の {{ $value | humanizePercentage }}"
+      - alert: EscalationRateHigh
+        expr: sli:escalation:ratio_rate1h > scalar(slo:escalation_ratio:objective)
+        for: 15m
+        labels: {severity: medium, layer: business}
+        annotations:
+          summary: "{{ $labels.service_name }} のエスカレーション率が {{ $value | humanizePercentage }}。Instruction や FAQ の見直しを業務の担当に回す"

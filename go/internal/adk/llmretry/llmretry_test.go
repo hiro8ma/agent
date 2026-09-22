@@ -148,6 +148,8 @@ func TestWrap(t *testing.T) {
 			var waits []time.Duration
 			p := policy()
 			p.Sleep = func(_ context.Context, d time.Duration) error { waits = append(waits, d); return nil }
+			retries := 0
+			p.OnRetry = func(context.Context, string, error) { retries++ }
 			var texts []string
 			var gotErr error
 			for resp, err := range llmretry.Wrap(inner, p).GenerateContent(t.Context(), &model.LLMRequest{}, true) {
@@ -168,6 +170,9 @@ func TestWrap(t *testing.T) {
 			}
 			if !slices.Equal(waits, tc.wantWaits) {
 				t.Errorf("waits = %v, want %v", waits, tc.wantWaits)
+			}
+			if retries != len(tc.wantWaits) {
+				t.Errorf("OnRetry = %d 回, want %d", retries, len(tc.wantWaits))
 			}
 		})
 	}

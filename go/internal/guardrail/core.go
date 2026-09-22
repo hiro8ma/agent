@@ -38,6 +38,14 @@ type Log struct {
 	mu       sync.Mutex
 	verdicts []Verdict
 	passed   map[string]int
+	onBlock  func(Verdict)
+}
+
+// OnBlock は止めた検査のたびに f を呼ぶ。メトリクスの記録に使う。Detail には入力の一部が入りうるので、属性に使わない。
+func (l *Log) OnBlock(f func(Verdict)) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.onBlock = f
 }
 
 // NewLog は空の記録を返す。
@@ -45,12 +53,17 @@ func NewLog() *Log { return &Log{passed: map[string]int{}} }
 
 func (l *Log) add(v Verdict) {
 	l.mu.Lock()
-	defer l.mu.Unlock()
-	if v.Blocked {
-		l.verdicts = append(l.verdicts, v)
+	if !v.Blocked {
+		l.passed[v.Stage]++
+		l.mu.Unlock()
 		return
 	}
-	l.passed[v.Stage]++
+	l.verdicts = append(l.verdicts, v)
+	f := l.onBlock
+	l.mu.Unlock()
+	if f != nil {
+		f(v)
+	}
 }
 
 // Blocked は止めた検査を返す。

@@ -79,6 +79,8 @@ func TestMatchInjection(t *testing.T) {
 // TestDetectInjectionStopsBeforeTheModel は検出時にモデルを呼ばずに返すことを見る。
 func TestDetectInjectionStopsBeforeTheModel(t *testing.T) {
 	log := NewLog()
+	var notified []Verdict
+	log.OnBlock(func(v Verdict) { notified = append(notified, v) })
 	cb := DetectInjection(log, InjectionPatterns, "内容を具体的にお願いします")
 
 	if out, _ := cb(nil, multiTurn("京都の観光地を教えて")); out != nil {
@@ -96,6 +98,9 @@ func TestDetectInjectionStopsBeforeTheModel(t *testing.T) {
 	}
 	if log.Passed()["before_model"] != 1 {
 		t.Fatal("通した件数を数えていない")
+	}
+	if len(notified) != 1 || notified[0].Stage != "before_model" {
+		t.Fatalf("OnBlock に届いた記録 = %v", notified)
 	}
 }
 
