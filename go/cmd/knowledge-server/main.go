@@ -14,6 +14,7 @@ import (
 	"github.com/hiro8ma/agent/go/internal/genkitagent/knowledge"
 	"github.com/hiro8ma/agent/go/internal/knowledge/adapter"
 	"github.com/hiro8ma/agent/go/internal/lib/libconnect"
+	"github.com/hiro8ma/agent/go/internal/lib/libotel"
 	"github.com/hiro8ma/agent/go/internal/lib/libserver"
 )
 
@@ -26,11 +27,15 @@ func main() {
 }
 
 func run(ctx context.Context, logger *slog.Logger) error {
+	shutdown, err := libotel.Setup(ctx, "knowledge-server")
+	if err != nil {
+		return err
+	}
 	port := os.Getenv("KNOWLEDGE_PORT")
 	if port == "" {
 		port = "19930"
 	}
 	mux := http.NewServeMux()
 	mux.Handle(adapter.NewHandler(knowledge.NewInMemory(), libconnect.HeaderAuthenticator))
-	return libserver.Serve(ctx, logger, ":"+port, mux)
+	return libserver.Serve(ctx, logger, ":"+port, mux, shutdown)
 }

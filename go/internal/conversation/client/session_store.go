@@ -25,7 +25,7 @@ var _ agentcore.SessionCreator = (*SessionStore)(nil)
 func NewSessionStore(httpClient connect.HTTPClient, baseURL string) *SessionStore {
 	return &SessionStore{
 		client: conversationv1connect.NewConversationServiceClient(httpClient, baseURL,
-			connect.WithInterceptors(libconnect.ForwardIdentity())),
+			connect.WithInterceptors(libconnect.Telemetry(), libconnect.ForwardIdentity())),
 	}
 }
 

@@ -13,7 +13,8 @@ import (
 
 // Serve は mux を addr で公開し、SIGINT / SIGTERM で処理中のリクエストを待ってから止まる。
 // TLS なしの HTTP/2 も受けるので、Connect の server streaming をそのまま通せる。
-func Serve(ctx context.Context, logger *slog.Logger, addr string, mux http.Handler) error {
+// onShutdown はリクエストを捌き終えた後に呼ぶ（telemetry の送り切りなど）。
+func Serve(ctx context.Context, logger *slog.Logger, addr string, mux http.Handler, onShutdown ...func(context.Context) error) error {
 	protocols := new(http.Protocols)
 	protocols.SetHTTP1(true)
 	protocols.SetUnencryptedHTTP2(true)
@@ -39,11 +40,12 @@ func Serve(ctx context.Context, logger *slog.Logger, addr string, mux http.Handl
 	}
 	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
-	if err := srv.Shutdown(shutdownCtx); err != nil {
-		return err
-	}
+	errs := []error{srv.Shutdown(shutdownCtx)}
 	if err := <-errc; !errors.Is(err, http.ErrServerClosed) {
-		return err
+		errs = append(errs, err)
 	}
-	return nil
+	for _, f := range onShutdown {
+		errs = append(errs, f(shutdownCtx))
+	}
+	return errors.Join(errs...)
 }

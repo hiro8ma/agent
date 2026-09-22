@@ -28,7 +28,7 @@ var _ agentcore.KnowledgeSearcher = (*Searcher)(nil)
 
 func NewSearcher(httpClient connect.HTTPClient, baseURL string) *Searcher {
 	return &Searcher{client: knowledgev1connect.NewKnowledgeServiceClient(httpClient, baseURL,
-		connect.WithInterceptors(libconnect.ForwardIdentity()))}
+		connect.WithInterceptors(libconnect.Telemetry(), libconnect.ForwardIdentity()))}
 }
 
 func (s *Searcher) Search(ctx context.Context, query string, limit int) ([]agentcore.KnowledgeDoc, error) {

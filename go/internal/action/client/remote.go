@@ -28,7 +28,7 @@ var _ action.Gate = (*Remote)(nil)
 
 func NewRemote(httpClient connect.HTTPClient, baseURL string) *Remote {
 	return &Remote{client: actionv1connect.NewActionServiceClient(httpClient, baseURL,
-		connect.WithInterceptors(libconnect.ForwardIdentity()))}
+		connect.WithInterceptors(libconnect.Telemetry(), libconnect.ForwardIdentity()))}
 }
 
 func (r *Remote) Authorize(ctx context.Context, tool string, args map[string]any) (approval.Decision, error) {

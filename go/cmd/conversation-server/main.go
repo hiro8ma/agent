@@ -16,6 +16,7 @@ import (
 	"github.com/hiro8ma/agent/go/internal/conversation/repository"
 	"github.com/hiro8ma/agent/go/internal/conversation/usecase"
 	"github.com/hiro8ma/agent/go/internal/lib/libconnect"
+	"github.com/hiro8ma/agent/go/internal/lib/libotel"
 	"github.com/hiro8ma/agent/go/internal/lib/libserver"
 )
 
@@ -28,13 +29,17 @@ func main() {
 }
 
 func run(ctx context.Context, logger *slog.Logger) error {
+	shutdown, err := libotel.Setup(ctx, "conversation-server")
+	if err != nil {
+		return err
+	}
 	repo, err := repository.NewSQLite(envOr("CONVERSATION_DSN", "file:./.conversation/conversation.db"))
 	if err != nil {
 		return err
 	}
 	mux := http.NewServeMux()
 	mux.Handle(adapter.NewHandler(usecase.New(repo), libconnect.HeaderAuthenticator))
-	return libserver.Serve(ctx, logger, ":"+envOr("CONVERSATION_PORT", "19920"), mux)
+	return libserver.Serve(ctx, logger, ":"+envOr("CONVERSATION_PORT", "19920"), mux, shutdown)
 }
 
 func envOr(key, fallback string) string {

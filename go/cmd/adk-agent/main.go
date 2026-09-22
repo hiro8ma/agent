@@ -20,6 +20,7 @@ import (
 	"github.com/hiro8ma/agent/go/internal/genkitagent/backend"
 	knowledgeclient "github.com/hiro8ma/agent/go/internal/knowledge/client"
 	"github.com/hiro8ma/agent/go/internal/lib/libconnect"
+	"github.com/hiro8ma/agent/go/internal/lib/libotel"
 	"github.com/hiro8ma/agent/go/internal/lib/libserver"
 )
 
@@ -80,6 +81,10 @@ func main() {
 }
 
 func run(ctx context.Context, logger *slog.Logger) error {
+	shutdown, err := libotel.Setup(ctx, "adk-agent")
+	if err != nil {
+		return err
+	}
 	cfg, err := loadConfig()
 	if err != nil {
 		return err
@@ -159,5 +164,5 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	mux.Handle(agentcore.NewConnectHandler(core, libconnect.HeaderAuthenticator))
 
 	logger.Info("starting adk agent server", "port", cfg.port, "model", cfg.modelName, "agents", len(registry.List()))
-	return libserver.Serve(ctx, logger, ":"+cfg.port, mux)
+	return libserver.Serve(ctx, logger, ":"+cfg.port, mux, shutdown)
 }

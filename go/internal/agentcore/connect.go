@@ -31,6 +31,8 @@ var _ agentv1connect.AgentServiceHandler = (*Handler)(nil)
 // NewConnectHandler は利用者の特定まで含めて公開する。一覧取得だけは利用者なしで呼べる。
 func NewConnectHandler(h *Handler, auth libconnect.Authenticator) (string, http.Handler) {
 	return agentv1connect.NewAgentServiceHandler(h, connect.WithInterceptors(
+		// span を認証の外側に置き、利用者を特定できずに拒否した呼び出しも記録する。
+		libconnect.EdgeTelemetry(),
 		libconnect.ServerIdentity(auth, agentv1connect.AgentServiceListAgentsProcedure),
 	))
 }

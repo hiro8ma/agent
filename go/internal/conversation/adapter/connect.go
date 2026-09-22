@@ -26,7 +26,7 @@ var _ conversationv1connect.ConversationServiceHandler = (*Handler)(nil)
 // NewHandler は利用者の特定まで含めたハンドラを返す。
 func NewHandler(svc *usecase.Service, auth libconnect.Authenticator) (string, http.Handler) {
 	return conversationv1connect.NewConversationServiceHandler(&Handler{svc: svc},
-		connect.WithInterceptors(libconnect.ServerIdentity(auth)))
+		connect.WithInterceptors(libconnect.Telemetry(), libconnect.ServerIdentity(auth)))
 }
 
 func (h *Handler) CreateSession(ctx context.Context, req *connect.Request[conversationv1.CreateSessionRequest]) (*connect.Response[conversationv1.CreateSessionResponse], error) {

@@ -15,6 +15,7 @@ import (
 	"github.com/hiro8ma/agent/go/internal/action"
 	"github.com/hiro8ma/agent/go/internal/action/adapter"
 	"github.com/hiro8ma/agent/go/internal/lib/libconnect"
+	"github.com/hiro8ma/agent/go/internal/lib/libotel"
 	"github.com/hiro8ma/agent/go/internal/lib/libserver"
 )
 
@@ -27,6 +28,10 @@ func main() {
 }
 
 func run(ctx context.Context, logger *slog.Logger) error {
+	shutdown, err := libotel.Setup(ctx, "action-server")
+	if err != nil {
+		return err
+	}
 	port := os.Getenv("ACTION_PORT")
 	if port == "" {
 		port = "19940"
@@ -34,5 +39,5 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	local := action.NewLocalFromEnv()
 	mux := http.NewServeMux()
 	mux.Handle(adapter.NewHandler(local.Service, libconnect.HeaderAuthenticator))
-	return libserver.Serve(ctx, logger, ":"+port, mux)
+	return libserver.Serve(ctx, logger, ":"+port, mux, shutdown)
 }

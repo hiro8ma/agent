@@ -27,7 +27,7 @@ var _ actionv1connect.ActionServiceHandler = (*Handler)(nil)
 // NewHandler は利用者の特定まで含めたハンドラを返す。
 func NewHandler(svc *approval.Service, auth libconnect.Authenticator) (string, http.Handler) {
 	return actionv1connect.NewActionServiceHandler(&Handler{svc: svc},
-		connect.WithInterceptors(libconnect.ServerIdentity(auth)))
+		connect.WithInterceptors(libconnect.Telemetry(), libconnect.ServerIdentity(auth)))
 }
 
 func caller(ctx context.Context) (string, error) {

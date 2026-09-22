@@ -21,6 +21,7 @@ import (
 	"github.com/hiro8ma/agent/go/internal/genkitagent/backend"
 	knowledgeclient "github.com/hiro8ma/agent/go/internal/knowledge/client"
 	"github.com/hiro8ma/agent/go/internal/lib/libconnect"
+	"github.com/hiro8ma/agent/go/internal/lib/libotel"
 	"github.com/hiro8ma/agent/go/internal/lib/libserver"
 )
 
@@ -94,6 +95,10 @@ func main() {
 }
 
 func run(ctx context.Context, logger *slog.Logger) error {
+	shutdown, err := libotel.Setup(ctx, "genkit-agent")
+	if err != nil {
+		return err
+	}
 	cfg, err := loadConfig()
 	if err != nil {
 		return err
@@ -173,7 +178,7 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	mux.Handle(agentcore.NewConnectHandler(core, libconnect.HeaderAuthenticator))
 
 	logger.Info("starting agent server", "port", cfg.port, "model", cfg.defaultModel, "agents", len(registry.List()))
-	return libserver.Serve(ctx, logger, ":"+cfg.port, mux)
+	return libserver.Serve(ctx, logger, ":"+cfg.port, mux, shutdown)
 }
 
 // defineToolRefs は research エージェント用のツール群。

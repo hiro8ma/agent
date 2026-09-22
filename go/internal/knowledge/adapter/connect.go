@@ -31,7 +31,7 @@ var _ knowledgev1connect.KnowledgeServiceHandler = (*Handler)(nil)
 // NewHandler は利用者の特定まで含めたハンドラを返す。
 func NewHandler(searcher agentcore.KnowledgeSearcher, auth libconnect.Authenticator) (string, http.Handler) {
 	return knowledgev1connect.NewKnowledgeServiceHandler(&Handler{searcher: searcher},
-		connect.WithInterceptors(libconnect.ServerIdentity(auth)))
+		connect.WithInterceptors(libconnect.Telemetry(), libconnect.ServerIdentity(auth)))
 }
 
 func (h *Handler) Search(ctx context.Context, req *connect.Request[knowledgev1.SearchRequest]) (*connect.Response[knowledgev1.SearchResponse], error) {
