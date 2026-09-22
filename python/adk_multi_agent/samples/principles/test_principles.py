@@ -10,12 +10,15 @@ import time
 from collections.abc import AsyncGenerator
 
 import httpx
+import pytest
 from google.adk import Agent
+from google.adk.evaluation.eval_set import EvalSet
 from google.adk.models import BaseLlm, LlmRequest, LlmResponse
 from google.adk.runners import InMemoryRunner
 from google.adk.tools.base_tool import BaseTool
 from google.adk.tools.tool_context import ToolContext
 from google.genai import types
+from pydantic import ValidationError
 
 
 def reply(*parts: types.Part) -> LlmResponse:
@@ -207,3 +210,35 @@ async def test_start_time_in_state_is_per_call_but_persisted() -> None:
 def test_httpx_timeout_is_not_builtin_timeout_error() -> None:
     """教材の except TimeoutError では、httpx のタイムアウトを捕まえられない。"""
     assert not issubclass(httpx.TimeoutException, TimeoutError)
+
+
+# --- 原則 7 評価駆動: 教材の評価セットの形 ---
+
+BOOK_INVOCATION = {
+    "user_content": {"role": "user", "parts": [{"text": "agent.py をレビューして"}]},
+    "final_response": {
+        "role": "model",
+        "parts": [{"text": "# 設計レビューレポート"}],
+        "intermediate_data": {"tool_uses": []},
+    },
+}
+
+
+def eval_set(invocation: dict) -> dict:
+    return {
+        "eval_set_id": "design_review_eval",
+        "eval_cases": [{"eval_id": "normal", "conversation": [invocation]}],
+    }
+
+
+def test_book_eval_set_nests_intermediate_data_wrongly() -> None:
+    """教材は intermediate_data を final_response の中に書くので、ADK の EvalSet として読めない。"""
+    with pytest.raises(ValidationError, match="intermediate_data"):
+        EvalSet.model_validate(eval_set(BOOK_INVOCATION))
+
+    fixed = dict(BOOK_INVOCATION)
+    final = dict(fixed["final_response"])
+    fixed["intermediate_data"] = final.pop("intermediate_data")
+    fixed["final_response"] = final
+    parsed = EvalSet.model_validate(eval_set(fixed))
+    assert parsed.eval_cases[0].conversation[0].intermediate_data is not None
