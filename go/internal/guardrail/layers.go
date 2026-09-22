@@ -13,6 +13,7 @@
 package guardrail
 
 import (
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"slices"
@@ -100,6 +101,36 @@ func DetectInjection(log *Log, patterns []*regexp.Regexp, msg string) llmagent.B
 			Detail: fmt.Sprintf("入力が %s に一致", hit.String()),
 		})
 		return refuse(msg), nil
+	}
+}
+
+// ScreenToolResult はツールの結果に指示の上書きの形があれば、結果をモデルに渡さずに隔離する。
+//
+// DetectInjection は利用者の発話だけを見るので、Web ページや検索の結果に仕込まれた指示は通る。
+// 形の照合なので言い換えには弱い。書き込みのツールを持たせない設計と併せて使う。
+func ScreenToolResult(log *Log, patterns []*regexp.Regexp) llmagent.AfterToolCallback {
+	return func(ctx agent.Context, t tool.Tool, _, result map[string]any, err error) (map[string]any, error) {
+		if err != nil || result == nil {
+			return nil, nil
+		}
+		raw, mErr := json.Marshal(result)
+		if mErr != nil {
+			return nil, mErr
+		}
+		hit := MatchInjection(string(raw), patterns)
+		if hit == nil {
+			log.add(Verdict{Stage: "after_tool"})
+			return nil, nil
+		}
+		markState(ctx, InjectionFlagKey, hit.String())
+		log.add(Verdict{
+			Stage: "after_tool", Rule: "インジェクション", Blocked: true,
+			Detail: fmt.Sprintf("%s の結果が %s に一致", t.Name(), hit.String()),
+		})
+		return map[string]any{
+			"status": "quarantined",
+			"reason": "ツールの結果に指示の形が含まれていたので、内容を渡さない",
+		}, nil
 	}
 }
 
