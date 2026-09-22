@@ -13,11 +13,15 @@
 package guardrail
 
 import (
+	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"regexp"
 	"slices"
 	"strings"
+
+	"golang.org/x/text/unicode/norm"
 
 	"google.golang.org/adk/v2/agent"
 	"google.golang.org/adk/v2/agent/llmagent"
@@ -42,6 +46,14 @@ var InjectionPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`(以前|これまで)の指示を(すべて)?無視`),
 	regexp.MustCompile(`(システムプロンプト|あなたの指示)を(表示|教えて|出力)`),
 }
+
+// ToolResultPatterns は外部データに紛れた指示変更とロール境界を検出する。
+var ToolResultPatterns = append(slices.Clone(InjectionPatterns),
+	regexp.MustCompile(`(?i)\[(system|developer)\]`),
+	regexp.MustCompile(`(?i)<\|im_start\|>\s*(system|developer)`),
+)
+
+var base64PayloadPattern = regexp.MustCompile(`(?i)base64:\s*([A-Za-z0-9+/]{8,1000}={0,2})`)
 
 // piiRules は伏せる形と、その置き換え先。何を伏せたか分かる名前にする。
 var piiRules = []struct {
@@ -79,9 +91,25 @@ func LastUserText(req *model.LLMRequest) string {
 
 // MatchInjection は入力に指示の上書きを狙う形があれば、その形を返す。
 func MatchInjection(text string, patterns []*regexp.Regexp) *regexp.Regexp {
+	text = norm.NFKC.String(text)
 	for _, re := range patterns {
 		if re != nil && re.MatchString(text) {
 			return re
+		}
+	}
+	for _, match := range base64PayloadPattern.FindAllStringSubmatch(text, 4) {
+		decoded, err := base64.StdEncoding.DecodeString(match[1])
+		if err != nil {
+			decoded, err = base64.RawStdEncoding.DecodeString(match[1])
+		}
+		if err != nil {
+			continue
+		}
+		plain := norm.NFKC.String(string(decoded))
+		for _, re := range patterns {
+			if re != nil && re.MatchString(plain) {
+				return re
+			}
 		}
 	}
 	return nil
@@ -113,11 +141,13 @@ func ScreenToolResult(log *Log, patterns []*regexp.Regexp) llmagent.AfterToolCal
 		if err != nil || result == nil {
 			return nil, nil
 		}
-		raw, mErr := json.Marshal(result)
-		if mErr != nil {
-			return nil, mErr
+		var raw bytes.Buffer
+		encoder := json.NewEncoder(&raw)
+		encoder.SetEscapeHTML(false)
+		if err := encoder.Encode(result); err != nil {
+			return nil, err
 		}
-		hit := MatchInjection(string(raw), patterns)
+		hit := MatchInjection(raw.String(), patterns)
 		if hit == nil {
 			log.add(Verdict{Stage: "after_tool"})
 			return nil, nil

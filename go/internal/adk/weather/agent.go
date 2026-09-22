@@ -170,6 +170,7 @@ func buildConfig(m model.LLM, log *guardrail.Log) (llmagent.Config, error) {
 			guardrail.RequireArgs(log, "get_sightseeing", "city"),
 		},
 		AfterToolCallbacks: []llmagent.AfterToolCallback{
+			guardrail.ScreenToolResult(log, guardrail.ToolResultPatterns),
 			guardrail.RejectEmptyResult(log, "report", "spots"),
 		},
 		OnToolErrorCallbacks: []llmagent.OnToolErrorCallback{
