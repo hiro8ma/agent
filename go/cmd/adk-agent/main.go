@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -14,8 +15,10 @@ import (
 	"google.golang.org/adk/v2/plugin"
 	"google.golang.org/genai"
 
+	"github.com/hiro8ma/agent/go/internal/a2aserve"
 	"github.com/hiro8ma/agent/go/internal/action"
 	actionclient "github.com/hiro8ma/agent/go/internal/action/client"
+	"github.com/hiro8ma/agent/go/internal/adk/a2ainterop"
 	"github.com/hiro8ma/agent/go/internal/adk/llmretry"
 	"github.com/hiro8ma/agent/go/internal/adkagent"
 	"github.com/hiro8ma/agent/go/internal/agentcore"
@@ -28,6 +31,7 @@ import (
 	"github.com/hiro8ma/agent/go/internal/lib/liblog"
 	"github.com/hiro8ma/agent/go/internal/lib/libotel"
 	"github.com/hiro8ma/agent/go/internal/lib/libserver"
+	"github.com/hiro8ma/agent/go/internal/toolscope"
 )
 
 type config struct {
@@ -190,9 +194,41 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		logger.Info("token budget enabled", "sessionTokens", cfg.budget.SessionTokens, "totalTokens", cfg.budget.TotalTokens)
 	}
 
+	if err := serveA2A(ctx, logger, map[string]*adkagent.Agent{"research": research, "operations": operations}); err != nil {
+		return err
+	}
+
 	mux := http.NewServeMux()
 	mux.Handle(agentcore.NewConnectHandler(core, libconnect.HeaderAuthenticator))
 
 	logger.Info("starting adk agent server", "port", cfg.port, "model", cfg.modelName, "agents", len(registry.List()))
 	return libserver.Serve(ctx, logger, ":"+cfg.port, mux, shutdown)
+}
+
+// serveA2A は A2A_ADDR があれば、選んだエージェントを 2 要素で守った A2A の口で公開する。
+func serveA2A(ctx context.Context, logger *slog.Logger, agents map[string]*adkagent.Agent) error {
+	cfg, enabled, err := a2aserve.ConfigFromEnv()
+	if !enabled || err != nil {
+		return err
+	}
+	a, ok := agents[cfg.AgentID]
+	if !ok {
+		return fmt.Errorf("A2A_AGENT %q は無い", cfg.AgentID)
+	}
+	scope, err := toolscope.ADKPlugin(a2aserve.Policy)
+	if err != nil {
+		return err
+	}
+	v, err := a2aserve.Verifier(ctx, cfg)
+	if err != nil {
+		return err
+	}
+	info := a.Info()
+	h := a2ainterop.NewHandler(a.ADK(), a2aserve.Card(cfg, info.ID, info.Description), cfg.BaseURL, append(a.Plugins(), scope)...)
+	go func() {
+		if err := a2aserve.Serve(ctx, logger, cfg, a2aserve.Protect(h, v, cfg)); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			logger.ErrorContext(ctx, "a2a server exited", "error", err)
+		}
+	}()
+	return nil
 }

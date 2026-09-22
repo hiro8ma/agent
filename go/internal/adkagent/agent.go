@@ -41,6 +41,7 @@ type Definition struct {
 // （transport が渡してくるが、同一プロセス内は ADK 側の履歴が正になる）。
 type Agent struct {
 	def    Definition
+	adk    adkagentpkg.Agent
 	runner *runner.Runner
 }
 
@@ -67,8 +68,14 @@ func New(def Definition) (*Agent, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Agent{def: def, runner: r}, nil
+	return &Agent{def: def, adk: ag, runner: r}, nil
 }
+
+// ADK は中の ADK のエージェントを返す。A2A で公開するときに、別のランナーに載せるのに使う。
+func (a *Agent) ADK() adkagentpkg.Agent { return a.adk }
+
+// Plugins は定義で渡したプラグイン。A2A のランナーにも同じものを付ける。
+func (a *Agent) Plugins() []*plugin.Plugin { return a.def.Plugins }
 
 // Info は agentcore.Agent の実装。
 func (a *Agent) Info() agentcore.AgentInfo {

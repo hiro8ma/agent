@@ -72,3 +72,17 @@ func DeclareOAuth2(card *a2a.AgentCard, name a2a.SecuritySchemeName, tokenURL st
 	}
 	card.SecurityRequirements = append(card.SecurityRequirements, a2a.SecurityRequirements{name: required})
 }
+
+// DeclareCertBoundOAuth2 は OAuth 2 の client credentials と mutualTLS の両方を、1 つの要件（AND）として Agent Card に書く。
+//
+// 証明書に結び付いたトークン（RFC 8705）を求めるサーバー向け。要件を分けて並べると OR になり、片方だけで足りると読まれる。
+func DeclareCertBoundOAuth2(card *a2a.AgentCard, oauthName, mtlsName a2a.SecuritySchemeName, tokenURL string, scopes map[string]string, required ...string) {
+	if card.SecuritySchemes == nil {
+		card.SecuritySchemes = a2a.NamedSecuritySchemes{}
+	}
+	card.SecuritySchemes[oauthName] = a2a.OAuth2SecurityScheme{
+		Flows: a2a.ClientCredentialsOAuthFlow{TokenURL: tokenURL, Scopes: scopes},
+	}
+	card.SecuritySchemes[mtlsName] = a2a.MutualTLSSecurityScheme{Description: "クライアント証明書。アクセストークンはこの証明書に結び付く"}
+	card.SecurityRequirements = append(card.SecurityRequirements, a2a.SecurityRequirements{oauthName: required, mtlsName: {}})
+}

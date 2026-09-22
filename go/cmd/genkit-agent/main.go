@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -13,9 +14,12 @@ import (
 	"github.com/firebase/genkit/go/plugins/googlegenai"
 	"github.com/firebase/genkit/go/plugins/mcp"
 
+	"github.com/hiro8ma/agent/go/internal/a2aserve"
 	"github.com/hiro8ma/agent/go/internal/action"
 	actionclient "github.com/hiro8ma/agent/go/internal/action/client"
+	"github.com/hiro8ma/agent/go/internal/adk/a2ainterop"
 	"github.com/hiro8ma/agent/go/internal/agentcore"
+	"github.com/hiro8ma/agent/go/internal/agentcore/a2aexec"
 	conversation "github.com/hiro8ma/agent/go/internal/conversation/client"
 	"github.com/hiro8ma/agent/go/internal/genkitagent/agent"
 	"github.com/hiro8ma/agent/go/internal/genkitagent/backend"
@@ -24,6 +28,7 @@ import (
 	"github.com/hiro8ma/agent/go/internal/lib/liblog"
 	"github.com/hiro8ma/agent/go/internal/lib/libotel"
 	"github.com/hiro8ma/agent/go/internal/lib/libserver"
+	"github.com/hiro8ma/agent/go/internal/toolscope"
 )
 
 type config struct {
@@ -158,6 +163,7 @@ func run(ctx context.Context, logger *slog.Logger) error {
 			"取得できなかった情報を推測で補わないでください。",
 		Tools:      append(defineToolRefs(g, kn), mcpTools...),
 		SkillPaths: skillPaths,
+		Use:        []ai.Middleware{toolscope.GenkitMiddleware(a2aserve.Policy)},
 	})
 	operations := agent.New(g, agent.Definition{
 		ID:          "operations",
@@ -168,6 +174,7 @@ func run(ctx context.Context, logger *slog.Logger) error {
 			"取得できなかった情報を推測で補わないでください。",
 		Tools:      agent.DefineOperationsTools(g, orders, geo, gate),
 		SkillPaths: skillPaths,
+		Use:        []ai.Middleware{toolscope.GenkitMiddleware(a2aserve.Policy)},
 	})
 
 	registry := agentcore.NewRegistry(research, operations)
@@ -177,6 +184,10 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	if cfg.budget.Enabled() {
 		core = core.WithBudget(agentcore.NewBudgetTracker(cfg.budget))
 		logger.Info("token budget enabled", "sessionTokens", cfg.budget.SessionTokens, "totalTokens", cfg.budget.TotalTokens)
+	}
+
+	if err := serveA2A(ctx, logger, registry); err != nil {
+		return err
 	}
 
 	mux := http.NewServeMux()
@@ -212,4 +223,28 @@ func loadMCPTools(ctx context.Context, g *genkit.Genkit, url string) ([]ai.ToolR
 		refs[i] = t
 	}
 	return refs, nil
+}
+
+// serveA2A は A2A_ADDR があれば、選んだエージェントを 2 要素で守った A2A の口で公開する。
+func serveA2A(ctx context.Context, logger *slog.Logger, registry *agentcore.Registry) error {
+	cfg, enabled, err := a2aserve.ConfigFromEnv()
+	if !enabled || err != nil {
+		return err
+	}
+	a, ok := registry.Get(cfg.AgentID)
+	if !ok {
+		return fmt.Errorf("A2A_AGENT %q は無い", cfg.AgentID)
+	}
+	v, err := a2aserve.Verifier(ctx, cfg)
+	if err != nil {
+		return err
+	}
+	info := a.Info()
+	h := a2ainterop.NewExecutorHandler(&a2aexec.Executor{Agent: a}, a2aserve.Card(cfg, info.ID, info.Description), cfg.BaseURL)
+	go func() {
+		if err := a2aserve.Serve(ctx, logger, cfg, a2aserve.Protect(h, v, cfg)); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			logger.ErrorContext(ctx, "a2a server exited", "error", err)
+		}
+	}()
+	return nil
 }
