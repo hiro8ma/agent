@@ -30,7 +30,11 @@ func main() {
 		log.Fatal("GOOGLE_API_KEY または GEMINI_API_KEY を設定してください")
 	}
 
-	m, err := gemini.NewModel(ctx, travelplanner.ModelName, &genai.ClientConfig{APIKey: apiKey})
+	modelName := travelplanner.ModelName
+	if v := os.Getenv("GEMINI_MODEL"); v != "" {
+		modelName = v
+	}
+	m, err := gemini.NewModel(ctx, modelName, &genai.ClientConfig{APIKey: apiKey})
 	if err != nil {
 		log.Fatalf("failed to create model: %v", err)
 	}

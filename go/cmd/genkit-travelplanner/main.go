@@ -26,9 +26,13 @@ func main() {
 		log.Fatal("GEMINI_API_KEY または GOOGLE_API_KEY を設定してください")
 	}
 
+	modelName := travelplanner.ModelName
+	if v := os.Getenv("GEMINI_MODEL"); v != "" {
+		modelName = v
+	}
 	g := genkit.Init(ctx,
 		genkit.WithPlugins(&googlegenai.GoogleAI{}),
-		genkit.WithDefaultModel("googleai/"+travelplanner.ModelName),
+		genkit.WithDefaultModel("googleai/"+modelName),
 	)
 	flow := travelplanner.DefineFlow(g)
 
@@ -44,7 +48,7 @@ func main() {
 	mux.HandleFunc("POST /"+flow.Name(), genkit.Handler(flow))
 
 	addr := fmt.Sprintf("127.0.0.1:%d", port)
-	log.Printf("flow: POST http://%s/%s", addr, flow.Name())
+	log.Printf("flow: POST http://%s/%s", addr, travelplanner.FlowName)
 	if err := server.Start(ctx, addr, mux); err != nil {
 		log.Fatal(err)
 	}
