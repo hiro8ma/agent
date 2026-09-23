@@ -117,3 +117,23 @@ func TestPlannerStreamsScheduleThenReturnsPlanOnce(t *testing.T) {
 		t.Error("NewPlanner に渡したプラグインがランナーに届いていない")
 	}
 }
+
+func TestPlannerWithoutSessionIDReturnsPlan(t *testing.T) {
+	t.Parallel()
+	p, err := NewPlanner(streamingModel{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got *travel.Plan
+	for resp, err := range p.Plan(t.Context(), &travel.PlanRequest{UserID: "u", Message: "東京から京都に日帰り"}) {
+		if err != nil {
+			t.Fatalf("Plan: %v", err)
+		}
+		if resp.Plan != nil {
+			got = resp.Plan
+		}
+	}
+	if got == nil || got.Schedule == "" {
+		t.Fatalf("SessionID が空のときに日程が返らない: %+v", got)
+	}
+}

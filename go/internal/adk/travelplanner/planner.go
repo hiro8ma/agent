@@ -52,9 +52,14 @@ func NewPlanner(m model.LLM, plugins ...*plugin.Plugin) (*Planner, error) {
 // 調査の 3 つは並列に走り、差分が混ざるので流さない。
 func (p *Planner) Plan(ctx context.Context, req *travel.PlanRequest) iter.Seq2[*travel.PlanResponse, error] {
 	return func(yield func(*travel.PlanResponse, error) bool) {
+		sessionID, err := p.sessionID(ctx, req)
+		if err != nil {
+			yield(nil, err)
+			return
+		}
 		msg := genai.NewContentFromText(req.Message, genai.RoleUser)
 		cfg := agent.RunConfig{StreamingMode: agent.StreamingModeSSE}
-		for ev, err := range p.runner.Run(ctx, req.UserID, req.SessionID, msg, cfg) {
+		for ev, err := range p.runner.Run(ctx, req.UserID, sessionID, msg, cfg) {
 			if err != nil {
 				yield(nil, err)
 				return
@@ -71,7 +76,7 @@ func (p *Planner) Plan(ctx context.Context, req *travel.PlanRequest) iter.Seq2[*
 				}
 			}
 		}
-		plan, err := p.readPlan(ctx, req)
+		plan, err := p.readPlan(ctx, req.UserID, sessionID)
 		if err != nil {
 			yield(nil, err)
 			return
@@ -80,8 +85,20 @@ func (p *Planner) Plan(ctx context.Context, req *travel.PlanRequest) iter.Seq2[*
 	}
 }
 
-func (p *Planner) readPlan(ctx context.Context, req *travel.PlanRequest) (*travel.Plan, error) {
-	resp, err := p.sessions.Get(ctx, &session.GetRequest{AppName: appName, UserID: req.UserID, SessionID: req.SessionID})
+// sessionID は、SessionID が空なら新しいセッションを作る。ランナーが空の ID で作ったセッションは、後から State を読めないため。
+func (p *Planner) sessionID(ctx context.Context, req *travel.PlanRequest) (string, error) {
+	if req.SessionID != "" {
+		return req.SessionID, nil
+	}
+	resp, err := p.sessions.Create(ctx, &session.CreateRequest{AppName: appName, UserID: req.UserID})
+	if err != nil {
+		return "", fmt.Errorf("create session: %w", err)
+	}
+	return resp.Session.ID(), nil
+}
+
+func (p *Planner) readPlan(ctx context.Context, userID, sessionID string) (*travel.Plan, error) {
+	resp, err := p.sessions.Get(ctx, &session.GetRequest{AppName: appName, UserID: userID, SessionID: sessionID})
 	if err != nil {
 		return nil, fmt.Errorf("get session: %w", err)
 	}
