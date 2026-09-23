@@ -1,4 +1,4 @@
-package action_test
+package actionexec_test
 
 import (
 	"log/slog"
@@ -17,6 +17,7 @@ import (
 	"github.com/hiro8ma/agent/go/internal/action/adapter"
 	"github.com/hiro8ma/agent/go/internal/action/client"
 	"github.com/hiro8ma/agent/go/internal/agentcore"
+	"github.com/hiro8ma/agent/go/internal/agentcore/actionexec"
 	"github.com/hiro8ma/agent/go/internal/agentcore/backend"
 	"github.com/hiro8ma/agent/go/internal/approval"
 	"github.com/hiro8ma/agent/go/internal/lib/identity"
@@ -40,7 +41,7 @@ func newEnv(t *testing.T) env {
 	gate := client.NewRemote(actionSrv.Client(), actionSrv.URL)
 
 	orders := backend.NewInMemoryOrders()
-	h := agentcore.NewHandler(agentcore.NewRegistry(), nil, action.Executor{Gate: gate, Orders: orders}, slog.New(slog.DiscardHandler))
+	h := agentcore.NewHandler(agentcore.NewRegistry(), nil, actionexec.Executor{Gate: gate, Orders: orders}, slog.New(slog.DiscardHandler))
 	agentMux := http.NewServeMux()
 	agentMux.Handle(agentcore.NewConnectHandler(h, libconnect.HeaderAuthenticator))
 	agentSrv := httptest.NewTestServer(t, agentMux)
@@ -68,11 +69,11 @@ func (e env) execute(t *testing.T, user, id string) (*connect.Response[agentv1.E
 func (e env) requestChange(t *testing.T, method string) string {
 	t.Helper()
 	ctx := identity.With(t.Context(), "alice")
-	out, err := action.RequestPaymentChange(ctx, e.gate, e.orders, "ord-001", method)
+	out, err := actionexec.RequestPaymentChange(ctx, e.gate, e.orders, "ord-001", method)
 	if err != nil {
 		t.Fatalf("RequestPaymentChange() error = %v", err)
 	}
-	p, ok := action.PendingFromResult(action.ToolUpdatePaymentMethod, out)
+	p, ok := actionexec.PendingFromResult(action.ToolUpdatePaymentMethod, out)
 	if !ok {
 		t.Fatalf("承認待ちにならない: %v", out)
 	}

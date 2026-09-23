@@ -23,9 +23,9 @@ import (
 
 	agentv1 "github.com/hiro8ma/agent/go/gen/agent/v1"
 	"github.com/hiro8ma/agent/go/gen/agent/v1/agentv1connect"
-	"github.com/hiro8ma/agent/go/internal/action"
 	"github.com/hiro8ma/agent/go/internal/adkagent"
 	"github.com/hiro8ma/agent/go/internal/agentcore"
+	"github.com/hiro8ma/agent/go/internal/agentcore/actionexec"
 	"github.com/hiro8ma/agent/go/internal/agentcore/backend"
 	convadapter "github.com/hiro8ma/agent/go/internal/conversation/adapter"
 	convclient "github.com/hiro8ma/agent/go/internal/conversation/client"
@@ -110,7 +110,7 @@ func system(t *testing.T) agentv1connect.AgentServiceClient {
 	if err != nil {
 		t.Fatal(err)
 	}
-	core := agentcore.NewHandler(agentcore.NewRegistry(research), convclient.NewSessionStore(conv.Client(), conv.URL), action.Executor{}, slog.New(slog.DiscardHandler))
+	core := agentcore.NewHandler(agentcore.NewRegistry(research), convclient.NewSessionStore(conv.Client(), conv.URL), actionexec.Executor{}, slog.New(slog.DiscardHandler))
 	edge := serve(t)(agentcore.NewConnectHandler(core, libconnect.HeaderAuthenticator))
 	return agentv1connect.NewAgentServiceClient(edge.Client(), edge.URL, connect.WithInterceptors(libconnect.ForwardIdentity()))
 }

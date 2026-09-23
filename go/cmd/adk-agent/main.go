@@ -16,12 +16,12 @@ import (
 	"google.golang.org/genai"
 
 	"github.com/hiro8ma/agent/go/internal/a2aserve"
-	"github.com/hiro8ma/agent/go/internal/action"
 	actionclient "github.com/hiro8ma/agent/go/internal/action/client"
 	"github.com/hiro8ma/agent/go/internal/adk/a2ainterop"
 	"github.com/hiro8ma/agent/go/internal/adk/llmretry"
 	"github.com/hiro8ma/agent/go/internal/adkagent"
 	"github.com/hiro8ma/agent/go/internal/agentcore"
+	"github.com/hiro8ma/agent/go/internal/agentcore/actionexec"
 	"github.com/hiro8ma/agent/go/internal/agentcore/backend"
 	conversation "github.com/hiro8ma/agent/go/internal/conversation/client"
 	knowledgeclient "github.com/hiro8ma/agent/go/internal/knowledge/client"
@@ -126,7 +126,7 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		return err
 	}
 	metrics, err := adkmetrics.Plugin(rec, adkmetrics.WithEscalation(func(_ string, r map[string]any) bool {
-		return r["status"] == action.StatusPending
+		return r["status"] == actionexec.StatusPending
 	}))
 	if err != nil {
 		return err
@@ -188,7 +188,7 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	}
 	logger.Info("conversation store", "where", where)
 
-	core := agentcore.NewHandler(registry, sessions, action.Executor{Gate: gate, Orders: orders}, logger)
+	core := agentcore.NewHandler(registry, sessions, actionexec.Executor{Gate: gate, Orders: orders}, logger)
 	if cfg.budget.Enabled() {
 		core = core.WithBudget(agentcore.NewBudgetTracker(cfg.budget))
 		logger.Info("token budget enabled", "sessionTokens", cfg.budget.SessionTokens, "totalTokens", cfg.budget.TotalTokens)

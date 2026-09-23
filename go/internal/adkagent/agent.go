@@ -16,8 +16,8 @@ import (
 	"google.golang.org/adk/v2/tool"
 	"google.golang.org/genai"
 
-	"github.com/hiro8ma/agent/go/internal/action"
 	"github.com/hiro8ma/agent/go/internal/agentcore"
+	"github.com/hiro8ma/agent/go/internal/agentcore/actionexec"
 	"github.com/hiro8ma/agent/go/internal/lib/identity"
 )
 
@@ -122,7 +122,7 @@ func (a *Agent) Chat(ctx context.Context, input *agentcore.ChatInput) iter.Seq2[
 			}
 			for _, part := range event.Content.Parts {
 				if part.FunctionResponse != nil && !event.Partial {
-					if p, ok := action.PendingFromResult(part.FunctionResponse.Name, part.FunctionResponse.Response); ok {
+					if p, ok := actionexec.PendingFromResult(part.FunctionResponse.Name, part.FunctionResponse.Response); ok {
 						out.PendingToolCalls = append(out.PendingToolCalls, p)
 					}
 				}

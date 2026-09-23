@@ -27,6 +27,7 @@ import (
 	"github.com/hiro8ma/agent/go/internal/adk/toolgov"
 	"github.com/hiro8ma/agent/go/internal/adkagent"
 	"github.com/hiro8ma/agent/go/internal/agentcore"
+	"github.com/hiro8ma/agent/go/internal/agentcore/actionexec"
 	"github.com/hiro8ma/agent/go/internal/agentcore/backend"
 	conversation "github.com/hiro8ma/agent/go/internal/conversation/client"
 	"github.com/hiro8ma/agent/go/internal/guardrail"
@@ -73,7 +74,7 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		return err
 	}
 	metrics, err := adkmetrics.Plugin(rec, adkmetrics.WithEscalation(func(_ string, r map[string]any) bool {
-		return r["status"] == action.StatusPending
+		return r["status"] == actionexec.StatusPending
 	}))
 	if err != nil {
 		return err
@@ -126,7 +127,7 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	core := agentcore.NewHandler(agentcore.NewRegistry(research, operations), sessions, action.Executor{Gate: gate, Orders: orders}, logger)
+	core := agentcore.NewHandler(agentcore.NewRegistry(research, operations), sessions, actionexec.Executor{Gate: gate, Orders: orders}, logger)
 	mux := http.NewServeMux()
 	mux.Handle(agentcore.NewConnectHandler(core, libconnect.HeaderAuthenticator))
 	return libserver.Serve(ctx, logger, ":"+envOr("PORT", "19912"), mux, shutdown)

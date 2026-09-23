@@ -1,10 +1,12 @@
-package action
+// Package actionexec は承認の窓口（internal/action）を、agentcore の型で使えるようにする。ADK 版のツールと agentcore のハンドラーが使う。
+package actionexec
 
 import (
 	"context"
 	"errors"
 	"fmt"
 
+	"github.com/hiro8ma/agent/go/internal/action"
 	"github.com/hiro8ma/agent/go/internal/agentcore"
 	"github.com/hiro8ma/agent/go/internal/approval"
 	"github.com/hiro8ma/agent/go/internal/lib/liberrors"
@@ -12,12 +14,12 @@ import (
 
 // RequestPaymentChange は支払い方法の変更を依頼する。ADK と Genkit のツールはこれを呼ぶ。
 // 結果はモデルが読むので、承認待ちなら依頼の ID と、何を待っているかを入れる。
-func RequestPaymentChange(ctx context.Context, gate Gate, orders agentcore.OrderService, orderID, method string) (map[string]any, error) {
+func RequestPaymentChange(ctx context.Context, gate action.Gate, orders agentcore.OrderService, orderID, method string) (map[string]any, error) {
 	if orderID == "" || method == "" {
 		return map[string]any{"status": "error", "message": "orderId と paymentMethod が要る"}, nil
 	}
 	args := map[string]any{"orderId": orderID, "paymentMethod": method}
-	d, err := gate.Authorize(ctx, ToolUpdatePaymentMethod, args)
+	d, err := gate.Authorize(ctx, action.ToolUpdatePaymentMethod, args)
 	if err != nil {
 		return nil, err
 	}
@@ -57,7 +59,7 @@ func PendingFromResult(tool string, out map[string]any) (agentcore.PendingToolCa
 
 // Executor は承認済みの依頼を、承認された引数で実行する。agentcore.ToolExecutor を満たす。
 type Executor struct {
-	Gate   Gate
+	Gate   action.Gate
 	Orders agentcore.OrderService
 }
 
@@ -72,7 +74,7 @@ func (e Executor) Execute(ctx context.Context, id string) (map[string]any, error
 		return nil, err
 	}
 	switch r.Tool {
-	case ToolUpdatePaymentMethod:
+	case action.ToolUpdatePaymentMethod:
 		orderID, _ := r.Args["orderId"].(string)
 		method, _ := r.Args["paymentMethod"].(string)
 		order, err := e.Orders.UpdatePaymentMethod(ctx, orderID, method)
@@ -81,5 +83,5 @@ func (e Executor) Execute(ctx context.Context, id string) (map[string]any, error
 		}
 		return map[string]any{"order": order}, nil
 	}
-	return nil, fmt.Errorf("action: 実行の手順が無いツール %q", r.Tool)
+	return nil, fmt.Errorf("actionexec: 実行の手順が無いツール %q", r.Tool)
 }

@@ -9,6 +9,7 @@ import (
 
 	"github.com/hiro8ma/agent/go/internal/action"
 	"github.com/hiro8ma/agent/go/internal/agentcore"
+	"github.com/hiro8ma/agent/go/internal/agentcore/actionexec"
 )
 
 type getOrderInput struct {
@@ -99,7 +100,7 @@ func OperationsTools(orders agentcore.OrderService, geo agentcore.GeoService, ga
 		Name:        action.ToolUpdatePaymentMethod,
 		Description: "注文の支払い方法を変更する。承認が要る場合は承認の依頼だけを登録し、利用者に承認待ちであることを伝える",
 	}, func(ctx agent.Context, in updatePaymentMethodInput) (map[string]any, error) {
-		out, err := action.RequestPaymentChange(ctx, gate, orders, in.OrderID, in.PaymentMethod)
+		out, err := actionexec.RequestPaymentChange(ctx, gate, orders, in.OrderID, in.PaymentMethod)
 		if err != nil {
 			return toolResult(nil, err)
 		}
