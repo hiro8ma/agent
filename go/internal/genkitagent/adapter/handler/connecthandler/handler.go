@@ -16,12 +16,12 @@ import (
 )
 
 type Handler struct {
-	agents *usecase.AgentService
+	agents usecase.AgentService
 }
 
 var _ agentv1connect.AgentServiceHandler = (*Handler)(nil)
 
-func New(agents *usecase.AgentService) *Handler {
+func New(agents usecase.AgentService) *Handler {
 	return &Handler{agents: agents}
 }
 

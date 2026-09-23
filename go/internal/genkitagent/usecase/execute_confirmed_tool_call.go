@@ -10,7 +10,7 @@ import (
 )
 
 // ExecuteConfirmedToolCall は承認済みの依頼を、承認された引数で実行する。モデルに呼び直させない。
-func (s *AgentService) ExecuteConfirmedToolCall(ctx context.Context, req *ExecuteConfirmedToolCallRequest) (*ExecuteConfirmedToolCallResponse, error) {
+func (s *agentService) ExecuteConfirmedToolCall(ctx context.Context, req *ExecuteConfirmedToolCallRequest) (*ExecuteConfirmedToolCallResponse, error) {
 	if req.ToolCallID == "" {
 		return nil, liberrors.Newf(liberrors.CodeInvalidArgument, "toolCallId is required")
 	}
@@ -30,7 +30,7 @@ func (s *AgentService) ExecuteConfirmedToolCall(ctx context.Context, req *Execut
 	return &ExecuteConfirmedToolCallResponse{Result: result}, nil
 }
 
-func (s *AgentService) execute(ctx context.Context, action *model.ApprovedAction) (map[string]any, error) {
+func (s *agentService) execute(ctx context.Context, action *model.ApprovedAction) (map[string]any, error) {
 	switch action.Tool {
 	case model.ToolUpdatePaymentMethod:
 		orderID, _ := action.Args["orderId"].(string)

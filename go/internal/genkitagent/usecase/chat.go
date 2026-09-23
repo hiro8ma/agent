@@ -11,7 +11,7 @@ import (
 	"github.com/hiro8ma/agent/go/internal/lib/liberrors"
 )
 
-func (s *AgentService) Chat(ctx context.Context, req *ChatRequest) iter.Seq2[*ChatResponse, error] {
+func (s *agentService) Chat(ctx context.Context, req *ChatRequest) iter.Seq2[*ChatResponse, error] {
 	return func(yield func(*ChatResponse, error) bool) {
 		if req.AgentID == "" || req.Message == "" {
 			yield(nil, liberrors.Newf(liberrors.CodeInvalidArgument, "agentId and message are required"))
@@ -75,7 +75,7 @@ func (s *AgentService) Chat(ctx context.Context, req *ChatRequest) iter.Seq2[*Ch
 	}
 }
 
-func (s *AgentService) resolveSession(ctx context.Context, req *ChatRequest) (string, error) {
+func (s *agentService) resolveSession(ctx context.Context, req *ChatRequest) (string, error) {
 	if req.SessionID != "" {
 		return req.SessionID, nil
 	}
@@ -86,7 +86,7 @@ func (s *AgentService) resolveSession(ctx context.Context, req *ChatRequest) (st
 	return creator.CreateSession(ctx, req.AgentID)
 }
 
-func (s *AgentService) logCompleted(ctx context.Context, agentID, sessionID string, latency time.Duration, final *model.ChatOutput, historySaved bool) {
+func (s *agentService) logCompleted(ctx context.Context, agentID, sessionID string, latency time.Duration, final *model.ChatOutput, historySaved bool) {
 	attrs := []any{
 		"agentId", agentID,
 		"sessionId", sessionID,

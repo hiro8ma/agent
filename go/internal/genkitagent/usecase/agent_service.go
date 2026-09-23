@@ -2,6 +2,8 @@
 package usecase
 
 import (
+	"context"
+	"iter"
 	"log/slog"
 
 	"github.com/hiro8ma/agent/go/internal/genkitagent/domain/externalservice"
@@ -10,7 +12,14 @@ import (
 	"github.com/hiro8ma/agent/go/internal/lib/libbudget"
 )
 
-type AgentService struct {
+// AgentService は AgentService の RPC と同じ名前と形のメソッドを持つ。
+type AgentService interface {
+	ListAgents(ctx context.Context, req *ListAgentsRequest) (*ListAgentsResponse, error)
+	Chat(ctx context.Context, req *ChatRequest) iter.Seq2[*ChatResponse, error]
+	ExecuteConfirmedToolCall(ctx context.Context, req *ExecuteConfirmedToolCallRequest) (*ExecuteConfirmedToolCallResponse, error)
+}
+
+type agentService struct {
 	agents   *service.Registry
 	sessions repository.Session
 	gate     externalservice.ActionGate
@@ -19,11 +28,11 @@ type AgentService struct {
 	budget   *libbudget.Tracker
 }
 
-type Option func(*AgentService)
+type Option func(*agentService)
 
 // WithBudget を付けなければトークン予算を確かめない。
 func WithBudget(b *libbudget.Tracker) Option {
-	return func(s *AgentService) { s.budget = b }
+	return func(s *agentService) { s.budget = b }
 }
 
 func NewAgentService(
@@ -33,8 +42,8 @@ func NewAgentService(
 	orders externalservice.OrderService,
 	logger *slog.Logger,
 	opts ...Option,
-) *AgentService {
-	s := &AgentService{agents: agents, sessions: sessions, gate: gate, orders: orders, logger: logger}
+) AgentService {
+	s := &agentService{agents: agents, sessions: sessions, gate: gate, orders: orders, logger: logger}
 	for _, o := range opts {
 		o(s)
 	}

@@ -3,9 +3,9 @@ package model
 import "errors"
 
 type ChatInput struct {
-	SessionID   string
-	UserMessage string
-	History     []Message
+	SessionID   string    `json:"sessionId"`
+	UserMessage string    `json:"userMessage"`
+	History     []Message `json:"history,omitempty"`
 }
 
 type Message struct {
