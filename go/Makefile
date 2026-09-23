@@ -1,4 +1,4 @@
-.PHONY: help setup build fmt vet lint lint-fix lint-tools vuln test test-live proto proto-check tidy clean demo-genai demo-genkit demo-adk demo-all adk-web adk-api compose-up compose-down up down load open
+.PHONY: help setup build fmt vet lint lint-fix lint-tools vuln test test-live proto proto-check tidy clean demo-genai demo-genkit demo-adk demo-all adk-web adk-api genkit-web compose-up compose-down up down load open
 
 BIN_DIR := $(abspath ./bin)
 GOLANGCI_LINT_VERSION := v2.13.2
@@ -9,6 +9,9 @@ IMPLEMENTATIONS := genai genkit adk
 ADK_AGENT ?= adk-travelplanner
 ADK_PORT ?= 8080
 ADK_KEY = GOOGLE_API_KEY=$${GOOGLE_API_KEY:-$$GEMINI_API_KEY}
+
+# Genkit の Developer UI は genkit CLI（npm の genkit-cli）が起動する。フローの HTTP の口は GENKIT_PORT で開く。
+GENKIT_PORT ?= 3400
 
 ifneq (,$(wildcard .env))
   include .env
@@ -59,6 +62,10 @@ adk-web: ## ADK の Web UI を起動（ADK_AGENT=adk-travelplanner ADK_PORT=8080
 adk-api: ## ADK の REST だけを起動（UI なし。curl で確認する用）
 	@echo "API: http://localhost:$(ADK_PORT)/api/list-apps"
 	$(ADK_KEY) go run ./cmd/$(ADK_AGENT) web -port $(ADK_PORT) api
+
+genkit-web: ## Genkit の Developer UI から旅行プランナーのフローを実行（genkit CLI が要る）
+	@echo "UI: http://localhost:4000   Flow: POST http://127.0.0.1:$(GENKIT_PORT)/travelPlanner"
+	PORT=$(GENKIT_PORT) genkit start -- go run ./cmd/genkit-travelplanner
 
 # 配布バイナリは古い Go でビルドされていることがあり、go.mod の go より古いと設定を読めない。手元の Go でビルドする。
 lint-tools: ## golangci-lint を手元の Go でビルドして bin/ に置く
