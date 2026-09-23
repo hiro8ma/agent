@@ -121,23 +121,30 @@ func DefineFlow(g *genkit.Genkit) *core.Flow[TripRequest, TripPlan, string] {
 			return TripPlan{}, err
 		}
 
-		schedule, err := genkit.GenerateText(ctx, g,
-			ai.WithSystem(scheduleSystem),
-			ai.WithPrompt(schedulePrompt, req.Request, research.Spots, research.Restaurants, research.Transport),
-			ai.WithMaxTurns(planMaxTurns),
-			ai.WithStreaming(func(ctx context.Context, c *ai.ModelResponseChunk) error {
-				return send(ctx, c.Text())
-			}),
-		)
+		streamed := false
+		schedule, err := withRetry(ctx, defaultRetry, func() bool { return streamed }, func() (string, error) {
+			return genkit.GenerateText(ctx, g,
+				ai.WithSystem(scheduleSystem),
+				ai.WithPrompt(schedulePrompt, req.Request, research.Spots, research.Restaurants, research.Transport),
+				ai.WithMaxTurns(planMaxTurns),
+				ai.WithStreaming(func(ctx context.Context, c *ai.ModelResponseChunk) error {
+					streamed = true
+					return send(ctx, c.Text())
+				}),
+			)
+		})
 		if err != nil {
 			return TripPlan{}, fmt.Errorf("schedule: %w", err)
 		}
 
-		budget, _, err := genkit.GenerateData[travel.Budget](ctx, g,
-			ai.WithSystem(budgetSystem),
-			ai.WithPrompt(budgetPrompt, schedule, research.Transport, research.Restaurants, research.Spots),
-			ai.WithMaxTurns(planMaxTurns),
-		)
+		budget, err := withRetry(ctx, defaultRetry, never, func() (*travel.Budget, error) {
+			b, _, err := genkit.GenerateData[travel.Budget](ctx, g,
+				ai.WithSystem(budgetSystem),
+				ai.WithPrompt(budgetPrompt, schedule, research.Transport, research.Restaurants, research.Spots),
+				ai.WithMaxTurns(planMaxTurns),
+			)
+			return b, err
+		})
 		if err != nil {
 			return TripPlan{}, fmt.Errorf("budget: %w", err)
 		}
@@ -167,12 +174,14 @@ func runResearch(ctx context.Context, g *genkit.Genkit, tools researchers, reque
 }
 
 func investigate(ctx context.Context, g *genkit.Genkit, system string, tool ai.ToolRef, request string) (string, error) {
-	text, err := genkit.GenerateText(ctx, g,
-		ai.WithSystem(system),
-		ai.WithPrompt(researchPrompt, request),
-		ai.WithTools(tool),
-		ai.WithMaxTurns(researchMaxTurns),
-	)
+	text, err := withRetry(ctx, defaultRetry, never, func() (string, error) {
+		return genkit.GenerateText(ctx, g,
+			ai.WithSystem(system),
+			ai.WithPrompt(researchPrompt, request),
+			ai.WithTools(tool),
+			ai.WithMaxTurns(researchMaxTurns),
+		)
+	})
 	if err != nil {
 		return "", fmt.Errorf("%s: %w", tool.Name(), err)
 	}
