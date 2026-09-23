@@ -13,8 +13,11 @@ import (
 	"google.golang.org/adk/v2/cmd/launcher"
 	"google.golang.org/adk/v2/cmd/launcher/full"
 	"google.golang.org/adk/v2/model/gemini"
+	"google.golang.org/adk/v2/plugin"
+	"google.golang.org/adk/v2/runner"
 	"google.golang.org/genai"
 
+	"github.com/hiro8ma/agent/go/internal/adk/callguard"
 	"github.com/hiro8ma/agent/go/internal/adk/llmretry"
 	"github.com/hiro8ma/agent/go/internal/adk/travelplanner"
 )
@@ -44,8 +47,17 @@ func main() {
 		log.Fatalf("failed to build agent: %v", err)
 	}
 
+	// 通常の 1 回は調査 3 つが各 2 回、日程と予算が各 1 回で、モデルを 8 回呼ぶ
+	guard, err := callguard.New(callguard.Limits{MaxLLMCalls: 20, MaxSameToolCalls: 3})
+	if err != nil {
+		log.Fatalf("failed to build callguard: %v", err)
+	}
+
 	l := full.NewLauncher()
-	cfg := &launcher.Config{AgentLoader: agent.NewSingleLoader(a)}
+	cfg := &launcher.Config{
+		AgentLoader:  agent.NewSingleLoader(a),
+		PluginConfig: runner.PluginConfig{Plugins: []*plugin.Plugin{guard}},
+	}
 	if err := l.Execute(ctx, cfg, os.Args[1:]); err != nil {
 		log.Fatalf("run failed: %v\n\n%s", err, l.CommandLineSyntax())
 	}

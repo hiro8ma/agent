@@ -31,6 +31,8 @@ const (
 	keyBudget     = "budget_result"
 )
 
+const scheduleAgentName = "schedule_planner"
+
 // New は旅行プランナーを組み立てる。
 //
 // 構成は 2 段になる。
@@ -116,7 +118,7 @@ func NewWithModel(m model.LLM) (agent.Agent, error) {
 	// 前段の結果は State の鍵で読む。履歴に頼ると IncludeContents を none にした時点で黙って消える。
 
 	scheduleAgent, err := llmagent.New(llmagent.Config{
-		Name:        "schedule_planner",
+		Name:        scheduleAgentName,
 		Model:       m,
 		Description: "旅行スケジュールの作成担当",
 		Instruction: "あなたは旅行スケジュールの作成担当です。" +

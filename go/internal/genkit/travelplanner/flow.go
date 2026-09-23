@@ -85,21 +85,11 @@ type Research struct {
 	Transport   string `json:"transport"`
 }
 
-// Budget は旅行全体の概算予算。ADK 版の出力スキーマと同じ形にする。
-type Budget struct {
-	Currency          string   `json:"currency" jsonschema:"enum=JPY"`
-	TransportationYen int      `json:"transportation_yen"`
-	FoodYen           int      `json:"food_yen"`
-	ActivitiesYen     int      `json:"activities_yen"`
-	TotalYen          int      `json:"total_yen"`
-	Assumptions       []string `json:"assumptions"`
-}
-
 // TripPlan はフローの出力。
 type TripPlan struct {
-	Research Research `json:"research"`
-	Schedule string   `json:"schedule"`
-	Budget   Budget   `json:"budget"`
+	Research Research      `json:"research"`
+	Schedule string        `json:"schedule"`
+	Budget   travel.Budget `json:"budget"`
 }
 
 type researchers struct {
@@ -107,7 +97,9 @@ type researchers struct {
 }
 
 // DefineFlow は検索ツールと旅行プランナーのフローを g に登録する。モデルは g の既定モデルを使う。
-func DefineFlow(g *genkit.Genkit) *core.Flow[TripRequest, TripPlan, struct{}] {
+//
+// ストリームには日程表の生成中の差分を流す。
+func DefineFlow(g *genkit.Genkit) *core.Flow[TripRequest, TripPlan, string] {
 	tools := researchers{
 		spots: genkit.DefineTool(g, "search_spots", "旅行先の観光スポットを検索する。好みのジャンルで絞り込める。",
 			func(_ *ai.ToolContext, in travel.SearchSpotsInput) (travel.SearchSpotsOutput, error) {
@@ -123,7 +115,7 @@ func DefineFlow(g *genkit.Genkit) *core.Flow[TripRequest, TripPlan, struct{}] {
 			}),
 	}
 
-	return genkit.DefineFlow(g, FlowName, func(ctx context.Context, req TripRequest) (TripPlan, error) {
+	return genkit.DefineStreamingFlow(g, FlowName, func(ctx context.Context, req TripRequest, send core.StreamCallback[string]) (TripPlan, error) {
 		research, err := runResearch(ctx, g, tools, req.Request)
 		if err != nil {
 			return TripPlan{}, err
@@ -133,12 +125,15 @@ func DefineFlow(g *genkit.Genkit) *core.Flow[TripRequest, TripPlan, struct{}] {
 			ai.WithSystem(scheduleSystem),
 			ai.WithPrompt(schedulePrompt, req.Request, research.Spots, research.Restaurants, research.Transport),
 			ai.WithMaxTurns(planMaxTurns),
+			ai.WithStreaming(func(ctx context.Context, c *ai.ModelResponseChunk) error {
+				return send(ctx, c.Text())
+			}),
 		)
 		if err != nil {
 			return TripPlan{}, fmt.Errorf("schedule: %w", err)
 		}
 
-		budget, _, err := genkit.GenerateData[Budget](ctx, g,
+		budget, _, err := genkit.GenerateData[travel.Budget](ctx, g,
 			ai.WithSystem(budgetSystem),
 			ai.WithPrompt(budgetPrompt, schedule, research.Transport, research.Restaurants, research.Spots),
 			ai.WithMaxTurns(planMaxTurns),

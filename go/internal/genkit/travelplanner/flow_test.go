@@ -12,6 +12,8 @@ import (
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/core"
 	"github.com/firebase/genkit/go/genkit"
+
+	"github.com/hiro8ma/agent/go/internal/travel"
 )
 
 const (
@@ -33,7 +35,8 @@ var (
 		roleTransport:   "MARK_TRANS",
 		roleSchedule:    "MARK_SCHEDULE",
 	}
-	toolInputs = map[string]map[string]any{
+	scheduleChunks = []string{"MARK_", "SCHEDULE"}
+	toolInputs     = map[string]map[string]any{
 		"search_spots":       {"destination": "京都", "preferences": "歴史"},
 		"search_restaurants": {"destination": "京都", "cuisine": "和食"},
 		"search_transport":   {"origin": "東京", "destination": "京都"},
@@ -62,7 +65,7 @@ func newFakeModel() *fakeModel {
 	}
 }
 
-func (f *fakeModel) generate(ctx context.Context, req *ai.ModelRequest, _ ai.ModelStreamCallback) (*ai.ModelResponse, error) {
+func (f *fakeModel) generate(ctx context.Context, req *ai.ModelRequest, cb ai.ModelStreamCallback) (*ai.ModelResponse, error) {
 	var system, prompt strings.Builder
 	for _, m := range req.Messages {
 		if m.Role == ai.RoleSystem {
@@ -88,6 +91,13 @@ func (f *fakeModel) generate(ctx context.Context, req *ai.ModelRequest, _ ai.Mod
 	case role == roleBudget:
 		return textResponse(budgetJSON), nil
 	case len(req.Tools) == 0:
+		if cb != nil {
+			for _, chunk := range scheduleChunks {
+				if err := cb(ctx, &ai.ModelResponseChunk{Content: []*ai.Part{ai.NewTextPart(chunk)}}); err != nil {
+					return nil, err
+				}
+			}
+		}
 		return textResponse(marks[role]), nil
 	case last.Role == ai.RoleTool:
 		if role == f.emptyRole {
@@ -134,7 +144,7 @@ func textResponse(text string) *ai.ModelResponse {
 	return &ai.ModelResponse{Message: ai.NewModelTextMessage(text), FinishReason: ai.FinishReasonStop}
 }
 
-func newFlow(t *testing.T, f *fakeModel) *core.Flow[TripRequest, TripPlan, struct{}] {
+func newFlow(t *testing.T, f *fakeModel) *core.Flow[TripRequest, TripPlan, string] {
 	t.Helper()
 	g := genkit.Init(t.Context(), genkit.WithDefaultModel("test/fake"))
 	genkit.DefineModel(g, "test/fake", &ai.ModelOptions{
@@ -199,7 +209,7 @@ func TestBudgetIsStructuredOutput(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 
-	want := Budget{
+	want := travel.Budget{
 		Currency: "JPY", TransportationYen: 28000, FoodYen: 9000, ActivitiesYen: 3000, TotalYen: 40000,
 		Assumptions: []string{"新幹線のぞみで往復"},
 	}
