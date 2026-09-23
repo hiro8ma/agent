@@ -15,15 +15,17 @@ import (
 	"github.com/firebase/genkit/go/plugins/mcp"
 
 	"github.com/hiro8ma/agent/go/internal/a2aserve"
-	"github.com/hiro8ma/agent/go/internal/action"
-	actionclient "github.com/hiro8ma/agent/go/internal/action/client"
 	"github.com/hiro8ma/agent/go/internal/adk/a2ainterop"
-	"github.com/hiro8ma/agent/go/internal/agentcore"
-	"github.com/hiro8ma/agent/go/internal/agentcore/a2aexec"
-	conversation "github.com/hiro8ma/agent/go/internal/conversation/client"
-	"github.com/hiro8ma/agent/go/internal/genkitagent/agent"
-	"github.com/hiro8ma/agent/go/internal/genkitagent/backend"
-	knowledgeclient "github.com/hiro8ma/agent/go/internal/knowledge/client"
+	"github.com/hiro8ma/agent/go/internal/genkitagent/adapter/handler/a2ahandler"
+	"github.com/hiro8ma/agent/go/internal/genkitagent/adapter/handler/connecthandler"
+	"github.com/hiro8ma/agent/go/internal/genkitagent/adapter/infrastructure/actiongate"
+	"github.com/hiro8ma/agent/go/internal/genkitagent/adapter/infrastructure/conversationclient"
+	"github.com/hiro8ma/agent/go/internal/genkitagent/adapter/infrastructure/inmemory"
+	"github.com/hiro8ma/agent/go/internal/genkitagent/adapter/infrastructure/knowledgeclient"
+	"github.com/hiro8ma/agent/go/internal/genkitagent/domain/externalservice"
+	"github.com/hiro8ma/agent/go/internal/genkitagent/domain/service"
+	"github.com/hiro8ma/agent/go/internal/genkitagent/usecase"
+	"github.com/hiro8ma/agent/go/internal/lib/libbudget"
 	"github.com/hiro8ma/agent/go/internal/lib/libconnect"
 	"github.com/hiro8ma/agent/go/internal/lib/liblog"
 	"github.com/hiro8ma/agent/go/internal/lib/libotel"
@@ -39,7 +41,7 @@ type config struct {
 	defaultModel    string
 	mcpServerURL    string // 空なら MCP 連携なし（Streamable HTTP の URL）
 	skillsDir       string // 空なら Agent Skills なし（SKILL.md を持つディレクトリの親）
-	budget          agentcore.BudgetLimits
+	budget          libbudget.Limits
 }
 
 func loadConfig() (*config, error) {
@@ -50,7 +52,7 @@ func loadConfig() (*config, error) {
 		geminiAPIKey:    envOr("GEMINI_API_KEY", os.Getenv("GOOGLE_API_KEY")),
 		mcpServerURL:    os.Getenv("MCP_SERVER_URL"),
 		skillsDir:       os.Getenv("SKILLS_DIR"),
-		budget:          agentcore.BudgetLimitsFromEnv(),
+		budget:          libbudget.LimitsFromEnv(),
 	}
 
 	// バックエンドは Vertex AI と Gemini Developer API の 2 択。
@@ -73,7 +75,7 @@ func (c *config) LogValue() slog.Value {
 		slog.String("port", c.port),
 		slog.String("vertexProjectID", c.vertexProjectID),
 		slog.String("vertexLocation", c.vertexLocation),
-		slog.String("geminiAPIKey", agentcore.MaskSecret(c.geminiAPIKey)),
+		slog.String("geminiAPIKey", liblog.MaskSecret(c.geminiAPIKey)),
 		slog.String("defaultModel", c.defaultModel),
 		slog.String("mcpServerURL", c.mcpServerURL),
 		slog.String("skillsDir", c.skillsDir),
@@ -82,7 +84,7 @@ func (c *config) LogValue() slog.Value {
 
 func (c *config) String() string {
 	return fmt.Sprintf("config{port:%s model:%s vertexProjectID:%s geminiAPIKey:%s}",
-		c.port, c.defaultModel, c.vertexProjectID, agentcore.MaskSecret(c.geminiAPIKey))
+		c.port, c.defaultModel, c.vertexProjectID, liblog.MaskSecret(c.geminiAPIKey))
 }
 
 func envOr(key, fallback string) string {
@@ -126,13 +128,13 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		genkit.WithDefaultModel(cfg.defaultModel),
 	)
 
-	sessions, where, err := conversation.FromEnv()
+	sessions, where, err := conversationclient.FromEnv()
 	if err != nil {
 		return fmt.Errorf("conversation store: %w", err)
 	}
 	logger.Info("conversation store", "where", where)
 
-	gate, gateWhere := actionclient.FromEnv()
+	gate, gateWhere := actiongate.FromEnv()
 	logger.Info("action gate", "where", gateWhere)
 
 	mcpTools, err := loadMCPTools(ctx, g, cfg.mcpServerURL)
@@ -143,8 +145,8 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		logger.Info("mcp tools loaded", "count", len(mcpTools), "server", cfg.mcpServerURL)
 	}
 
-	orders := backend.NewInMemoryOrders()
-	geo := backend.NewInMemoryGeo()
+	orders := inmemory.NewOrders()
+	geo := inmemory.NewGeo()
 	kn, knWhere := knowledgeclient.FromEnv()
 	logger.Info("knowledge searcher", "where", knWhere)
 
@@ -155,7 +157,7 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	}
 
 	// 部署別エージェント。system prompt とツールの組み合わせだけが違う
-	research := agent.New(g, agent.Definition{
+	research := service.NewGenkitAgent(g, service.Definition{
 		ID:          "research",
 		Description: "技術調査エージェント。社内ナレッジと外部ツールで調査に答える",
 		SystemPrompt: "あなたは技術調査を支援するアシスタントです。" +
@@ -165,41 +167,41 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		SkillPaths: skillPaths,
 		Use:        []ai.Middleware{toolscope.GenkitMiddleware(a2aserve.Policy)},
 	})
-	operations := agent.New(g, agent.Definition{
+	operations := service.NewGenkitAgent(g, service.Definition{
 		ID:          "operations",
 		Description: "申請処理エージェント。注文の照会と変更申請を扱う",
 		SystemPrompt: "あなたは申請処理を支援するアシスタントです。" +
 			"注文やエリアの質問にはツールで事実を取得して簡潔に日本語で回答してください。" +
 			"変更系の操作は承認が必要です。承認待ちになった場合はその旨をユーザーに伝えてください。" +
 			"取得できなかった情報を推測で補わないでください。",
-		Tools:      agent.DefineOperationsTools(g, orders, geo, gate),
+		Tools:      service.DefineOperationsTools(g, orders, geo, gate),
 		SkillPaths: skillPaths,
 		Use:        []ai.Middleware{toolscope.GenkitMiddleware(a2aserve.Policy)},
 	})
 
-	registry := agentcore.NewRegistry(research, operations)
-	executor := action.Executor{Gate: gate, Orders: orders}
+	registry := service.NewRegistry(research, operations)
 
-	core := agentcore.NewHandler(registry, sessions, executor, logger)
+	var opts []usecase.Option
 	if cfg.budget.Enabled() {
-		core = core.WithBudget(agentcore.NewBudgetTracker(cfg.budget))
+		opts = append(opts, usecase.WithBudget(libbudget.NewTracker(cfg.budget)))
 		logger.Info("token budget enabled", "sessionTokens", cfg.budget.SessionTokens, "totalTokens", cfg.budget.TotalTokens)
 	}
+	agents := usecase.NewAgentService(registry, sessions, gate, orders, logger, opts...)
 
 	if err := serveA2A(ctx, logger, registry); err != nil {
 		return err
 	}
 
 	mux := http.NewServeMux()
-	mux.Handle(agentcore.NewConnectHandler(core, libconnect.HeaderAuthenticator))
+	mux.Handle(connecthandler.Route(connecthandler.New(agents), libconnect.HeaderAuthenticator))
 
 	logger.Info("starting agent server", "port", cfg.port, "model", cfg.defaultModel, "agents", len(registry.List()))
 	return libserver.Serve(ctx, logger, ":"+cfg.port, mux, shutdown)
 }
 
 // defineToolRefs は research エージェント用のツール群。
-func defineToolRefs(g *genkit.Genkit, kn agent.KnowledgeSearcher) []ai.ToolRef {
-	return agent.DefineResearchTools(g, kn)
+func defineToolRefs(g *genkit.Genkit, kn externalservice.KnowledgeSearcher) []ai.ToolRef {
+	return service.DefineResearchTools(g, kn)
 }
 
 // loadMCPTools は MCP サーバー（社内システム相当）のツールを取り込む。
@@ -226,7 +228,7 @@ func loadMCPTools(ctx context.Context, g *genkit.Genkit, url string) ([]ai.ToolR
 }
 
 // serveA2A は A2A_ADDR があれば、選んだエージェントを 2 要素で守った A2A の口で公開する。
-func serveA2A(ctx context.Context, logger *slog.Logger, registry *agentcore.Registry) error {
+func serveA2A(ctx context.Context, logger *slog.Logger, registry *service.Registry) error {
 	cfg, enabled, err := a2aserve.ConfigFromEnv()
 	if !enabled || err != nil {
 		return err
@@ -240,7 +242,7 @@ func serveA2A(ctx context.Context, logger *slog.Logger, registry *agentcore.Regi
 		return err
 	}
 	info := a.Info()
-	h := a2ainterop.NewExecutorHandler(&a2aexec.Executor{Agent: a}, a2aserve.Card(cfg, info.ID, info.Description), cfg.BaseURL)
+	h := a2ainterop.NewExecutorHandler(&a2ahandler.Executor{Agent: a}, a2aserve.Card(cfg, info.ID, info.Description), cfg.BaseURL)
 	go func() {
 		if err := a2aserve.Serve(ctx, logger, cfg, a2aserve.Protect(h, v, cfg)); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			logger.ErrorContext(ctx, "a2a server exited", "error", err)

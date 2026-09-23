@@ -11,8 +11,8 @@ import (
 
 	"github.com/hiro8ma/agent/go/internal/action"
 	"github.com/hiro8ma/agent/go/internal/agentcore"
+	"github.com/hiro8ma/agent/go/internal/agentcore/backend"
 	"github.com/hiro8ma/agent/go/internal/approval"
-	"github.com/hiro8ma/agent/go/internal/genkitagent/backend"
 	"github.com/hiro8ma/agent/go/internal/lib/identity"
 )
 

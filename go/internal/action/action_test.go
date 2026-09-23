@@ -17,8 +17,8 @@ import (
 	"github.com/hiro8ma/agent/go/internal/action/adapter"
 	"github.com/hiro8ma/agent/go/internal/action/client"
 	"github.com/hiro8ma/agent/go/internal/agentcore"
+	"github.com/hiro8ma/agent/go/internal/agentcore/backend"
 	"github.com/hiro8ma/agent/go/internal/approval"
-	"github.com/hiro8ma/agent/go/internal/genkitagent/backend"
 	"github.com/hiro8ma/agent/go/internal/lib/identity"
 	"github.com/hiro8ma/agent/go/internal/lib/libconnect"
 )

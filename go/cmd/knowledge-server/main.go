@@ -11,7 +11,7 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/hiro8ma/agent/go/internal/genkitagent/knowledge"
+	"github.com/hiro8ma/agent/go/internal/agentcore/backend"
 	"github.com/hiro8ma/agent/go/internal/knowledge/adapter"
 	"github.com/hiro8ma/agent/go/internal/lib/libconnect"
 	"github.com/hiro8ma/agent/go/internal/lib/liblog"
@@ -41,6 +41,6 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		port = "19930"
 	}
 	mux := http.NewServeMux()
-	mux.Handle(adapter.NewHandler(knowledge.NewInMemory(), libconnect.HeaderAuthenticator))
+	mux.Handle(adapter.NewHandler(backend.NewInMemoryKnowledge(), libconnect.HeaderAuthenticator))
 	return libserver.Serve(ctx, logger, ":"+port, mux, shutdown)
 }

@@ -7,14 +7,13 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/hiro8ma/agent/go/internal/agentcore"
 	"github.com/hiro8ma/agent/go/internal/search"
 )
 
-func docs(contents ...string) []agentcore.KnowledgeDoc {
-	ds := make([]agentcore.KnowledgeDoc, len(contents))
+func docs(contents ...string) []search.Doc {
+	ds := make([]search.Doc, len(contents))
 	for i, c := range contents {
-		ds[i] = agentcore.KnowledgeDoc{Title: fmt.Sprintf("d%d", i), Content: c}
+		ds[i] = search.Doc{Title: fmt.Sprintf("d%d", i), Content: c}
 	}
 	return ds
 }
@@ -86,7 +85,7 @@ func TestRankScoresOnlyCandidates(t *testing.T) {
 func TestRankBM25(t *testing.T) {
 	t.Parallel()
 	testCases := map[string]struct {
-		docs    []agentcore.KnowledgeDoc
+		docs    []search.Doc
 		query   string
 		wantTop string
 	}{
@@ -124,7 +123,7 @@ func TestRankBM25(t *testing.T) {
 
 func TestSearchJapanese(t *testing.T) {
 	t.Parallel()
-	ix := search.New([]agentcore.KnowledgeDoc{
+	ix := search.New([]search.Doc{
 		{Title: "経費精算の締め日", Content: "経費精算の申請締め日は毎月25日。締め日を過ぎた申請は翌月精算になる。"},
 		{Title: "リモートワーク規程", Content: "リモートワークは週3日まで。コアタイム 11:00-15:00 は接続必須。"},
 		{Title: "注文キャンセルポリシー", Content: "出荷前の注文はキャンセル可能。出荷後は返品扱いとなり、返送料は顧客負担。"},

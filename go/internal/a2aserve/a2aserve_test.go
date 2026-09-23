@@ -32,10 +32,10 @@ import (
 
 	"github.com/hiro8ma/agent/go/internal/a2aserve"
 	"github.com/hiro8ma/agent/go/internal/adk/a2ainterop"
-	"github.com/hiro8ma/agent/go/internal/agentcore"
-	"github.com/hiro8ma/agent/go/internal/agentcore/a2aexec"
 	"github.com/hiro8ma/agent/go/internal/devidp"
-	genkitagent "github.com/hiro8ma/agent/go/internal/genkitagent/agent"
+	"github.com/hiro8ma/agent/go/internal/genkitagent/adapter/handler/a2ahandler"
+	genkitmodel "github.com/hiro8ma/agent/go/internal/genkitagent/domain/model"
+	genkitservice "github.com/hiro8ma/agent/go/internal/genkitagent/domain/service"
 	"github.com/hiro8ma/agent/go/internal/lib/libauth"
 	"github.com/hiro8ma/agent/go/internal/toolscope"
 )
@@ -217,7 +217,7 @@ func (w *world) serveADK(t *testing.T, s *seen) string {
 	})
 }
 
-func genkitAgent(t *testing.T, s *seen) *genkitagent.Agent {
+func genkitAgent(t *testing.T, s *seen) *genkitservice.GenkitAgent {
 	t.Helper()
 	g := genkit.Init(t.Context(), genkit.WithDefaultModel("test/scripted"))
 	genkit.DefineModel(g, "test/scripted", &ai.ModelOptions{Supports: &ai.ModelSupports{Multiturn: true, SystemRole: true, Tools: true}},
@@ -240,7 +240,7 @@ func genkitAgent(t *testing.T, s *seen) *genkitagent.Agent {
 			s.record(tc.Context)
 			return map[string]any{"orderId": "A-1", "status": "shipped"}, nil
 		})
-	return genkitagent.New(g, genkitagent.Definition{
+	return genkitservice.NewGenkitAgent(g, genkitservice.Definition{
 		ID: "operations", SystemPrompt: "x", Tools: []ai.ToolRef{getOrder},
 		Use: []ai.Middleware{toolscope.GenkitMiddleware(a2aserve.Policy)},
 	})
@@ -250,7 +250,7 @@ func (w *world) serveGenkit(t *testing.T, s *seen) string {
 	t.Helper()
 	a := genkitAgent(t, s)
 	return w.serve(t, func(base string) http.Handler {
-		return a2ainterop.NewExecutorHandler(&a2aexec.Executor{Agent: a}, a2aserve.Card(w.cfg, "operations", "注文の照会"), base)
+		return a2ainterop.NewExecutorHandler(&a2ahandler.Executor{Agent: a}, a2aserve.Card(w.cfg, "operations", "注文の照会"), base)
 	})
 }
 
@@ -402,8 +402,8 @@ func TestGenkitMiddlewarePassesOutsideA2A(t *testing.T) {
 	t.Parallel()
 	s := &seen{}
 	a := genkitAgent(t, s)
-	var final *agentcore.ChatOutput
-	for _, out := range a.Chat(t.Context(), &agentcore.ChatInput{SessionID: "s", UserMessage: "注文 A-1"}) {
+	var final *genkitmodel.ChatOutput
+	for _, out := range a.Chat(t.Context(), &genkitmodel.ChatInput{SessionID: "s", UserMessage: "注文 A-1"}) {
 		if out != nil {
 			final = out
 		}

@@ -11,7 +11,7 @@ genkit / ADK / genai の 3 スタックで同じものを作り比べる計画�
 | 構成要素 | この実装 | 実運用での差し替え先 |
 |---|---|---|
 | 役割別エージェント | `Definition`（system prompt + ツールの組合せ）× Registry。research / operations の 2 体 | Definition を増やすだけ |
-| データストア | `search_knowledge` ツール + `internal/genkitagent/knowledge`（インメモリのキーワード検索） | Vertex AI Search / RAG Engine / pgvector |
+| データストア | `search_knowledge` ツール + `adapter/infrastructure/inmemory`（インメモリのキーワード検索）。`knowledgepgvector` / `knowledgebm25` / `knowledgeclient` に差し替えられる | Vertex AI Search / RAG Engine / pgvector |
 | MCP（外部システム接続） | `MCP_SERVER_URL` を設定すると Streamable HTTP で接続しツールを自動登録（genkit plugins/mcp） | 任意の MCP サーバー（../../mcp/ のサーバー群など） |
 | 承認付き実行 | 書き込み系ツールは承認待ち登録のみ → `ExecuteConfirmedToolCall` で人間承認後に実行。取り出しは一度きりで二重実行防止 | Propose→Verify→Authorize→Execute の Authorize 部分 |
 | ログ / メトリクス | `chat_completed` 構造化ログ（レイテンシ・トークン・ツール数） | Cloud Logging → BigQuery sink |
@@ -25,21 +25,36 @@ proto/agent/v1/           # AgentService（ListAgents / Chat(stream) / ExecuteCo
 gen/                      # buf generate の生成物
 cmd/genkit-agent/         # サーバー本体（env config、手書き DI、h2c）
 cmd/genkit-chat/          # 動作確認 CLI（-list / chat / -exec）
-internal/agentcore/       # フレームワーク非依存の核。入出力型 / Agent インターフェース / Connect ハンドラ
 internal/genkitagent/
-├── agent/                # genkit 実装。Definition / flow / ツール / 承認 Executor（agentcore.Agent を満たす）
-├── backend/              # ツール接続先のインメモリ実装（実運用は gRPC クライアント）
-├── knowledge/            # データストアのインメモリ実装
-└── session/              # 履歴（メッセージ分割）+ 承認待ちストア（InMemory / Firestore）
+├── domain/
+│   ├── model/            # ChatInput / ChatOutput / ToolCall / TokenUsage / Order / KnowledgeDoc / 承認の判定
+│   ├── service/          # Agent インターフェース / Registry / Genkit の実装（Definition / flow / ツール）
+│   ├── repository/       # 会話の履歴の保存先（Session / SessionCreator）
+│   └── externalservice/  # 注文 / エリア / ナレッジ検索 / 承認の窓口
+├── usecase/              # RPC と同名の Chat / ListAgents / ExecuteConfirmedToolCall
+└── adapter/
+    ├── handler/
+    │   ├── connecthandler/  # ConnectRPC のハンドラと proto との変換
+    │   └── a2ahandler/      # A2A の実行器
+    └── infrastructure/
+        ├── inmemory/            # 注文 / エリア / ナレッジ / 履歴のインメモリ実装
+        ├── sessionfirestore/    # 履歴の Firestore 実装（メッセージ分割）
+        ├── conversationclient/  # ConversationService（別プロセス / プロセス内の SQLite）
+        ├── knowledgeclient/     # KnowledgeService（別プロセス / プロセス内）
+        ├── knowledgepgvector/   # pgvector の検索
+        ├── knowledgebm25/       # 転置インデックスと BM25 の検索（internal/search）
+        └── actiongate/          # 承認の窓口（internal/action の Gate）
 ```
 
-ADK 版（`docs/adk-agent.md`、`internal/adkagent/`）も同じ agentcore を実装し、transport と型を共有する。
+Genkit 版は `internal/agentcore` を使わず、ドメインの型からハンドラまでを自分の中に持つ。
+ADK 版（`docs/adk-agent.md`、`internal/adkagent/`）とは、ドメインの型 / ハンドラ / proto との変換を共有しない。
+共有するのは proto（AgentService）と `internal/lib/`、承認や会話の履歴など別のサービスの口だけ。
 
 - 履歴は Firestore サブコレクション（`agent_sessions/{id}/messages`）で 1 メッセージ 1 ドキュメント。1MB 上限を回避
 - 429 リトライはチャンク未送出時のみ（送出後の再試行は先頭から重複するため）
 - ツールのエラーは `{"error": ...}` で返してモデルに続きを判断させる
 - トークン予算は `BUDGET_SESSION_TOKENS`（セッション合計）と `BUDGET_TOTAL_TOKENS`（プロセス全体）で設定する。上限に達したあとの `Chat` は `resource_exhausted` で拒否し、消費量は `chat_completed` ログの `budget_session_used` / `budget_total_used` に出る
-- トークン予算と Connect ハンドラの挙動は、モデルを呼ばないスタブエージェントで検証している（`internal/agentcore/handler_budget_test.go`）。API キーもネットワークも不要で `go test ./internal/agentcore/...` だけで回る
+- トークン予算と Connect ハンドラの挙動は、モデルを呼ばないスタブエージェントで検証している（`internal/genkitagent/adapter/handler/connecthandler/handler_test.go`）。API キーもネットワークも不要で `go test ./internal/genkitagent/...` だけで回る
 - 1 回の応答で使うトークン数は事前にわからないため、予算は超過を検知した次の呼び出しから止める。消費量はインメモリで、再起動するとリセットされる
 
 ## 動かし方

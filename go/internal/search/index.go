@@ -6,14 +6,18 @@ import (
 	"context"
 	"math"
 	"slices"
-
-	"github.com/hiro8ma/agent/go/internal/agentcore"
 )
 
 const (
 	DefaultK1 = 1.2
 	DefaultB  = 0.75
 )
+
+// Doc は検索の対象の 1 文書。タイトルと本文をまとめて語に分ける。
+type Doc struct {
+	Title   string
+	Content string
+}
 
 type posting struct {
 	doc int
@@ -22,13 +26,11 @@ type posting struct {
 
 type Index struct {
 	k1, b    float64
-	docs     []agentcore.KnowledgeDoc
+	docs     []Doc
 	lengths  []int
 	avgLen   float64
 	postings map[string][]posting
 }
-
-var _ agentcore.KnowledgeSearcher = (*Index)(nil)
 
 type Option func(*Index)
 
@@ -37,7 +39,7 @@ func WithK1(k1 float64) Option { return func(ix *Index) { ix.k1 = k1 } }
 func WithB(b float64) Option { return func(ix *Index) { ix.b = b } }
 
 // New は文書を 1 回だけ走査して転置インデックスを作る。postings は文書 ID の昇順に並ぶ。
-func New(docs []agentcore.KnowledgeDoc, opts ...Option) *Index {
+func New(docs []Doc, opts ...Option) *Index {
 	ix := &Index{
 		k1:       DefaultK1,
 		b:        DefaultB,
@@ -68,7 +70,7 @@ func New(docs []agentcore.KnowledgeDoc, opts ...Option) *Index {
 }
 
 type Hit struct {
-	Doc   agentcore.KnowledgeDoc
+	Doc   Doc
 	Score float64
 }
 
@@ -77,12 +79,12 @@ type Result struct {
 	Scored int
 }
 
-func (ix *Index) Search(ctx context.Context, query string, limit int) ([]agentcore.KnowledgeDoc, error) {
+func (ix *Index) Search(ctx context.Context, query string, limit int) ([]Doc, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	res := ix.Rank(query, limit)
-	docs := make([]agentcore.KnowledgeDoc, len(res.Hits))
+	docs := make([]Doc, len(res.Hits))
 	for i, h := range res.Hits {
 		docs[i] = h.Doc
 	}

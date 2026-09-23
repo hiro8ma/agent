@@ -13,8 +13,6 @@ import (
 	"testing"
 
 	"connectrpc.com/connect"
-	"github.com/firebase/genkit/go/ai"
-	"github.com/firebase/genkit/go/genkit"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -28,12 +26,11 @@ import (
 	"github.com/hiro8ma/agent/go/internal/action"
 	"github.com/hiro8ma/agent/go/internal/adkagent"
 	"github.com/hiro8ma/agent/go/internal/agentcore"
+	"github.com/hiro8ma/agent/go/internal/agentcore/backend"
 	convadapter "github.com/hiro8ma/agent/go/internal/conversation/adapter"
 	convclient "github.com/hiro8ma/agent/go/internal/conversation/client"
 	"github.com/hiro8ma/agent/go/internal/conversation/repository"
 	"github.com/hiro8ma/agent/go/internal/conversation/usecase"
-	genkitagent "github.com/hiro8ma/agent/go/internal/genkitagent/agent"
-	"github.com/hiro8ma/agent/go/internal/genkitagent/knowledge"
 	knadapter "github.com/hiro8ma/agent/go/internal/knowledge/adapter"
 	knclient "github.com/hiro8ma/agent/go/internal/knowledge/client"
 	"github.com/hiro8ma/agent/go/internal/lib/identity"
@@ -53,7 +50,7 @@ var (
 	raw           *tracetest.InMemoryExporter
 )
 
-// recorders は global の provider を 1 回だけ差し替える。ADK と Genkit は global の provider を使う。
+// recorders は global の provider を 1 回だけ差し替える。ADK は global の provider を使う。
 func recorders() (*tracetest.InMemoryExporter, *tracetest.InMemoryExporter) {
 	recordersOnce.Do(func() {
 		redacted = tracetest.NewInMemoryExporter()
@@ -94,10 +91,10 @@ func serve(t *testing.T) func(string, http.Handler) *httptest.Server {
 	}
 }
 
-// system は エージェント → conversation / エージェント → ADK → knowledge の 3 サービスを立てる。Genkit のエージェントも同じ口に載せる。
+// system は エージェント → conversation / エージェント → ADK → knowledge の 3 サービスを立てる。
 func system(t *testing.T) agentv1connect.AgentServiceClient {
 	t.Helper()
-	kn := serve(t)(knadapter.NewHandler(knowledge.NewInMemory(), libconnect.HeaderAuthenticator))
+	kn := serve(t)(knadapter.NewHandler(backend.NewInMemoryKnowledge(), libconnect.HeaderAuthenticator))
 
 	repo, err := repository.NewSQLite("file:" + filepath.Join(t.TempDir(), "conversation.db"))
 	if err != nil {
@@ -113,13 +110,7 @@ func system(t *testing.T) agentv1connect.AgentServiceClient {
 	if err != nil {
 		t.Fatal(err)
 	}
-	g := genkit.Init(t.Context(), genkit.WithDefaultModel("test/echo"))
-	genkit.DefineModel(g, "test/echo", &ai.ModelOptions{Supports: &ai.ModelSupports{Multiturn: true, SystemRole: true}},
-		func(_ context.Context, req *ai.ModelRequest, _ ai.ModelStreamCallback) (*ai.ModelResponse, error) {
-			return &ai.ModelResponse{Message: ai.NewModelTextMessage("echo: " + req.Messages[len(req.Messages)-1].Text()), FinishReason: ai.FinishReasonStop}, nil
-		})
-	echo := genkitagent.New(g, genkitagent.Definition{ID: "echo", SystemPrompt: "x"})
-	core := agentcore.NewHandler(agentcore.NewRegistry(research, echo), convclient.NewSessionStore(conv.Client(), conv.URL), action.Executor{}, slog.New(slog.DiscardHandler))
+	core := agentcore.NewHandler(agentcore.NewRegistry(research), convclient.NewSessionStore(conv.Client(), conv.URL), action.Executor{}, slog.New(slog.DiscardHandler))
 	edge := serve(t)(agentcore.NewConnectHandler(core, libconnect.HeaderAuthenticator))
 	return agentv1connect.NewAgentServiceClient(edge.Client(), edge.URL, connect.WithInterceptors(libconnect.ForwardIdentity()))
 }
@@ -271,53 +262,4 @@ func TestTraceSpansServicesAndHidesContent(t *testing.T) {
 			t.Error("対照の exporter にもツールの引数が無い。落とす処理を確かめられていない")
 		}
 	})
-}
-
-func TestGenkitSpansJoinTheTraceWithoutContent(t *testing.T) {
-	redactedExp, rawExp := recorders()
-	chatTraced(t, system(t), "echo")
-
-	var chatSpan tracetest.SpanStub
-	for _, s := range byName(redactedExp.GetSpans(), "agent.v1.AgentService/Chat") {
-		if s.SpanKind == trace.SpanKindServer {
-			chatSpan = s
-		}
-	}
-	id := chatSpan.SpanContext.TraceID()
-	isGenkit := func(s tracetest.SpanStub) bool {
-		for _, kv := range s.Attributes {
-			if strings.HasPrefix(string(kv.Key), "genkit:") {
-				return true
-			}
-		}
-		return false
-	}
-
-	var genkitSpans int
-	for _, s := range inTrace(redactedExp.GetSpans(), id) {
-		if !isGenkit(s) {
-			continue
-		}
-		genkitSpans++
-		for _, kv := range s.Attributes {
-			if kv.Key == "genkit:input" || kv.Key == "genkit:output" {
-				t.Errorf("%s に %s が残った", s.Name, kv.Key)
-			}
-		}
-	}
-	if genkitSpans == 0 {
-		t.Fatal("Genkit の span がエッジのサーバーの trace に無い")
-	}
-
-	var rawInput bool
-	for _, s := range inTrace(rawExp.GetSpans(), id) {
-		for _, kv := range s.Attributes {
-			if kv.Key == "genkit:input" && strings.Contains(kv.Value.String(), secretQuestion) {
-				rawInput = true
-			}
-		}
-	}
-	if !rawInput {
-		t.Error("対照の exporter に Genkit の入力が無い。落とす処理を確かめられていない")
-	}
 }
