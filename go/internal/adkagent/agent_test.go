@@ -49,14 +49,14 @@ func TestWriteToolReturnsPendingAsTheCaller(t *testing.T) {
 	}
 
 	ctx := identity.With(t.Context(), "alice")
-	var out *agentcore.AskOutput
-	for _, o := range a.Ask(ctx, &agentcore.AskInput{SessionID: "s1", UserMessage: "支払い方法をカードに"}) {
+	var out *agentcore.ChatOutput
+	for _, o := range a.Chat(ctx, &agentcore.ChatInput{SessionID: "s1", UserMessage: "支払い方法をカードに"}) {
 		if o != nil {
 			out = o
 		}
 	}
 	if out == nil || out.ErrorMessage != "" || len(out.PendingToolCalls) != 1 {
-		t.Fatalf("AskOutput = %+v", out)
+		t.Fatalf("ChatOutput = %+v", out)
 	}
 	p := out.PendingToolCalls[0]
 	r, err := gate.Service.Get(p.ID)

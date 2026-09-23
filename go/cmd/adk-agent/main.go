@@ -1,5 +1,5 @@
 // adk-agent は AgentService（proto/agent/v1）の ADK 版サーバー。
-// genkit 版（cmd/genkit-agent、PORT 19910）と同じ proto を実装し、cmd/genkit-ask で動作確認できる。
+// genkit 版（cmd/genkit-agent、PORT 19910）と同じ proto を実装し、cmd/genkit-chat で動作確認できる。
 package main
 
 import (

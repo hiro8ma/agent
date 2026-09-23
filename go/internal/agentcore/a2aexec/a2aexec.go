@@ -24,7 +24,7 @@ type Executor struct {
 
 var _ a2asrv.AgentExecutor = (*Executor)(nil)
 
-// Execute は最後の利用者の発話を Ask に渡し、差分を成果物として、最後に完了か失敗の状態を返す。
+// Execute は最後の利用者の発話を Chat に渡し、差分を成果物として、最後に完了か失敗の状態を返す。
 func (e *Executor) Execute(ctx context.Context, execCtx *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
 		ctx = toolscope.Enforce(ctx)
@@ -39,9 +39,9 @@ func (e *Executor) Execute(ctx context.Context, execCtx *a2asrv.ExecutorContext)
 		if !yield(a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateWorking, nil), nil) {
 			return
 		}
-		input := &agentcore.AskInput{SessionID: execCtx.ContextID, UserMessage: text(execCtx.Message)}
+		input := &agentcore.ChatInput{SessionID: execCtx.ContextID, UserMessage: text(execCtx.Message)}
 		var artifact a2a.ArtifactID
-		for chunk, out := range e.Agent.Ask(ctx, input) {
+		for chunk, out := range e.Agent.Chat(ctx, input) {
 			if chunk != nil && chunk.AnswerDelta != "" {
 				part := a2a.NewTextPart(chunk.AnswerDelta)
 				var ev *a2a.TaskArtifactUpdateEvent

@@ -45,40 +45,40 @@ func localSessions(t *testing.T) *client.Local {
 	return client.NewLocal(usecase.New(repo))
 }
 
-type askResult struct {
+type chatResult struct {
 	deltas []string
-	result *agentv1.AskResult
+	result *agentv1.ChatResult
 }
 
-func askAs(ctx context.Context, c agentv1connect.AgentServiceClient, user, sessionID string) (askResult, error) {
-	req := connect.NewRequest(&agentv1.AskRequest{AgentId: "stub", SessionId: sessionID, Message: "hello"})
+func chatAs(ctx context.Context, c agentv1connect.AgentServiceClient, user, sessionID string) (chatResult, error) {
+	req := connect.NewRequest(&agentv1.ChatRequest{AgentId: "stub", SessionId: sessionID, Message: "hello"})
 	if user != "" {
 		req.Header().Set(libconnect.UserHeader, user)
 	}
-	stream, err := c.Ask(ctx, req)
+	stream, err := c.Chat(ctx, req)
 	if err != nil {
-		return askResult{}, err
+		return chatResult{}, err
 	}
 	defer func() { _ = stream.Close() }()
-	var out askResult
+	var out chatResult
 	for stream.Receive() {
 		switch ev := stream.Msg().GetEvent().(type) {
-		case *agentv1.AskResponse_AnswerDelta:
+		case *agentv1.ChatResponse_AnswerDelta:
 			out.deltas = append(out.deltas, ev.AnswerDelta)
-		case *agentv1.AskResponse_Result:
+		case *agentv1.ChatResponse_Result:
 			out.result = ev.Result
 		}
 	}
 	return out, stream.Err()
 }
 
-func TestAskCreatesSessionWhenIDIsEmpty(t *testing.T) {
+func TestChatCreatesSessionWhenIDIsEmpty(t *testing.T) {
 	t.Parallel()
 	c := newAgentServer(t, localSessions(t))
 
-	got, err := askAs(t.Context(), c, "alice", "")
+	got, err := chatAs(t.Context(), c, "alice", "")
 	if err != nil {
-		t.Fatalf("Ask() error = %v", err)
+		t.Fatalf("Chat() error = %v", err)
 	}
 	if got.result.GetSessionId() == "" {
 		t.Fatal("新しいセッションの ID が返らない")
@@ -91,35 +91,35 @@ func TestAskCreatesSessionWhenIDIsEmpty(t *testing.T) {
 	}
 
 	// 返った ID で続けられる。
-	if _, err := askAs(t.Context(), c, "alice", got.result.GetSessionId()); err != nil {
-		t.Fatalf("2 回目の Ask() error = %v", err)
+	if _, err := chatAs(t.Context(), c, "alice", got.result.GetSessionId()); err != nil {
+		t.Fatalf("2 回目の Chat() error = %v", err)
 	}
 }
 
-func TestAskRefusesOtherUsersSession(t *testing.T) {
+func TestChatRefusesOtherUsersSession(t *testing.T) {
 	t.Parallel()
 	c := newAgentServer(t, localSessions(t))
 
-	first, err := askAs(t.Context(), c, "alice", "")
+	first, err := chatAs(t.Context(), c, "alice", "")
 	if err != nil {
-		t.Fatalf("Ask() error = %v", err)
+		t.Fatalf("Chat() error = %v", err)
 	}
 
 	// 他人のセッションは読めない（空の履歴になる）し、書けない。
-	got, err := askAs(t.Context(), c, "bob", first.result.GetSessionId())
+	got, err := chatAs(t.Context(), c, "bob", first.result.GetSessionId())
 	if err != nil {
-		t.Fatalf("Ask() error = %v", err)
+		t.Fatalf("Chat() error = %v", err)
 	}
 	if got.result.GetHistorySaved() {
 		t.Error("他人のセッションに書き込めた")
 	}
 }
 
-func TestAskRequiresCaller(t *testing.T) {
+func TestChatRequiresCaller(t *testing.T) {
 	t.Parallel()
 	c := newAgentServer(t, localSessions(t))
 
-	_, err := askAs(t.Context(), c, "", "")
+	_, err := chatAs(t.Context(), c, "", "")
 	if connect.CodeOf(err) != connect.CodeUnauthenticated {
 		t.Errorf("code = %v, want Unauthenticated", connect.CodeOf(err))
 	}
@@ -128,13 +128,13 @@ func TestAskRequiresCaller(t *testing.T) {
 	}
 }
 
-func TestAskReportsHistoryNotSaved(t *testing.T) {
+func TestChatReportsHistoryNotSaved(t *testing.T) {
 	t.Parallel()
 	c := newAgentServer(t, failingAppend{localSessions(t)})
 
-	got, err := askAs(t.Context(), c, "alice", "s1")
+	got, err := chatAs(t.Context(), c, "alice", "s1")
 	if err != nil {
-		t.Fatalf("Ask() error = %v", err)
+		t.Fatalf("Chat() error = %v", err)
 	}
 	if got.result.GetHistorySaved() {
 		t.Error("保存に失敗したのに history_saved が true")

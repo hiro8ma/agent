@@ -5,8 +5,8 @@ package agentcore
 
 import "errors"
 
-// AskInput は 1 回の問い合わせ。History はセッションストアから復元した過去メッセージ。
-type AskInput struct {
+// ChatInput は 1 回の問い合わせ。History はセッションストアから復元した過去メッセージ。
+type ChatInput struct {
 	SessionID   string
 	UserMessage string
 	History     []Message
@@ -18,13 +18,13 @@ type Message struct {
 	Text string `firestore:"text" json:"text"`
 }
 
-// AskChunk はストリーミング中の増分。
-type AskChunk struct {
+// ChatChunk はストリーミング中の増分。
+type ChatChunk struct {
 	AnswerDelta string `json:"answerDelta"`
 }
 
-// AskOutput は最終応答。
-type AskOutput struct {
+// ChatOutput は最終応答。
+type ChatOutput struct {
 	SessionID        string            `json:"sessionId"`
 	Answer           string            `json:"answer"`
 	FinishReason     string            `json:"finishReason"`

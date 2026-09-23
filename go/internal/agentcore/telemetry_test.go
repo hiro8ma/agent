@@ -124,15 +124,15 @@ func system(t *testing.T) agentv1connect.AgentServiceClient {
 	return agentv1connect.NewAgentServiceClient(edge.Client(), edge.URL, connect.WithInterceptors(libconnect.ForwardIdentity()))
 }
 
-// askTraced は traceparent を付けて Ask を呼び、呼び出し元の trace ID を返す。
-func askTraced(t *testing.T, client agentv1connect.AgentServiceClient, agentID string) trace.TraceID {
+// chatTraced は traceparent を付けて Chat を呼び、呼び出し元の trace ID を返す。
+func chatTraced(t *testing.T, client agentv1connect.AgentServiceClient, agentID string) trace.TraceID {
 	t.Helper()
 	callerCtx := trace.ContextWithSpanContext(identity.With(t.Context(), secretUser), trace.NewSpanContext(trace.SpanContextConfig{
 		TraceID: trace.TraceID{0x0c, 0xa1, 0x1e, 0xe0}, SpanID: trace.SpanID{0x01}, TraceFlags: trace.FlagsSampled, Remote: true,
 	}))
-	req := connect.NewRequest(&agentv1.AskRequest{AgentId: agentID, Message: secretQuestion})
+	req := connect.NewRequest(&agentv1.ChatRequest{AgentId: agentID, Message: secretQuestion})
 	otel.GetTextMapPropagator().Inject(callerCtx, propagation.HeaderCarrier(req.Header()))
-	stream, err := client.Ask(callerCtx, req)
+	stream, err := client.Chat(callerCtx, req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -166,27 +166,27 @@ func inTrace(spans tracetest.SpanStubs, id trace.TraceID) tracetest.SpanStubs {
 
 func TestTraceSpansServicesAndHidesContent(t *testing.T) {
 	redactedExp, rawExp := recorders()
-	callerTrace := askTraced(t, system(t), "research")
+	callerTrace := chatTraced(t, system(t), "research")
 
 	all := redactedExp.GetSpans()
-	edge := byName(all, "agent.v1.AgentService/Ask")
-	var askSpan tracetest.SpanStub
+	edge := byName(all, "agent.v1.AgentService/Chat")
+	var chatSpan tracetest.SpanStub
 	for _, s := range edge {
 		if s.SpanKind == trace.SpanKindServer {
-			askSpan = s
+			chatSpan = s
 		}
 	}
-	if !askSpan.SpanContext.IsValid() {
+	if !chatSpan.SpanContext.IsValid() {
 		t.Fatal("エージェントのサーバーの span が無い")
 	}
-	spans := inTrace(all, askSpan.SpanContext.TraceID())
+	spans := inTrace(all, chatSpan.SpanContext.TraceID())
 
 	t.Run("外からの trace は信用せず新しい trace を始め、リンクだけ残す", func(t *testing.T) {
-		if askSpan.SpanContext.TraceID() == callerTrace {
+		if chatSpan.SpanContext.TraceID() == callerTrace {
 			t.Errorf("エッジのサーバーが呼び出し元の trace にそのまま入った")
 		}
-		if len(askSpan.Links) != 1 || askSpan.Links[0].SpanContext.TraceID() != callerTrace {
-			t.Errorf("links = %v", askSpan.Links)
+		if len(chatSpan.Links) != 1 || chatSpan.Links[0].SpanContext.TraceID() != callerTrace {
+			t.Errorf("links = %v", chatSpan.Links)
 		}
 	})
 
@@ -211,19 +211,19 @@ func TestTraceSpansServicesAndHidesContent(t *testing.T) {
 	}{
 		"ADK のエージェントはエッジのサーバーの子": {
 			span: "invoke_agent research", kind: trace.SpanKindInternal,
-			ancestors: []string{"agent.v1.AgentService/Ask"},
+			ancestors: []string{"agent.v1.AgentService/Chat"},
 		},
 		"ツールの実行は ADK のエージェントの子": {
 			span: "execute_tool search_knowledge", kind: trace.SpanKindInternal,
-			ancestors: []string{"invoke_agent research", "agent.v1.AgentService/Ask"},
+			ancestors: []string{"invoke_agent research", "agent.v1.AgentService/Chat"},
 		},
 		"knowledge のサーバーはツールの中のクライアント呼び出しの子": {
 			span: "knowledge.v1.KnowledgeService/Search", kind: trace.SpanKindServer,
-			ancestors: []string{"knowledge.v1.KnowledgeService/Search", "execute_tool search_knowledge", "invoke_agent research", "agent.v1.AgentService/Ask"},
+			ancestors: []string{"knowledge.v1.KnowledgeService/Search", "execute_tool search_knowledge", "invoke_agent research", "agent.v1.AgentService/Chat"},
 		},
 		"conversation のサーバーも同じ trace に入る": {
 			span: "conversation.v1.ConversationService/AppendTurn", kind: trace.SpanKindServer,
-			ancestors: []string{"conversation.v1.ConversationService/AppendTurn", "agent.v1.AgentService/Ask"},
+			ancestors: []string{"conversation.v1.ConversationService/AppendTurn", "agent.v1.AgentService/Chat"},
 		},
 	}
 	for tn, tc := range testCases {
@@ -260,7 +260,7 @@ func TestTraceSpansServicesAndHidesContent(t *testing.T) {
 
 	t.Run("落とさなければ ADK はツールの引数を載せる", func(t *testing.T) {
 		var leaked bool
-		for _, s := range inTrace(rawExp.GetSpans(), askSpan.SpanContext.TraceID()) {
+		for _, s := range inTrace(rawExp.GetSpans(), chatSpan.SpanContext.TraceID()) {
 			for _, kv := range s.Attributes {
 				if strings.Contains(kv.Value.String(), secretQuery) {
 					leaked = true
@@ -275,15 +275,15 @@ func TestTraceSpansServicesAndHidesContent(t *testing.T) {
 
 func TestGenkitSpansJoinTheTraceWithoutContent(t *testing.T) {
 	redactedExp, rawExp := recorders()
-	askTraced(t, system(t), "echo")
+	chatTraced(t, system(t), "echo")
 
-	var askSpan tracetest.SpanStub
-	for _, s := range byName(redactedExp.GetSpans(), "agent.v1.AgentService/Ask") {
+	var chatSpan tracetest.SpanStub
+	for _, s := range byName(redactedExp.GetSpans(), "agent.v1.AgentService/Chat") {
 		if s.SpanKind == trace.SpanKindServer {
-			askSpan = s
+			chatSpan = s
 		}
 	}
-	id := askSpan.SpanContext.TraceID()
+	id := chatSpan.SpanContext.TraceID()
 	isGenkit := func(s tracetest.SpanStub) bool {
 		for _, kv := range s.Attributes {
 			if strings.HasPrefix(string(kv.Key), "genkit:") {

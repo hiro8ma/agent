@@ -402,8 +402,8 @@ func TestGenkitMiddlewarePassesOutsideA2A(t *testing.T) {
 	t.Parallel()
 	s := &seen{}
 	a := genkitAgent(t, s)
-	var final *agentcore.AskOutput
-	for _, out := range a.Ask(t.Context(), &agentcore.AskInput{SessionID: "s", UserMessage: "注文 A-1"}) {
+	var final *agentcore.ChatOutput
+	for _, out := range a.Chat(t.Context(), &agentcore.ChatInput{SessionID: "s", UserMessage: "注文 A-1"}) {
 		if out != nil {
 			final = out
 		}

@@ -26,12 +26,12 @@ func (stubAgent) Info() agentcore.AgentInfo {
 	return agentcore.AgentInfo{ID: "stub", Description: "テスト用の固定応答エージェント"}
 }
 
-func (s stubAgent) Ask(_ context.Context, _ *agentcore.AskInput) iter.Seq2[*agentcore.AskChunk, *agentcore.AskOutput] {
-	return func(yield func(*agentcore.AskChunk, *agentcore.AskOutput) bool) {
-		if !yield(&agentcore.AskChunk{AnswerDelta: "ok"}, nil) {
+func (s stubAgent) Chat(_ context.Context, _ *agentcore.ChatInput) iter.Seq2[*agentcore.ChatChunk, *agentcore.ChatOutput] {
+	return func(yield func(*agentcore.ChatChunk, *agentcore.ChatOutput) bool) {
+		if !yield(&agentcore.ChatChunk{AnswerDelta: "ok"}, nil) {
 			return
 		}
-		yield(nil, &agentcore.AskOutput{
+		yield(nil, &agentcore.ChatOutput{
 			Answer:       "ok",
 			FinishReason: "stop",
 			Usage:        agentcore.TokenUsage{TotalTokens: s.tokensPerCall},
@@ -67,16 +67,16 @@ func newTestServer(t *testing.T, limits agentcore.BudgetLimits, tokensPerCall in
 	return agentv1connect.NewAgentServiceClient(srv.Client(), srv.URL)
 }
 
-func ask(t *testing.T, c agentv1connect.AgentServiceClient, sessionID string) error {
+func chat(t *testing.T, c agentv1connect.AgentServiceClient, sessionID string) error {
 	t.Helper()
 
-	req := connect.NewRequest(&agentv1.AskRequest{
+	req := connect.NewRequest(&agentv1.ChatRequest{
 		AgentId:   "stub",
 		SessionId: sessionID,
 		Message:   "hello",
 	})
 	req.Header().Set(libconnect.UserHeader, "alice")
-	stream, err := c.Ask(t.Context(), req)
+	stream, err := c.Chat(t.Context(), req)
 	if err != nil {
 		return err
 	}
@@ -88,25 +88,25 @@ func ask(t *testing.T, c agentv1connect.AgentServiceClient, sessionID string) er
 }
 
 // 予算を設定しなければ何度でも通る。
-func TestAskWithoutBudget(t *testing.T) {
+func TestChatWithoutBudget(t *testing.T) {
 	c := newTestServer(t, agentcore.BudgetLimits{}, 1000)
 
 	for i := range 3 {
-		if err := ask(t, c, "s1"); err != nil {
+		if err := chat(t, c, "s1"); err != nil {
 			t.Fatalf("%d 回目で失敗した: %v", i+1, err)
 		}
 	}
 }
 
 // セッション上限を超えた次の呼び出しが resource_exhausted で拒否される。
-func TestAskSessionBudgetExceeded(t *testing.T) {
+func TestChatSessionBudgetExceeded(t *testing.T) {
 	c := newTestServer(t, agentcore.BudgetLimits{SessionTokens: 100}, 150)
 
-	if err := ask(t, c, "s1"); err != nil {
+	if err := chat(t, c, "s1"); err != nil {
 		t.Fatalf("1 回目は通るはずが失敗した: %v", err)
 	}
 
-	err := ask(t, c, "s1")
+	err := chat(t, c, "s1")
 	if err == nil {
 		t.Fatal("2 回目は拒否されるはずが通った")
 	}
@@ -116,28 +116,28 @@ func TestAskSessionBudgetExceeded(t *testing.T) {
 }
 
 // セッション上限は他のセッションに影響しない。
-func TestAskSessionBudgetIsPerSession(t *testing.T) {
+func TestChatSessionBudgetIsPerSession(t *testing.T) {
 	c := newTestServer(t, agentcore.BudgetLimits{SessionTokens: 100}, 150)
 
-	if err := ask(t, c, "s1"); err != nil {
+	if err := chat(t, c, "s1"); err != nil {
 		t.Fatalf("s1 の 1 回目が失敗した: %v", err)
 	}
-	if err := ask(t, c, "s1"); err == nil {
+	if err := chat(t, c, "s1"); err == nil {
 		t.Fatal("s1 の 2 回目は拒否されるはず")
 	}
-	if err := ask(t, c, "s2"); err != nil {
+	if err := chat(t, c, "s2"); err != nil {
 		t.Fatalf("別セッション s2 は通るはずが失敗した: %v", err)
 	}
 }
 
 // 全体上限はセッションをまたいで効く。
-func TestAskTotalBudgetExceeded(t *testing.T) {
+func TestChatTotalBudgetExceeded(t *testing.T) {
 	c := newTestServer(t, agentcore.BudgetLimits{TotalTokens: 100}, 150)
 
-	if err := ask(t, c, "s1"); err != nil {
+	if err := chat(t, c, "s1"); err != nil {
 		t.Fatalf("1 回目が失敗した: %v", err)
 	}
-	if err := ask(t, c, "s2"); err == nil {
+	if err := chat(t, c, "s2"); err == nil {
 		t.Fatal("別セッションでも全体上限で拒否されるはず")
 	}
 }

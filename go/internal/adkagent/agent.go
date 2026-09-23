@@ -37,7 +37,7 @@ type Definition struct {
 }
 
 // Agent は 1 つの Definition を ADK Runner として公開する。
-// セッション履歴は ADK の SessionService が持つため、AskInput.History は使わない
+// セッション履歴は ADK の SessionService が持つため、ChatInput.History は使わない
 // （transport が渡してくるが、同一プロセス内は ADK 側の履歴が正になる）。
 type Agent struct {
 	def    Definition
@@ -84,12 +84,12 @@ func (a *Agent) Info() agentcore.AgentInfo {
 
 var _ agentcore.Agent = (*Agent)(nil)
 
-// Ask は Runner のイベント列を agentcore のチャンク / 最終出力に写像する。
+// Chat は Runner のイベント列を agentcore のチャンク / 最終出力に写像する。
 // partial イベント → AnswerDelta、非 partial のテキスト → 最終 Answer、
-// FunctionCall パート → ToolCalls。エラーも AskOutput.ErrorMessage に畳み込む。
-func (a *Agent) Ask(ctx context.Context, input *agentcore.AskInput) iter.Seq2[*agentcore.AskChunk, *agentcore.AskOutput] {
-	return func(yield func(*agentcore.AskChunk, *agentcore.AskOutput) bool) {
-		out := &agentcore.AskOutput{SessionID: input.SessionID}
+// FunctionCall パート → ToolCalls。エラーも ChatOutput.ErrorMessage に畳み込む。
+func (a *Agent) Chat(ctx context.Context, input *agentcore.ChatInput) iter.Seq2[*agentcore.ChatChunk, *agentcore.ChatOutput] {
+	return func(yield func(*agentcore.ChatChunk, *agentcore.ChatOutput) bool) {
+		out := &agentcore.ChatOutput{SessionID: input.SessionID}
 		msg := genai.NewContentFromText(input.UserMessage, genai.RoleUser)
 		cfg := adkagentpkg.RunConfig{StreamingMode: adkagentpkg.StreamingModeSSE}
 
@@ -137,7 +137,7 @@ func (a *Agent) Ask(ctx context.Context, input *agentcore.AskInput) iter.Seq2[*a
 					continue
 				}
 				if event.Partial {
-					if !yield(&agentcore.AskChunk{AnswerDelta: part.Text}, nil) {
+					if !yield(&agentcore.ChatChunk{AnswerDelta: part.Text}, nil) {
 						return
 					}
 					continue

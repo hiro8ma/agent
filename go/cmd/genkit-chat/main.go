@@ -1,8 +1,8 @@
-// ask は動作確認用の CLI クライアント。
+// genkit-chat は動作確認用の CLI クライアント。
 //
-//	go run ./cmd/ask -agent operations "注文 ord-001 の支払い方法を教えて"
-//	go run ./cmd/ask -list
-//	go run ./cmd/ask -exec <toolCallId>
+//	go run ./cmd/genkit-chat -agent operations "注文 ord-001 の支払い方法を教えて"
+//	go run ./cmd/genkit-chat -list
+//	go run ./cmd/genkit-chat -exec <toolCallId>
 package main
 
 import (
@@ -64,18 +64,18 @@ func main() {
 		if flag.NArg() == 0 {
 			log.Fatal("message is required")
 		}
-		ask(ctx, client, *agentID, *sessionID, flag.Arg(0))
+		chat(ctx, client, *agentID, *sessionID, flag.Arg(0))
 	}
 }
 
-func ask(ctx context.Context, client agentv1connect.AgentServiceClient, agentID, sessionID, message string) {
-	stream, err := client.Ask(ctx, connect.NewRequest(&agentv1.AskRequest{
+func chat(ctx context.Context, client agentv1connect.AgentServiceClient, agentID, sessionID, message string) {
+	stream, err := client.Chat(ctx, connect.NewRequest(&agentv1.ChatRequest{
 		AgentId:   agentID,
 		SessionId: sessionID,
 		Message:   message,
 	}))
 	if err != nil {
-		log.Fatalf("ask: %v", err)
+		log.Fatalf("chat: %v", err)
 	}
 	for stream.Receive() {
 		msg := stream.Msg()
@@ -93,7 +93,7 @@ func ask(ctx context.Context, client agentv1connect.AgentServiceClient, agentID,
 	}
 }
 
-func printResult(result *agentv1.AskResult) {
+func printResult(result *agentv1.ChatResult) {
 	fmt.Printf("[session] %s（続けるには -session %s）\n", result.GetSessionId(), result.GetSessionId())
 	if !result.GetHistorySaved() {
 		fmt.Fprintln(os.Stderr, "warning: この往復は履歴に残っていない")
@@ -106,7 +106,7 @@ func printResult(result *agentv1.AskResult) {
 		fmt.Printf("[tool] %s %v\n", tc.GetName(), tc.GetInput().AsMap())
 	}
 	for _, p := range result.GetPendingToolCalls() {
-		fmt.Printf("[pending] %s %v\n  承認して実行: go run ./cmd/ask -exec %s\n", p.GetName(), p.GetInput().AsMap(), p.GetToolCallId())
+		fmt.Printf("[pending] %s %v\n  承認して実行: go run ./cmd/genkit-chat -exec %s\n", p.GetName(), p.GetInput().AsMap(), p.GetToolCallId())
 	}
 	usage := result.GetUsage()
 	fmt.Printf("[usage] in=%d out=%d finish=%s\n", usage.GetInputTokens(), usage.GetOutputTokens(), result.GetFinishReason())

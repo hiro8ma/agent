@@ -35,8 +35,8 @@ const (
 const (
 	// AgentServiceListAgentsProcedure is the fully-qualified name of the AgentService's ListAgents RPC.
 	AgentServiceListAgentsProcedure = "/agent.v1.AgentService/ListAgents"
-	// AgentServiceAskProcedure is the fully-qualified name of the AgentService's Ask RPC.
-	AgentServiceAskProcedure = "/agent.v1.AgentService/Ask"
+	// AgentServiceChatProcedure is the fully-qualified name of the AgentService's Chat RPC.
+	AgentServiceChatProcedure = "/agent.v1.AgentService/Chat"
 	// AgentServiceExecuteConfirmedToolCallProcedure is the fully-qualified name of the AgentService's
 	// ExecuteConfirmedToolCall RPC.
 	AgentServiceExecuteConfirmedToolCallProcedure = "/agent.v1.AgentService/ExecuteConfirmedToolCall"
@@ -47,7 +47,7 @@ type AgentServiceClient interface {
 	// 利用できるエージェントの一覧
 	ListAgents(context.Context, *connect.Request[v1.ListAgentsRequest]) (*connect.Response[v1.ListAgentsResponse], error)
 	// 問い合わせ（server streaming）
-	Ask(context.Context, *connect.Request[v1.AskRequest]) (*connect.ServerStreamForClient[v1.AskResponse], error)
+	Chat(context.Context, *connect.Request[v1.ChatRequest]) (*connect.ServerStreamForClient[v1.ChatResponse], error)
 	// 承認済みツール呼び出しの実行
 	ExecuteConfirmedToolCall(context.Context, *connect.Request[v1.ExecuteConfirmedToolCallRequest]) (*connect.Response[v1.ExecuteConfirmedToolCallResponse], error)
 }
@@ -69,10 +69,10 @@ func NewAgentServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(agentServiceMethods.ByName("ListAgents")),
 			connect.WithClientOptions(opts...),
 		),
-		ask: connect.NewClient[v1.AskRequest, v1.AskResponse](
+		chat: connect.NewClient[v1.ChatRequest, v1.ChatResponse](
 			httpClient,
-			baseURL+AgentServiceAskProcedure,
-			connect.WithSchema(agentServiceMethods.ByName("Ask")),
+			baseURL+AgentServiceChatProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("Chat")),
 			connect.WithClientOptions(opts...),
 		),
 		executeConfirmedToolCall: connect.NewClient[v1.ExecuteConfirmedToolCallRequest, v1.ExecuteConfirmedToolCallResponse](
@@ -87,7 +87,7 @@ func NewAgentServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 // agentServiceClient implements AgentServiceClient.
 type agentServiceClient struct {
 	listAgents               *connect.Client[v1.ListAgentsRequest, v1.ListAgentsResponse]
-	ask                      *connect.Client[v1.AskRequest, v1.AskResponse]
+	chat                     *connect.Client[v1.ChatRequest, v1.ChatResponse]
 	executeConfirmedToolCall *connect.Client[v1.ExecuteConfirmedToolCallRequest, v1.ExecuteConfirmedToolCallResponse]
 }
 
@@ -96,9 +96,9 @@ func (c *agentServiceClient) ListAgents(ctx context.Context, req *connect.Reques
 	return c.listAgents.CallUnary(ctx, req)
 }
 
-// Ask calls agent.v1.AgentService.Ask.
-func (c *agentServiceClient) Ask(ctx context.Context, req *connect.Request[v1.AskRequest]) (*connect.ServerStreamForClient[v1.AskResponse], error) {
-	return c.ask.CallServerStream(ctx, req)
+// Chat calls agent.v1.AgentService.Chat.
+func (c *agentServiceClient) Chat(ctx context.Context, req *connect.Request[v1.ChatRequest]) (*connect.ServerStreamForClient[v1.ChatResponse], error) {
+	return c.chat.CallServerStream(ctx, req)
 }
 
 // ExecuteConfirmedToolCall calls agent.v1.AgentService.ExecuteConfirmedToolCall.
@@ -111,7 +111,7 @@ type AgentServiceHandler interface {
 	// 利用できるエージェントの一覧
 	ListAgents(context.Context, *connect.Request[v1.ListAgentsRequest]) (*connect.Response[v1.ListAgentsResponse], error)
 	// 問い合わせ（server streaming）
-	Ask(context.Context, *connect.Request[v1.AskRequest], *connect.ServerStream[v1.AskResponse]) error
+	Chat(context.Context, *connect.Request[v1.ChatRequest], *connect.ServerStream[v1.ChatResponse]) error
 	// 承認済みツール呼び出しの実行
 	ExecuteConfirmedToolCall(context.Context, *connect.Request[v1.ExecuteConfirmedToolCallRequest]) (*connect.Response[v1.ExecuteConfirmedToolCallResponse], error)
 }
@@ -129,10 +129,10 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(agentServiceMethods.ByName("ListAgents")),
 		connect.WithHandlerOptions(opts...),
 	)
-	agentServiceAskHandler := connect.NewServerStreamHandler(
-		AgentServiceAskProcedure,
-		svc.Ask,
-		connect.WithSchema(agentServiceMethods.ByName("Ask")),
+	agentServiceChatHandler := connect.NewServerStreamHandler(
+		AgentServiceChatProcedure,
+		svc.Chat,
+		connect.WithSchema(agentServiceMethods.ByName("Chat")),
 		connect.WithHandlerOptions(opts...),
 	)
 	agentServiceExecuteConfirmedToolCallHandler := connect.NewUnaryHandler(
@@ -145,8 +145,8 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 		switch r.URL.Path {
 		case AgentServiceListAgentsProcedure:
 			agentServiceListAgentsHandler.ServeHTTP(w, r)
-		case AgentServiceAskProcedure:
-			agentServiceAskHandler.ServeHTTP(w, r)
+		case AgentServiceChatProcedure:
+			agentServiceChatHandler.ServeHTTP(w, r)
 		case AgentServiceExecuteConfirmedToolCallProcedure:
 			agentServiceExecuteConfirmedToolCallHandler.ServeHTTP(w, r)
 		default:
@@ -162,8 +162,8 @@ func (UnimplementedAgentServiceHandler) ListAgents(context.Context, *connect.Req
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agent.v1.AgentService.ListAgents is not implemented"))
 }
 
-func (UnimplementedAgentServiceHandler) Ask(context.Context, *connect.Request[v1.AskRequest], *connect.ServerStream[v1.AskResponse]) error {
-	return connect.NewError(connect.CodeUnimplemented, errors.New("agent.v1.AgentService.Ask is not implemented"))
+func (UnimplementedAgentServiceHandler) Chat(context.Context, *connect.Request[v1.ChatRequest], *connect.ServerStream[v1.ChatResponse]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("agent.v1.AgentService.Chat is not implemented"))
 }
 
 func (UnimplementedAgentServiceHandler) ExecuteConfirmedToolCall(context.Context, *connect.Request[v1.ExecuteConfirmedToolCallRequest]) (*connect.Response[v1.ExecuteConfirmedToolCallResponse], error) {

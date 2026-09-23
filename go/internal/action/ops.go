@@ -44,7 +44,7 @@ func RequestPaymentChange(ctx context.Context, gate Gate, orders agentcore.Order
 // StatusPending はツールの結果で承認待ちを表す。
 const StatusPending = "pending_approval"
 
-// PendingFromResult はツールの結果が承認待ちなら、AskResult に載せる承認待ちに写す。
+// PendingFromResult はツールの結果が承認待ちなら、ChatResult に載せる承認待ちに写す。
 // ADK と Genkit のどちらも、ツールの結果からこれで拾う。
 func PendingFromResult(tool string, out map[string]any) (agentcore.PendingToolCall, bool) {
 	if out["status"] != StatusPending {

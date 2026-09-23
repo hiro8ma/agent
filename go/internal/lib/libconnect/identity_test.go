@@ -27,12 +27,12 @@ func (whoami) ListAgents(ctx context.Context, _ *connect.Request[agentv1.ListAge
 	return connect.NewResponse(&agentv1.ListAgentsResponse{Agents: []*agentv1.AgentInfo{{Id: string(id)}}}), nil
 }
 
-func (whoami) Ask(ctx context.Context, _ *connect.Request[agentv1.AskRequest], stream *connect.ServerStream[agentv1.AskResponse]) error {
+func (whoami) Chat(ctx context.Context, _ *connect.Request[agentv1.ChatRequest], stream *connect.ServerStream[agentv1.ChatResponse]) error {
 	id, err := identity.From(ctx)
 	if err != nil {
 		return libconnect.Error(err)
 	}
-	return stream.Send(&agentv1.AskResponse{Event: &agentv1.AskResponse_AnswerDelta{AnswerDelta: string(id)}})
+	return stream.Send(&agentv1.ChatResponse{Event: &agentv1.ChatResponse_AnswerDelta{AnswerDelta: string(id)}})
 }
 
 func newServer(t *testing.T) *httptest.Server {
@@ -45,12 +45,12 @@ func newServer(t *testing.T) *httptest.Server {
 	return httptest.NewTestServer(t, mux)
 }
 
-func ask(ctx context.Context, c agentv1connect.AgentServiceClient, header string) (string, error) {
-	req := connect.NewRequest(&agentv1.AskRequest{})
+func chat(ctx context.Context, c agentv1connect.AgentServiceClient, header string) (string, error) {
+	req := connect.NewRequest(&agentv1.ChatRequest{})
 	if header != "" {
 		req.Header().Set(libconnect.UserHeader, header)
 	}
-	stream, err := c.Ask(ctx, req)
+	stream, err := c.Chat(ctx, req)
 	if err != nil {
 		return "", err
 	}
@@ -81,7 +81,7 @@ func TestServerIdentity(t *testing.T) {
 	for tn, tc := range testCases {
 		t.Run(tn, func(t *testing.T) {
 			t.Parallel()
-			got, err := ask(t.Context(), client, tc.header)
+			got, err := chat(t.Context(), client, tc.header)
 			if tc.wantCode != 0 {
 				if connect.CodeOf(err) != tc.wantCode {
 					t.Fatalf("code = %v, want %v (err %v)", connect.CodeOf(err), tc.wantCode, err)
@@ -89,7 +89,7 @@ func TestServerIdentity(t *testing.T) {
 				return
 			}
 			if err != nil {
-				t.Fatalf("Ask() error = %v", err)
+				t.Fatalf("Chat() error = %v", err)
 			}
 			if got != tc.want {
 				t.Errorf("利用者 = %q, want %q", got, tc.want)
@@ -131,7 +131,7 @@ func TestForwardIdentityCarriesCallerToDownstream(t *testing.T) {
 	for tn, tc := range testCases {
 		t.Run(tn, func(t *testing.T) {
 			t.Parallel()
-			got, err := ask(tc.ctx, client, "")
+			got, err := chat(tc.ctx, client, "")
 			if tc.wantCode != 0 {
 				if connect.CodeOf(err) != tc.wantCode {
 					t.Fatalf("code = %v, want %v", connect.CodeOf(err), tc.wantCode)
@@ -139,7 +139,7 @@ func TestForwardIdentityCarriesCallerToDownstream(t *testing.T) {
 				return
 			}
 			if err != nil {
-				t.Fatalf("Ask() error = %v", err)
+				t.Fatalf("Chat() error = %v", err)
 			}
 			if got != tc.want {
 				t.Errorf("下流が受け取った利用者 = %q, want %q", got, tc.want)

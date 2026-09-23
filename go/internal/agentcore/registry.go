@@ -12,10 +12,10 @@ type AgentInfo struct {
 }
 
 // Agent は 1 体のエージェント。genkit / ADK / genai の各実装がこれを満たす。
-// Ask はチャンク列と最終出力を 1 本のシーケンスで返し、エラーも AskOutput.ErrorMessage に畳み込む。
+// Chat はチャンク列と最終出力を 1 本のシーケンスで返し、エラーも ChatOutput.ErrorMessage に畳み込む。
 type Agent interface {
 	Info() AgentInfo
-	Ask(ctx context.Context, input *AskInput) iter.Seq2[*AskChunk, *AskOutput]
+	Chat(ctx context.Context, input *ChatInput) iter.Seq2[*ChatChunk, *ChatOutput]
 }
 
 // Registry はエージェントの登録と選択。
@@ -53,7 +53,7 @@ type SessionStore interface {
 }
 
 // SessionCreator はセッション ID を発行できる保管先。
-// Ask で session_id が空なら、これを満たす保管先に作らせる。
+// Chat で session_id が空なら、これを満たす保管先に作らせる。
 type SessionCreator interface {
 	SessionStore
 	Create(ctx context.Context, agentID string) (string, error)

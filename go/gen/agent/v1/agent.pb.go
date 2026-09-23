@@ -154,30 +154,30 @@ func (x *AgentInfo) GetDescription() string {
 	return ""
 }
 
-type AskRequest struct {
+type ChatRequest struct {
 	state   protoimpl.MessageState `protogen:"open.v1"`
 	AgentId string                 `protobuf:"bytes,1,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
-	// 空なら新しいセッションを作り、AskResult.session_id で返す
+	// 空なら新しいセッションを作り、ChatResult.session_id で返す
 	SessionId     string `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
 	Message       string `protobuf:"bytes,3,opt,name=message,proto3" json:"message,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *AskRequest) Reset() {
-	*x = AskRequest{}
+func (x *ChatRequest) Reset() {
+	*x = ChatRequest{}
 	mi := &file_agent_v1_agent_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *AskRequest) String() string {
+func (x *ChatRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*AskRequest) ProtoMessage() {}
+func (*ChatRequest) ProtoMessage() {}
 
-func (x *AskRequest) ProtoReflect() protoreflect.Message {
+func (x *ChatRequest) ProtoReflect() protoreflect.Message {
 	mi := &file_agent_v1_agent_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -189,59 +189,59 @@ func (x *AskRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use AskRequest.ProtoReflect.Descriptor instead.
-func (*AskRequest) Descriptor() ([]byte, []int) {
+// Deprecated: Use ChatRequest.ProtoReflect.Descriptor instead.
+func (*ChatRequest) Descriptor() ([]byte, []int) {
 	return file_agent_v1_agent_proto_rawDescGZIP(), []int{3}
 }
 
-func (x *AskRequest) GetAgentId() string {
+func (x *ChatRequest) GetAgentId() string {
 	if x != nil {
 		return x.AgentId
 	}
 	return ""
 }
 
-func (x *AskRequest) GetSessionId() string {
+func (x *ChatRequest) GetSessionId() string {
 	if x != nil {
 		return x.SessionId
 	}
 	return ""
 }
 
-func (x *AskRequest) GetMessage() string {
+func (x *ChatRequest) GetMessage() string {
 	if x != nil {
 		return x.Message
 	}
 	return ""
 }
 
-type AskResponse struct {
+type ChatResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// 途中は answer_delta、最後の 1 通だけ result。番号は変えていないので旧クライアントも読める
 	//
 	// Types that are valid to be assigned to Event:
 	//
-	//	*AskResponse_AnswerDelta
-	//	*AskResponse_Result
-	Event         isAskResponse_Event `protobuf_oneof:"event"`
+	//	*ChatResponse_AnswerDelta
+	//	*ChatResponse_Result
+	Event         isChatResponse_Event `protobuf_oneof:"event"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *AskResponse) Reset() {
-	*x = AskResponse{}
+func (x *ChatResponse) Reset() {
+	*x = ChatResponse{}
 	mi := &file_agent_v1_agent_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *AskResponse) String() string {
+func (x *ChatResponse) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*AskResponse) ProtoMessage() {}
+func (*ChatResponse) ProtoMessage() {}
 
-func (x *AskResponse) ProtoReflect() protoreflect.Message {
+func (x *ChatResponse) ProtoReflect() protoreflect.Message {
 	mi := &file_agent_v1_agent_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -253,53 +253,53 @@ func (x *AskResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use AskResponse.ProtoReflect.Descriptor instead.
-func (*AskResponse) Descriptor() ([]byte, []int) {
+// Deprecated: Use ChatResponse.ProtoReflect.Descriptor instead.
+func (*ChatResponse) Descriptor() ([]byte, []int) {
 	return file_agent_v1_agent_proto_rawDescGZIP(), []int{4}
 }
 
-func (x *AskResponse) GetEvent() isAskResponse_Event {
+func (x *ChatResponse) GetEvent() isChatResponse_Event {
 	if x != nil {
 		return x.Event
 	}
 	return nil
 }
 
-func (x *AskResponse) GetAnswerDelta() string {
+func (x *ChatResponse) GetAnswerDelta() string {
 	if x != nil {
-		if x, ok := x.Event.(*AskResponse_AnswerDelta); ok {
+		if x, ok := x.Event.(*ChatResponse_AnswerDelta); ok {
 			return x.AnswerDelta
 		}
 	}
 	return ""
 }
 
-func (x *AskResponse) GetResult() *AskResult {
+func (x *ChatResponse) GetResult() *ChatResult {
 	if x != nil {
-		if x, ok := x.Event.(*AskResponse_Result); ok {
+		if x, ok := x.Event.(*ChatResponse_Result); ok {
 			return x.Result
 		}
 	}
 	return nil
 }
 
-type isAskResponse_Event interface {
-	isAskResponse_Event()
+type isChatResponse_Event interface {
+	isChatResponse_Event()
 }
 
-type AskResponse_AnswerDelta struct {
+type ChatResponse_AnswerDelta struct {
 	AnswerDelta string `protobuf:"bytes,1,opt,name=answer_delta,json=answerDelta,proto3,oneof"`
 }
 
-type AskResponse_Result struct {
-	Result *AskResult `protobuf:"bytes,2,opt,name=result,proto3,oneof"`
+type ChatResponse_Result struct {
+	Result *ChatResult `protobuf:"bytes,2,opt,name=result,proto3,oneof"`
 }
 
-func (*AskResponse_AnswerDelta) isAskResponse_Event() {}
+func (*ChatResponse_AnswerDelta) isChatResponse_Event() {}
 
-func (*AskResponse_Result) isAskResponse_Event() {}
+func (*ChatResponse_Result) isChatResponse_Event() {}
 
-type AskResult struct {
+type ChatResult struct {
 	state        protoimpl.MessageState `protogen:"open.v1"`
 	SessionId    string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
 	Answer       string                 `protobuf:"bytes,2,opt,name=answer,proto3" json:"answer,omitempty"`
@@ -309,26 +309,26 @@ type AskResult struct {
 	ErrorMessage string                 `protobuf:"bytes,6,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
 	// 承認待ちのツール呼び出し。ExecuteConfirmedToolCall で実行する
 	PendingToolCalls []*PendingToolCall `protobuf:"bytes,7,rep,name=pending_tool_calls,json=pendingToolCalls,proto3" json:"pending_tool_calls,omitempty"`
-	// この往復を履歴に残せたか。false なら次の Ask はこの往復を覚えていない
+	// この往復を履歴に残せたか。false なら次の Chat はこの往復を覚えていない
 	HistorySaved  bool `protobuf:"varint,8,opt,name=history_saved,json=historySaved,proto3" json:"history_saved,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *AskResult) Reset() {
-	*x = AskResult{}
+func (x *ChatResult) Reset() {
+	*x = ChatResult{}
 	mi := &file_agent_v1_agent_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *AskResult) String() string {
+func (x *ChatResult) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*AskResult) ProtoMessage() {}
+func (*ChatResult) ProtoMessage() {}
 
-func (x *AskResult) ProtoReflect() protoreflect.Message {
+func (x *ChatResult) ProtoReflect() protoreflect.Message {
 	mi := &file_agent_v1_agent_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -340,61 +340,61 @@ func (x *AskResult) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use AskResult.ProtoReflect.Descriptor instead.
-func (*AskResult) Descriptor() ([]byte, []int) {
+// Deprecated: Use ChatResult.ProtoReflect.Descriptor instead.
+func (*ChatResult) Descriptor() ([]byte, []int) {
 	return file_agent_v1_agent_proto_rawDescGZIP(), []int{5}
 }
 
-func (x *AskResult) GetSessionId() string {
+func (x *ChatResult) GetSessionId() string {
 	if x != nil {
 		return x.SessionId
 	}
 	return ""
 }
 
-func (x *AskResult) GetAnswer() string {
+func (x *ChatResult) GetAnswer() string {
 	if x != nil {
 		return x.Answer
 	}
 	return ""
 }
 
-func (x *AskResult) GetFinishReason() string {
+func (x *ChatResult) GetFinishReason() string {
 	if x != nil {
 		return x.FinishReason
 	}
 	return ""
 }
 
-func (x *AskResult) GetToolCalls() []*ToolCall {
+func (x *ChatResult) GetToolCalls() []*ToolCall {
 	if x != nil {
 		return x.ToolCalls
 	}
 	return nil
 }
 
-func (x *AskResult) GetUsage() *TokenUsage {
+func (x *ChatResult) GetUsage() *TokenUsage {
 	if x != nil {
 		return x.Usage
 	}
 	return nil
 }
 
-func (x *AskResult) GetErrorMessage() string {
+func (x *ChatResult) GetErrorMessage() string {
 	if x != nil {
 		return x.ErrorMessage
 	}
 	return ""
 }
 
-func (x *AskResult) GetPendingToolCalls() []*PendingToolCall {
+func (x *ChatResult) GetPendingToolCalls() []*PendingToolCall {
 	if x != nil {
 		return x.PendingToolCalls
 	}
 	return nil
 }
 
-func (x *AskResult) GetHistorySaved() bool {
+func (x *ChatResult) GetHistorySaved() bool {
 	if x != nil {
 		return x.HistorySaved
 	}
@@ -671,18 +671,18 @@ const file_agent_v1_agent_proto_rawDesc = "" +
 	"\x06agents\x18\x01 \x03(\v2\x13.agent.v1.AgentInfoR\x06agents\"=\n" +
 	"\tAgentInfo\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12 \n" +
-	"\vdescription\x18\x02 \x01(\tR\vdescription\"`\n" +
-	"\n" +
-	"AskRequest\x12\x19\n" +
+	"\vdescription\x18\x02 \x01(\tR\vdescription\"a\n" +
+	"\vChatRequest\x12\x19\n" +
 	"\bagent_id\x18\x01 \x01(\tR\aagentId\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x02 \x01(\tR\tsessionId\x12\x18\n" +
-	"\amessage\x18\x03 \x01(\tR\amessage\"j\n" +
-	"\vAskResponse\x12#\n" +
-	"\fanswer_delta\x18\x01 \x01(\tH\x00R\vanswerDelta\x12-\n" +
-	"\x06result\x18\x02 \x01(\v2\x13.agent.v1.AskResultH\x00R\x06resultB\a\n" +
-	"\x05event\"\xd9\x02\n" +
-	"\tAskResult\x12\x1d\n" +
+	"\amessage\x18\x03 \x01(\tR\amessage\"l\n" +
+	"\fChatResponse\x12#\n" +
+	"\fanswer_delta\x18\x01 \x01(\tH\x00R\vanswerDelta\x12.\n" +
+	"\x06result\x18\x02 \x01(\v2\x14.agent.v1.ChatResultH\x00R\x06resultB\a\n" +
+	"\x05event\"\xda\x02\n" +
+	"\n" +
+	"ChatResult\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x16\n" +
 	"\x06answer\x18\x02 \x01(\tR\x06answer\x12#\n" +
@@ -710,11 +710,11 @@ const file_agent_v1_agent_proto_rawDesc = "" +
 	"\ftool_call_id\x18\x01 \x01(\tR\n" +
 	"toolCallId\"S\n" +
 	" ExecuteConfirmedToolCallResponse\x12/\n" +
-	"\x06result\x18\x01 \x01(\v2\x17.google.protobuf.StructR\x06result2\x80\x02\n" +
+	"\x06result\x18\x01 \x01(\v2\x17.google.protobuf.StructR\x06result2\x83\x02\n" +
 	"\fAgentService\x12G\n" +
 	"\n" +
-	"ListAgents\x12\x1b.agent.v1.ListAgentsRequest\x1a\x1c.agent.v1.ListAgentsResponse\x124\n" +
-	"\x03Ask\x12\x14.agent.v1.AskRequest\x1a\x15.agent.v1.AskResponse0\x01\x12q\n" +
+	"ListAgents\x12\x1b.agent.v1.ListAgentsRequest\x1a\x1c.agent.v1.ListAgentsResponse\x127\n" +
+	"\x04Chat\x12\x15.agent.v1.ChatRequest\x1a\x16.agent.v1.ChatResponse0\x01\x12q\n" +
 	"\x18ExecuteConfirmedToolCall\x12).agent.v1.ExecuteConfirmedToolCallRequest\x1a*.agent.v1.ExecuteConfirmedToolCallResponseB2Z0github.com/hiro8ma/agent/go/gen/agent/v1;agentv1b\x06proto3"
 
 var (
@@ -734,9 +734,9 @@ var file_agent_v1_agent_proto_goTypes = []any{
 	(*ListAgentsRequest)(nil),                // 0: agent.v1.ListAgentsRequest
 	(*ListAgentsResponse)(nil),               // 1: agent.v1.ListAgentsResponse
 	(*AgentInfo)(nil),                        // 2: agent.v1.AgentInfo
-	(*AskRequest)(nil),                       // 3: agent.v1.AskRequest
-	(*AskResponse)(nil),                      // 4: agent.v1.AskResponse
-	(*AskResult)(nil),                        // 5: agent.v1.AskResult
+	(*ChatRequest)(nil),                      // 3: agent.v1.ChatRequest
+	(*ChatResponse)(nil),                     // 4: agent.v1.ChatResponse
+	(*ChatResult)(nil),                       // 5: agent.v1.ChatResult
 	(*ToolCall)(nil),                         // 6: agent.v1.ToolCall
 	(*PendingToolCall)(nil),                  // 7: agent.v1.PendingToolCall
 	(*TokenUsage)(nil),                       // 8: agent.v1.TokenUsage
@@ -746,18 +746,18 @@ var file_agent_v1_agent_proto_goTypes = []any{
 }
 var file_agent_v1_agent_proto_depIdxs = []int32{
 	2,  // 0: agent.v1.ListAgentsResponse.agents:type_name -> agent.v1.AgentInfo
-	5,  // 1: agent.v1.AskResponse.result:type_name -> agent.v1.AskResult
-	6,  // 2: agent.v1.AskResult.tool_calls:type_name -> agent.v1.ToolCall
-	8,  // 3: agent.v1.AskResult.usage:type_name -> agent.v1.TokenUsage
-	7,  // 4: agent.v1.AskResult.pending_tool_calls:type_name -> agent.v1.PendingToolCall
+	5,  // 1: agent.v1.ChatResponse.result:type_name -> agent.v1.ChatResult
+	6,  // 2: agent.v1.ChatResult.tool_calls:type_name -> agent.v1.ToolCall
+	8,  // 3: agent.v1.ChatResult.usage:type_name -> agent.v1.TokenUsage
+	7,  // 4: agent.v1.ChatResult.pending_tool_calls:type_name -> agent.v1.PendingToolCall
 	11, // 5: agent.v1.ToolCall.input:type_name -> google.protobuf.Struct
 	11, // 6: agent.v1.PendingToolCall.input:type_name -> google.protobuf.Struct
 	11, // 7: agent.v1.ExecuteConfirmedToolCallResponse.result:type_name -> google.protobuf.Struct
 	0,  // 8: agent.v1.AgentService.ListAgents:input_type -> agent.v1.ListAgentsRequest
-	3,  // 9: agent.v1.AgentService.Ask:input_type -> agent.v1.AskRequest
+	3,  // 9: agent.v1.AgentService.Chat:input_type -> agent.v1.ChatRequest
 	9,  // 10: agent.v1.AgentService.ExecuteConfirmedToolCall:input_type -> agent.v1.ExecuteConfirmedToolCallRequest
 	1,  // 11: agent.v1.AgentService.ListAgents:output_type -> agent.v1.ListAgentsResponse
-	4,  // 12: agent.v1.AgentService.Ask:output_type -> agent.v1.AskResponse
+	4,  // 12: agent.v1.AgentService.Chat:output_type -> agent.v1.ChatResponse
 	10, // 13: agent.v1.AgentService.ExecuteConfirmedToolCall:output_type -> agent.v1.ExecuteConfirmedToolCallResponse
 	11, // [11:14] is the sub-list for method output_type
 	8,  // [8:11] is the sub-list for method input_type
@@ -772,8 +772,8 @@ func file_agent_v1_agent_proto_init() {
 		return
 	}
 	file_agent_v1_agent_proto_msgTypes[4].OneofWrappers = []any{
-		(*AskResponse_AnswerDelta)(nil),
-		(*AskResponse_Result)(nil),
+		(*ChatResponse_AnswerDelta)(nil),
+		(*ChatResponse_Result)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{

@@ -118,14 +118,14 @@ func TestTraceStaysTopLevelInsideGroup(t *testing.T) {
 	t.Parallel()
 	var buf bytes.Buffer
 	l := liblog.New(liblog.WithWriter(&buf), liblog.WithFormat(liblog.FormatCloudLogging)).
-		WithGroup("rpc").With("method", "Ask")
+		WithGroup("rpc").With("method", "Chat")
 	l.InfoContext(trace.ContextWithSpanContext(t.Context(), sc), "受けた", "status", "ok")
 	got := decode(t, &buf)
 	if got["logging.googleapis.com/spanId"] != spanHex {
 		t.Errorf("trace のキーが最上位に無い: %v", got)
 	}
 	rpc, _ := got["rpc"].(map[string]any)
-	if rpc["method"] != "Ask" || rpc["status"] != "ok" {
+	if rpc["method"] != "Chat" || rpc["status"] != "ok" {
 		t.Errorf("rpc = %v", got["rpc"])
 	}
 }

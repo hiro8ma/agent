@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	askMaxTurns        = 5
+	chatMaxTurns       = 5
 	generateMaxRetries = 2
 	baseBackoff        = 2 * time.Second
 	maxBackoff         = 30 * time.Second
@@ -39,15 +39,15 @@ type Definition struct {
 // Agent は 1 つの Definition を Genkit の streaming flow として公開する。
 type Agent struct {
 	def  Definition
-	flow *core.Flow[*AskInput, *AskOutput, *AskChunk]
+	flow *core.Flow[*ChatInput, *ChatOutput, *ChatChunk]
 }
 
 func New(g *genkit.Genkit, def Definition) *Agent {
 	return &Agent{
 		def: def,
-		flow: genkit.DefineStreamingFlow(g, "ask-"+def.ID,
-			func(ctx context.Context, input *AskInput, cb core.StreamCallback[*AskChunk]) (*AskOutput, error) {
-				return runAsk(ctx, g, def, input, cb)
+		flow: genkit.DefineStreamingFlow(g, "chat-"+def.ID,
+			func(ctx context.Context, input *ChatInput, cb core.StreamCallback[*ChatChunk]) (*ChatOutput, error) {
+				return runChat(ctx, g, def, input, cb)
 			},
 		),
 	}
@@ -62,19 +62,19 @@ func (a *Agent) Info() agentcore.AgentInfo {
 
 var _ agentcore.Agent = (*Agent)(nil)
 
-// Ask はチャンク列と最終出力を 1 本のシーケンスで返す。
-// エラーも AskOutput.ErrorMessage に畳み込み、呼び出し側の分岐を 1 箇所にする。
-func (a *Agent) Ask(ctx context.Context, input *AskInput) iter.Seq2[*AskChunk, *AskOutput] {
+// Chat はチャンク列と最終出力を 1 本のシーケンスで返す。
+// エラーも ChatOutput.ErrorMessage に畳み込み、呼び出し側の分岐を 1 箇所にする。
+func (a *Agent) Chat(ctx context.Context, input *ChatInput) iter.Seq2[*ChatChunk, *ChatOutput] {
 	// Flow は入力を JSON スキーマで検査し、nil のスライスを null として配列の型違いで拒否する。
 	if input.History == nil {
 		in := *input
 		in.History = []Message{}
 		input = &in
 	}
-	return func(yield func(*AskChunk, *AskOutput) bool) {
+	return func(yield func(*ChatChunk, *ChatOutput) bool) {
 		for v, err := range a.flow.Stream(ctx, input) {
 			if err != nil {
-				yield(nil, &AskOutput{
+				yield(nil, &ChatOutput{
 					SessionID:    input.SessionID,
 					FinishReason: "error",
 					ErrorMessage: err.Error(),
@@ -92,7 +92,7 @@ func (a *Agent) Ask(ctx context.Context, input *AskInput) iter.Seq2[*AskChunk, *
 	}
 }
 
-func runAsk(ctx context.Context, g *genkit.Genkit, def Definition, input *AskInput, cb core.StreamCallback[*AskChunk]) (*AskOutput, error) {
+func runChat(ctx context.Context, g *genkit.Genkit, def Definition, input *ChatInput, cb core.StreamCallback[*ChatChunk]) (*ChatOutput, error) {
 	messages := assembleMessages(def.SystemPrompt, input)
 
 	streamedAny := false
@@ -101,7 +101,7 @@ func runAsk(ctx context.Context, g *genkit.Genkit, def Definition, input *AskInp
 		if text == "" {
 			return nil
 		}
-		if err := cb(ctx, &AskChunk{AnswerDelta: text}); err != nil {
+		if err := cb(ctx, &ChatChunk{AnswerDelta: text}); err != nil {
 			return err
 		}
 		streamedAny = true
@@ -111,7 +111,7 @@ func runAsk(ctx context.Context, g *genkit.Genkit, def Definition, input *AskInp
 	opts := []ai.GenerateOption{
 		ai.WithMessages(messages...),
 		ai.WithTools(def.Tools...),
-		ai.WithMaxTurns(askMaxTurns),
+		ai.WithMaxTurns(chatMaxTurns),
 		ai.WithStreaming(stream),
 	}
 	if len(def.SkillPaths) > 0 {
@@ -140,7 +140,7 @@ func runAsk(ctx context.Context, g *genkit.Genkit, def Definition, input *AskInp
 		}
 	}
 
-	out := &AskOutput{
+	out := &ChatOutput{
 		SessionID:        input.SessionID,
 		Answer:           resp.Text(),
 		FinishReason:     string(resp.FinishReason),
@@ -157,7 +157,7 @@ func runAsk(ctx context.Context, g *genkit.Genkit, def Definition, input *AskInp
 	return out, nil
 }
 
-func assembleMessages(systemPrompt string, input *AskInput) []*ai.Message {
+func assembleMessages(systemPrompt string, input *ChatInput) []*ai.Message {
 	messages := []*ai.Message{ai.NewSystemTextMessage(systemPrompt)}
 	for _, m := range input.History {
 		if m.Role == "model" {

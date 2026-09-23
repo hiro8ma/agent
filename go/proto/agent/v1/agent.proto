@@ -10,7 +10,7 @@ service AgentService {
   // 利用できるエージェントの一覧
   rpc ListAgents(ListAgentsRequest) returns (ListAgentsResponse);
   // 問い合わせ（server streaming）
-  rpc Ask(AskRequest) returns (stream AskResponse);
+  rpc Chat(ChatRequest) returns (stream ChatResponse);
   // 承認済みツール呼び出しの実行
   rpc ExecuteConfirmedToolCall(ExecuteConfirmedToolCallRequest) returns (ExecuteConfirmedToolCallResponse);
 }
@@ -26,22 +26,22 @@ message AgentInfo {
   string description = 2;
 }
 
-message AskRequest {
+message ChatRequest {
   string agent_id = 1;
-  // 空なら新しいセッションを作り、AskResult.session_id で返す
+  // 空なら新しいセッションを作り、ChatResult.session_id で返す
   string session_id = 2;
   string message = 3;
 }
 
-message AskResponse {
+message ChatResponse {
   // 途中は answer_delta、最後の 1 通だけ result。番号は変えていないので旧クライアントも読める
   oneof event {
     string answer_delta = 1;
-    AskResult result = 2;
+    ChatResult result = 2;
   }
 }
 
-message AskResult {
+message ChatResult {
   string session_id = 1;
   string answer = 2;
   string finish_reason = 3;
@@ -50,7 +50,7 @@ message AskResult {
   string error_message = 6;
   // 承認待ちのツール呼び出し。ExecuteConfirmedToolCall で実行する
   repeated PendingToolCall pending_tool_calls = 7;
-  // この往復を履歴に残せたか。false なら次の Ask はこの往復を覚えていない
+  // この往復を履歴に残せたか。false なら次の Chat はこの往復を覚えていない
   bool history_saved = 8;
 }
 

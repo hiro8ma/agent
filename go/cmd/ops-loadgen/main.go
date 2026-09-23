@@ -81,7 +81,7 @@ loop:
 		s := pick(total)
 		user := fmt.Sprintf("demo-user-%d", rand.IntN(*users))
 		wg.Go(func() {
-			outcome := ask(ctx, client, s, user)
+			outcome := chat(ctx, client, s, user)
 			mu.Lock()
 			defer mu.Unlock()
 			if results[s.name] == nil {
@@ -113,12 +113,12 @@ func pick(total int) scenario {
 	return scenarios[0]
 }
 
-func ask(ctx context.Context, client agentv1connect.AgentServiceClient, s scenario, user string) string {
-	req := connect.NewRequest(&agentv1.AskRequest{AgentId: s.agent, Message: s.message})
+func chat(ctx context.Context, client agentv1connect.AgentServiceClient, s scenario, user string) string {
+	req := connect.NewRequest(&agentv1.ChatRequest{AgentId: s.agent, Message: s.message})
 	if !s.noUser {
 		req.Header().Set(libconnect.UserHeader, user)
 	}
-	stream, err := client.Ask(ctx, req)
+	stream, err := client.Chat(ctx, req)
 	if err != nil {
 		return code(err)
 	}

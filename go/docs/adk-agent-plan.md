@@ -19,21 +19,21 @@ Live API だけは Python が必要（Phase 4 参照）。
 | genkit-agent の要素 | ADK 版での実装 |
 |---|---|
 | Definition + Registry（自作） | `llmagent.New` × 2（research / operations）。マルチエージェントはフレームワークのネイティブ機能 |
-| DefineStreamingFlow + Generate | `runner.Run(ctx, userID, sessionID, msg, cfg)` が `iter.Seq2[*session.Event, error]` を返す。partial event を AskResponse.answer_delta に写像 |
+| DefineStreamingFlow + Generate | `runner.Run(ctx, userID, sessionID, msg, cfg)` が `iter.Seq2[*session.Event, error]` を返す。partial event を ChatResponse.answer_delta に写像 |
 | 承認フロー（pending ストア自作） | **ToolContext confirmation API**（`ctx.RequestConfirmation(message, payload)` / `ctx.ToolConfirmation()`、Go v0.3.0+、Experimental）。フレームワーク標準機能に置き換わるのが最大の比較ポイント |
 | MCP（genkit plugins/mcp） | `tool/mcptoolset` の MCPToolset。接続先は同じ mcp/weather_go（Streamable HTTP） |
 | session（Firestore サブコレクション自作） | 公式は InMemory / VertexAI / Database（RDB）のみで **Firestore 実装なし** → session.Service を自前実装（genkit 版 firestore.go の資産を流用） |
-| メトリクス（transport で計測） | Before/After callback で計測し ask_completed ログを揃える（2.0 は _run_async_impl オーバーライド廃止、callback が正規手段） |
-| Connect transport | **そのまま再利用**。Handler の依存を `Ask(ctx, input) iter.Seq2[*AskChunk, *AskOutput]` インターフェースに切り出し、genkit / ADK を差し替え可能にする |
+| メトリクス（transport で計測） | Before/After callback で計測し chat_completed ログを揃える（2.0 は _run_async_impl オーバーライド廃止、callback が正規手段） |
+| Connect transport | **そのまま再利用**。Handler の依存を `Chat(ctx, input) iter.Seq2[*ChatChunk, *ChatOutput]` インターフェースに切り出し、genkit / ADK を差し替え可能にする |
 
 ## フェーズ分け
 
 ### Phase 1 — 骨格と streaming（AgentService 互換の最小形）— 実装済み 2026-08-05（docs/adk-agent.md）
 
-1. `internal/agentcore` を新設し、AskInput / AskOutput / Ask インターフェースと Connect Handler を genkit-agent から抽出（genkit 版はこれの実装になる）
+1. `internal/agentcore` を新設し、ChatInput / ChatOutput / Chat インターフェースと Connect Handler を genkit-agent から抽出（genkit 版はこれの実装になる）
 2. `internal/adkagent` — llmagent × 2、FunctionTool（order / geo / knowledge。バックエンドは genkitagent の InMemory 実装を共有）
-3. Runner + InMemorySessionService で Ask（server streaming）を通す
-4. `cmd/adk-agent`（PORT 19912）。cmd/genkit-ask がそのまま動作確認クライアントになる（proto 共通の利点の実証）
+3. Runner + InMemorySessionService で Chat（server streaming）を通す
+4. `cmd/adk-agent`（PORT 19912）。cmd/genkit-chat がそのまま動作確認クライアントになる（proto 共通の利点の実証）
 
 ### Phase 2 — 承認・MCP・永続化
 

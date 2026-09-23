@@ -55,7 +55,7 @@ func (h *Handler) ListAgents(_ context.Context, _ *connect.Request[agentv1.ListA
 	return connect.NewResponse(resp), nil
 }
 
-func (h *Handler) Ask(ctx context.Context, req *connect.Request[agentv1.AskRequest], stream *connect.ServerStream[agentv1.AskResponse]) error {
+func (h *Handler) Chat(ctx context.Context, req *connect.Request[agentv1.ChatRequest], stream *connect.ServerStream[agentv1.ChatResponse]) error {
 	msg := req.Msg
 	if msg.GetAgentId() == "" || msg.GetMessage() == "" {
 		return connect.NewError(connect.CodeInvalidArgument, errors.New("agentId and message are required"))
@@ -81,14 +81,14 @@ func (h *Handler) Ask(ctx context.Context, req *connect.Request[agentv1.AskReque
 	}
 
 	start := time.Now()
-	input := &AskInput{SessionID: sessionID, UserMessage: msg.GetMessage(), History: history}
-	var final *AskOutput
-	for chunk, out := range a.Ask(ctx, input) {
+	input := &ChatInput{SessionID: sessionID, UserMessage: msg.GetMessage(), History: history}
+	var final *ChatOutput
+	for chunk, out := range a.Chat(ctx, input) {
 		if out != nil {
 			final = out
 			break
 		}
-		if err := stream.Send(&agentv1.AskResponse{Event: &agentv1.AskResponse_AnswerDelta{AnswerDelta: chunk.AnswerDelta}}); err != nil {
+		if err := stream.Send(&agentv1.ChatResponse{Event: &agentv1.ChatResponse_AnswerDelta{AnswerDelta: chunk.AnswerDelta}}); err != nil {
 			return err
 		}
 	}
@@ -132,15 +132,15 @@ func (h *Handler) Ask(ctx context.Context, req *connect.Request[agentv1.AskReque
 	if final.ErrorMessage != "" {
 		level = slog.LevelWarn
 	}
-	h.logger.Log(ctx, level, "ask_completed", attrs...)
+	h.logger.Log(ctx, level, "chat_completed", attrs...)
 
 	result := toResult(final)
 	result.HistorySaved = historySaved
-	return stream.Send(&agentv1.AskResponse{Event: &agentv1.AskResponse_Result{Result: result}})
+	return stream.Send(&agentv1.ChatResponse{Event: &agentv1.ChatResponse_Result{Result: result}})
 }
 
 // resolveSession は session_id が空なら、保管先に新しいセッションを作らせる。
-func (h *Handler) resolveSession(ctx context.Context, msg *agentv1.AskRequest) (string, error) {
+func (h *Handler) resolveSession(ctx context.Context, msg *agentv1.ChatRequest) (string, error) {
 	if id := msg.GetSessionId(); id != "" {
 		return id, nil
 	}
@@ -172,8 +172,8 @@ func (h *Handler) ExecuteConfirmedToolCall(ctx context.Context, req *connect.Req
 	return connect.NewResponse(&agentv1.ExecuteConfirmedToolCallResponse{Result: toStruct(result)}), nil
 }
 
-func toResult(out *AskOutput) *agentv1.AskResult {
-	result := &agentv1.AskResult{
+func toResult(out *ChatOutput) *agentv1.ChatResult {
+	result := &agentv1.ChatResult{
 		SessionId:    out.SessionID,
 		Answer:       out.Answer,
 		FinishReason: out.FinishReason,

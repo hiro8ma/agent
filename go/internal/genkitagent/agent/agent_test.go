@@ -22,7 +22,7 @@ func newEchoAgent(t *testing.T) *Agent {
 	return New(g, Definition{ID: "echo", SystemPrompt: "テスト"})
 }
 
-func TestAskAcceptsNilHistory(t *testing.T) {
+func TestChatAcceptsNilHistory(t *testing.T) {
 	t.Parallel()
 	a := newEchoAgent(t)
 
@@ -36,14 +36,14 @@ func TestAskAcceptsNilHistory(t *testing.T) {
 	for tn, tc := range testCases {
 		t.Run(tn, func(t *testing.T) {
 			t.Parallel()
-			var final *AskOutput
-			for _, out := range a.Ask(t.Context(), &AskInput{SessionID: "s1", UserMessage: "こんにちは", History: tc.history}) {
+			var final *ChatOutput
+			for _, out := range a.Chat(t.Context(), &ChatInput{SessionID: "s1", UserMessage: "こんにちは", History: tc.history}) {
 				if out != nil {
 					final = out
 				}
 			}
 			if final == nil || final.ErrorMessage != "" {
-				t.Fatalf("Ask() = %+v", final)
+				t.Fatalf("Chat() = %+v", final)
 			}
 			if final.Answer != "echo: こんにちは" {
 				t.Errorf("Answer = %q", final.Answer)
