@@ -1,0 +1,38 @@
+syntax = "proto3";
+
+package travel.v1;
+
+option go_package = "github.com/hiro8ma/agent/go/gen/travel/v1;travelv1";
+
+service TravelPlannerService {
+  // 旅行プランを作る。日程の生成中の文章を少しずつ返し、最後に日程と予算を返す（server streaming）
+  rpc Plan(PlanRequest) returns (stream PlanResponse);
+}
+
+message PlanRequest {
+  string session_id = 1;
+  // 利用者の依頼文（例 東京から京都に2泊3日で行きたい。歴史が好き）
+  string message = 2;
+}
+
+message PlanResponse {
+  // 途中は delta、最後の 1 通だけ plan
+  oneof event {
+    string delta = 1;
+    Plan plan = 2;
+  }
+}
+
+message Plan {
+  string schedule = 1;
+  Budget budget = 2;
+}
+
+message Budget {
+  string currency = 1;
+  int64 transportation_yen = 2;
+  int64 food_yen = 3;
+  int64 activities_yen = 4;
+  int64 total_yen = 5;
+  repeated string assumptions = 6;
+}
