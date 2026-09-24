@@ -15,6 +15,7 @@ import (
 	"google.golang.org/adk/v2/model/gemini"
 	"google.golang.org/adk/v2/plugin"
 	"google.golang.org/adk/v2/runner"
+	"google.golang.org/adk/v2/tool"
 	"google.golang.org/genai"
 
 	"github.com/hiro8ma/agent/go/internal/adk/callguard"
@@ -41,8 +42,15 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to create model: %v", err)
 	}
+	var skills tool.Toolset
+	if dir := os.Getenv("TRAVEL_SKILLS_DIR"); dir != "" {
+		skills, err = travelplanner.NewSkillToolset(ctx, dir)
+		if err != nil {
+			log.Fatalf("failed to load skills: %v", err)
+		}
+	}
 	// 無料枠は 1 分あたり 5 回で、調査の 3 並列だけで越える。429 の待ち時間に従って再試行する
-	a, err := travelplanner.NewWithModel(llmretry.Wrap(m, llmretry.DefaultPolicy()))
+	a, err := travelplanner.NewWithModel(llmretry.Wrap(m, llmretry.DefaultPolicy()), skills)
 	if err != nil {
 		log.Fatalf("failed to build agent: %v", err)
 	}

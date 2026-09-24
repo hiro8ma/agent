@@ -20,6 +20,7 @@ import (
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/core"
 	"github.com/firebase/genkit/go/genkit"
+	"github.com/firebase/genkit/go/plugins/middleware"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/hiro8ma/agent/go/internal/travel"
@@ -33,7 +34,8 @@ const FlowName = "travelPlanner"
 
 const (
 	researchMaxTurns = 3
-	planMaxTurns     = 1
+	// 2 つのスキルを別々のターンで読んでも止めない。スキルが無ければツールが無いので効かない
+	planMaxTurns = 2
 )
 
 const (
@@ -99,7 +101,8 @@ type researchers struct {
 // DefineFlow は検索ツールと旅行プランナーのフローを g に登録する。モデルは g の既定モデルを使う。
 //
 // ストリームには日程表の生成中の差分を流す。
-func DefineFlow(g *genkit.Genkit) *core.Flow[TripRequest, TripPlan, string] {
+// skillsDir が空でなければ、日程と予算の生成で Agent Skills（SKILL.md を持つディレクトリの親）を使う。
+func DefineFlow(g *genkit.Genkit, skillsDir string) *core.Flow[TripRequest, TripPlan, string] {
 	tools := researchers{
 		spots: genkit.DefineTool(g, "search_spots", "旅行先の観光スポットを検索する。好みのジャンルで絞り込める。",
 			func(_ *ai.ToolContext, in travel.SearchSpotsInput) (travel.SearchSpotsOutput, error) {
@@ -115,6 +118,11 @@ func DefineFlow(g *genkit.Genkit) *core.Flow[TripRequest, TripPlan, string] {
 			}),
 	}
 
+	var skills []ai.GenerateOption
+	if skillsDir != "" {
+		skills = append(skills, ai.WithUse(&middleware.Skills{SkillPaths: []string{skillsDir}}))
+	}
+
 	return genkit.DefineStreamingFlow(g, FlowName, func(ctx context.Context, req TripRequest, send core.StreamCallback[string]) (TripPlan, error) {
 		research, err := runResearch(ctx, g, tools, req.Request)
 		if err != nil {
@@ -123,7 +131,7 @@ func DefineFlow(g *genkit.Genkit) *core.Flow[TripRequest, TripPlan, string] {
 
 		streamed := false
 		schedule, err := withRetry(ctx, defaultRetry, func() bool { return streamed }, func() (string, error) {
-			return genkit.GenerateText(ctx, g,
+			return genkit.GenerateText(ctx, g, append([]ai.GenerateOption{
 				ai.WithSystem(scheduleSystem),
 				ai.WithPrompt(schedulePrompt, req.Request, research.Spots, research.Restaurants, research.Transport),
 				ai.WithMaxTurns(planMaxTurns),
@@ -131,18 +139,18 @@ func DefineFlow(g *genkit.Genkit) *core.Flow[TripRequest, TripPlan, string] {
 					streamed = true
 					return send(ctx, c.Text())
 				}),
-			)
+			}, skills...)...)
 		})
 		if err != nil {
 			return TripPlan{}, fmt.Errorf("schedule: %w", err)
 		}
 
 		budget, err := withRetry(ctx, defaultRetry, never, func() (*travel.Budget, error) {
-			b, _, err := genkit.GenerateData[travel.Budget](ctx, g,
+			b, _, err := genkit.GenerateData[travel.Budget](ctx, g, append([]ai.GenerateOption{
 				ai.WithSystem(budgetSystem),
 				ai.WithPrompt(budgetPrompt, schedule, research.Transport, research.Restaurants, research.Spots),
 				ai.WithMaxTurns(planMaxTurns),
-			)
+			}, skills...)...)
 			return b, err
 		})
 		if err != nil {

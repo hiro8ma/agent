@@ -150,7 +150,7 @@ func newFlow(t *testing.T, f *fakeModel) *core.Flow[TripRequest, TripPlan, strin
 	genkit.DefineModel(g, "test/fake", &ai.ModelOptions{
 		Supports: &ai.ModelSupports{Multiturn: true, SystemRole: true, Tools: true, Constrained: ai.ConstrainedSupportAll},
 	}, f.generate)
-	return DefineFlow(g)
+	return DefineFlow(g, "")
 }
 
 func runFlow(t *testing.T, f *fakeModel) (TripPlan, error) {

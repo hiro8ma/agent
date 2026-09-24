@@ -73,7 +73,7 @@ func TestPlannerStreamsScheduleThenReturnsPlanOnce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	impl, err := NewPlanner(streamingModel{}, counter)
+	impl, err := NewPlanner(streamingModel{}, nil, counter)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,7 +120,7 @@ func TestPlannerStreamsScheduleThenReturnsPlanOnce(t *testing.T) {
 
 func TestPlannerWithoutSessionIDReturnsPlan(t *testing.T) {
 	t.Parallel()
-	p, err := NewPlanner(streamingModel{})
+	p, err := NewPlanner(streamingModel{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

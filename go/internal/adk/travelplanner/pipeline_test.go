@@ -95,7 +95,7 @@ var chapterRoles = map[string]string{
 // 目印が system instruction に出れば鍵の経路、contents だけなら履歴の経路。
 func TestPlannersReadUpstreamResultsByKey(t *testing.T) {
 	rec := newRecorder(chapterRoles)
-	a, err := NewWithModel(rec)
+	a, err := NewWithModel(rec, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -15,6 +15,7 @@ import (
 	"github.com/firebase/genkit/go/genkit"
 	"github.com/firebase/genkit/go/plugins/googlegenai"
 	"google.golang.org/adk/v2/model/gemini"
+	"google.golang.org/adk/v2/tool"
 	"google.golang.org/genai"
 
 	"github.com/hiro8ma/agent/go/internal/adk/callguard"
@@ -50,11 +51,12 @@ func run(ctx context.Context, logger *slog.Logger, impl, port string) error {
 		planner travel.Planner
 		err     error
 	)
+	skillsDir := os.Getenv("TRAVEL_SKILLS_DIR")
 	switch impl {
 	case "adk":
-		planner, err = newADKPlanner(ctx, modelOr(adktravel.ModelName))
+		planner, err = newADKPlanner(ctx, modelOr(adktravel.ModelName), skillsDir)
 	case "genkit":
-		planner, err = newGenkitPlanner(ctx, modelOr(genkittravel.ModelName))
+		planner, err = newGenkitPlanner(ctx, modelOr(genkittravel.ModelName), skillsDir)
 	default:
 		err = fmt.Errorf("-impl は adk か genkit を指定してください: %q", impl)
 	}
@@ -68,11 +70,11 @@ func run(ctx context.Context, logger *slog.Logger, impl, port string) error {
 	}
 	mux := http.NewServeMux()
 	mux.Handle(connecthandler.Route(connecthandler.New(planner), libconnect.HeaderAuthenticator))
-	logger.Info("travel planner", "impl", impl)
+	logger.Info("travel planner", "impl", impl, "skillsDir", skillsDir)
 	return libserver.Serve(ctx, logger, ":"+port, mux, shutdown)
 }
 
-func newADKPlanner(ctx context.Context, modelName string) (travel.Planner, error) {
+func newADKPlanner(ctx context.Context, modelName, skillsDir string) (travel.Planner, error) {
 	apiKey := os.Getenv("GOOGLE_API_KEY")
 	if apiKey == "" {
 		apiKey = os.Getenv("GEMINI_API_KEY")
@@ -89,11 +91,17 @@ func newADKPlanner(ctx context.Context, modelName string) (travel.Planner, error
 	if err != nil {
 		return nil, fmt.Errorf("build callguard: %w", err)
 	}
+	var skills tool.Toolset
+	if skillsDir != "" {
+		if skills, err = adktravel.NewSkillToolset(ctx, skillsDir); err != nil {
+			return nil, err
+		}
+	}
 	// 無料枠は 1 分あたり 5 回で、調査の 3 並列だけで越える。429 の待ち時間に従って再試行する
-	return adktravel.NewPlanner(llmretry.Wrap(m, llmretry.DefaultPolicy()), guard)
+	return adktravel.NewPlanner(llmretry.Wrap(m, llmretry.DefaultPolicy()), skills, guard)
 }
 
-func newGenkitPlanner(ctx context.Context, modelName string) (travel.Planner, error) {
+func newGenkitPlanner(ctx context.Context, modelName, skillsDir string) (travel.Planner, error) {
 	if os.Getenv("GEMINI_API_KEY") == "" && os.Getenv("GOOGLE_API_KEY") == "" {
 		return nil, errors.New("GEMINI_API_KEY または GOOGLE_API_KEY を設定してください")
 	}
@@ -101,7 +109,7 @@ func newGenkitPlanner(ctx context.Context, modelName string) (travel.Planner, er
 		genkit.WithPlugins(&googlegenai.GoogleAI{}),
 		genkit.WithDefaultModel("googleai/"+modelName),
 	)
-	return genkittravel.NewPlanner(genkittravel.DefineFlow(g)), nil
+	return genkittravel.NewPlanner(genkittravel.DefineFlow(g, skillsDir)), nil
 }
 
 func modelOr(fallback string) string {

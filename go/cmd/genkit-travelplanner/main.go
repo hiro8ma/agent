@@ -34,7 +34,7 @@ func main() {
 		genkit.WithPlugins(&googlegenai.GoogleAI{}),
 		genkit.WithDefaultModel("googleai/"+modelName),
 	)
-	flow := travelplanner.DefineFlow(g)
+	flow := travelplanner.DefineFlow(g, os.Getenv("TRAVEL_SKILLS_DIR"))
 
 	port := 3400
 	if v := os.Getenv("PORT"); v != "" {

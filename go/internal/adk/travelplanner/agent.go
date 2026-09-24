@@ -49,11 +49,13 @@ func New(ctx context.Context, apiKey string) (agent.Agent, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create model: %w", err)
 	}
-	return NewWithModel(m)
+	return NewWithModel(m, nil)
 }
 
 // NewWithModel はモデルを受け取って同じ構成を組む。API キー無しで流すために使う。
-func NewWithModel(m model.LLM) (agent.Agent, error) {
+//
+// skills が nil でなければ、日程と予算の担当に Agent Skills を渡す。
+func NewWithModel(m model.LLM, skills tool.Toolset) (agent.Agent, error) {
 	spotsTool, restaurantsTool, transportTool, err := newTools()
 	if err != nil {
 		return nil, err
@@ -117,6 +119,11 @@ func NewWithModel(m model.LLM) (agent.Agent, error) {
 	// --- 計画フェーズ。調査結果を読んで順に組み立てる ---
 	// 前段の結果は State の鍵で読む。履歴に頼ると IncludeContents を none にした時点で黙って消える。
 
+	var toolsets []tool.Toolset
+	if skills != nil {
+		toolsets = []tool.Toolset{skills}
+	}
+
 	scheduleAgent, err := llmagent.New(llmagent.Config{
 		Name:        scheduleAgentName,
 		Model:       m,
@@ -130,6 +137,7 @@ func NewWithModel(m model.LLM) (agent.Agent, error) {
 			"- 日ごとに時間帯を区切る（午前・昼・午後・夕方・夜）\n" +
 			"- 各時間帯にスポットまたはレストランを配置\n" +
 			"- 移動時間も考慮する",
+		Toolsets:  toolsets,
 		OutputKey: keySchedule,
 	})
 	if err != nil {
@@ -151,6 +159,7 @@ func NewWithModel(m model.LLM) (agent.Agent, error) {
 			"- 食費（朝食・昼食・夕食 × 日数）\n" +
 			"- 入場料・アクティビティ費\n" +
 			"- 合計（税・チップ込みの概算）",
+		Toolsets:     toolsets,
 		OutputKey:    keyBudget,
 		OutputSchema: budgetOutputSchema(),
 	})

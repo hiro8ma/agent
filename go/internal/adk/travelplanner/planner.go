@@ -13,6 +13,7 @@ import (
 	"google.golang.org/adk/v2/plugin"
 	"google.golang.org/adk/v2/runner"
 	"google.golang.org/adk/v2/session"
+	"google.golang.org/adk/v2/tool"
 
 	"github.com/hiro8ma/agent/go/internal/travel"
 )
@@ -27,9 +28,9 @@ type Planner struct {
 	sessions session.Service
 }
 
-// NewPlanner は m で木を組み、plugins を差したランナーを用意する。
-func NewPlanner(m model.LLM, plugins ...*plugin.Plugin) (*Planner, error) {
-	a, err := NewWithModel(m)
+// NewPlanner は m と skills で木を組み、plugins を差したランナーを用意する。skills は nil でよい。
+func NewPlanner(m model.LLM, skills tool.Toolset, plugins ...*plugin.Plugin) (*Planner, error) {
+	a, err := NewWithModel(m, skills)
 	if err != nil {
 		return nil, err
 	}
