@@ -40,6 +40,10 @@ linters:
         text: G404 # 学習の再現性のため math/rand を種付きで使う
         linters:
           - gosec
+      - path: internal/search/ivf\.go
+        text: G404 # k-means の初期値と標本を種で固定し、同じ入力から同じ索引を作るため
+        linters:
+          - gosec
       - path: cmd/ops-
         text: G404 # 負荷の混ぜ方と遅延のばらつきにだけ使い、推測されても害が無い
         linters:

@@ -14,8 +14,9 @@ const (
 	DefaultB  = 0.75
 )
 
-// Doc は検索の対象の 1 文書。タイトルと本文は項目ごとに別々に索引する。
+// Doc は検索の対象の 1 文書。タイトルと本文は項目ごとに別々に索引する。ID は索引せず、検索結果を呼び出し側の文書と対応づけるために持つ。
 type Doc struct {
+	ID      string
 	Title   string
 	Content string
 }
