@@ -58,6 +58,7 @@ type Index struct {
 	weights  *[numFields]float64
 	docs     []Doc
 	lengths  [][numFields]int
+	totalLen [numFields]int
 	avgLen   [numFields]float64
 	vocab    map[string]int32
 	postings [][]posting
@@ -95,15 +96,10 @@ func New(docs []Doc, opts ...Option) *Index {
 	for _, o := range opts {
 		o(ix)
 	}
-	var total [numFields]int
 	for id, d := range docs {
-		ix.add(int32(id), d, &total)
+		ix.add(int32(id), d, &ix.totalLen)
 	}
-	if len(docs) > 0 {
-		for f := range numFields {
-			ix.avgLen[f] = float64(total[f]) / float64(len(docs))
-		}
-	}
+	ix.avgLen = averageLength(ix.totalLen, len(docs))
 	return ix
 }
 
@@ -238,10 +234,40 @@ func (ix *Index) Rank(query string, limit int) Result {
 }
 
 func (ix *Index) RankQuery(q Query, limit int) Result {
+	res, _ := ix.rankWith(q, limit, nil)
+	return res
+}
+
+// corpus は採点に使う文書全体の統計。df は語ごとの文書頻度で、nil なら索引の中で数える。
+type corpus struct {
+	docs   int
+	avgLen [numFields]float64
+	df     map[string]int
+}
+
+func averageLength(total [numFields]int, docs int) [numFields]float64 {
+	var avg [numFields]float64
+	if docs > 0 {
+		for f := range numFields {
+			avg[f] = float64(total[f]) / float64(docs)
+		}
+	}
+	return avg
+}
+
+// rankWith は Hits と同じ並びで索引の中の文書番号も返す。
+func (ix *Index) rankWith(q Query, limit int, c *corpus) (Result, []int) {
 	start := time.Now()
 	sel := selectFields(q.Fields)
 	pq := ix.parse(q)
 	df := ix.docFreq(pq.terms, sel)
+	if c == nil {
+		c = &corpus{docs: len(ix.docs), avgLen: ix.avgLen}
+	} else {
+		for i, w := range pq.words {
+			df[i] = c.df[w]
+		}
+	}
 	var (
 		candidates []int
 		masks      map[int]uint64
@@ -253,19 +279,29 @@ func (ix *Index) RankQuery(q Query, limit int) Result {
 	}
 	matched := time.Now()
 	contrib := make([]float64, len(pq.terms))
-	hits := make([]Hit, 0, len(candidates))
+	type scored struct {
+		id    int
+		score float64
+	}
+	ranked := make([]scored, 0, len(candidates))
 	for _, id := range candidates {
 		mask := ^uint64(0)
 		if masks != nil {
 			mask = masks[id]
 		}
-		hits = append(hits, Hit{Doc: ix.docs[id], Score: ix.score(id, pq, df, sel, mask, contrib)})
+		ranked = append(ranked, scored{id: id, score: ix.score(id, pq, df, sel, mask, contrib, c)})
 	}
-	slices.SortStableFunc(hits, func(a, b Hit) int { return cmp.Compare(b.Score, a.Score) })
-	if limit >= 0 && len(hits) > limit {
-		hits = hits[:limit]
+	slices.SortStableFunc(ranked, func(a, b scored) int { return cmp.Compare(b.score, a.score) })
+	if limit >= 0 && len(ranked) > limit {
+		ranked = ranked[:limit]
 	}
-	return Result{Hits: hits, Scored: len(candidates), MatchTime: matched.Sub(start), RankTime: time.Since(matched)}
+	hits := make([]Hit, len(ranked))
+	ids := make([]int, len(ranked))
+	for i, r := range ranked {
+		hits[i] = Hit{Doc: ix.docs[r.id], Score: r.score}
+		ids[i] = r.id
+	}
+	return Result{Hits: hits, Scored: len(candidates), MatchTime: matched.Sub(start), RankTime: time.Since(matched)}, ids
 }
 
 type fieldSet [numFields]bool
@@ -395,7 +431,7 @@ func (ix *Index) lookup(term int32, id int) (posting, bool) {
 }
 
 // score は書き方ごとに BM25 を求め、最も高いものを返す。同じ意味の語を二重に数えないため和ではなく最大を取る。
-func (ix *Index) score(id int, pq parsedQuery, df []int, sel fieldSet, mask uint64, contrib []float64) float64 {
+func (ix *Index) score(id int, pq parsedQuery, df []int, sel fieldSet, mask uint64, contrib []float64, c *corpus) float64 {
 	for i, t := range pq.terms {
 		contrib[i] = 0
 		if df[i] == 0 {
@@ -405,11 +441,11 @@ func (ix *Index) score(id int, pq parsedQuery, df []int, sel fieldSet, mask uint
 		if !ok {
 			continue
 		}
-		tf := ix.normalizedTF(id, p, sel)
+		tf := ix.normalizedTF(id, p, sel, c.avgLen)
 		if tf == 0 {
 			continue
 		}
-		contrib[i] = ix.idf(df[i]) * tf * (ix.k1 + 1) / (tf + ix.k1)
+		contrib[i] = idf(c.docs, df[i]) * tf * (ix.k1 + 1) / (tf + ix.k1)
 	}
 	best := 0.0
 	for vi, v := range pq.variants {
@@ -426,7 +462,7 @@ func (ix *Index) score(id int, pq parsedQuery, df []int, sel fieldSet, mask uint
 }
 
 // normalizedTF は出現回数を文書の長さで割る。tf/norm で置けば BM25 の tf*(k1+1)/(tf+k1*norm) と同じ値になる。
-func (ix *Index) normalizedTF(id int, p posting, sel fieldSet) float64 {
+func (ix *Index) normalizedTF(id int, p posting, sel fieldSet, avgLen [numFields]float64) float64 {
 	if ix.weights == nil {
 		var tf, length int
 		var avg float64
@@ -434,7 +470,7 @@ func (ix *Index) normalizedTF(id int, p posting, sel fieldSet) float64 {
 			if sel[f] {
 				tf += p.tf(f)
 				length += ix.lengths[id][f]
-				avg += ix.avgLen[f]
+				avg += avgLen[f]
 			}
 		}
 		return float64(tf) / (1 - ix.b + ix.b*float64(length)/avg)
@@ -445,13 +481,13 @@ func (ix *Index) normalizedTF(id int, p posting, sel fieldSet) float64 {
 		if !sel[f] || tf == 0 {
 			continue
 		}
-		norm := 1 - ix.b + ix.b*float64(ix.lengths[id][f])/ix.avgLen[f]
+		norm := 1 - ix.b + ix.b*float64(ix.lengths[id][f])/avgLen[f]
 		s += ix.weights[f] * float64(tf) / norm
 	}
 	return s
 }
 
-func (ix *Index) idf(df int) float64 {
-	n := float64(len(ix.docs))
+func idf(docs, df int) float64 {
+	n := float64(docs)
 	return math.Log(1 + (n-float64(df)+0.5)/(float64(df)+0.5))
 }

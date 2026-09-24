@@ -20,9 +20,10 @@ type variant struct {
 	seq   []queryPos
 }
 
-// parsedQuery の terms は語彙の ID。索引に無い語は -1 にする。
+// parsedQuery の terms は語彙の ID。索引に無い語は -1 にする。words は同じ並びの索引語で、シャードをまたいで統計を突き合わせるのに使う。
 type parsedQuery struct {
 	terms    []int32
+	words    []string
 	variants []variant
 }
 
@@ -38,6 +39,7 @@ func (ix *Index) parse(q Query) parsedQuery {
 				i = len(pq.terms)
 				slot[t.term] = i
 				pq.terms = append(pq.terms, ix.lookupTerm(t.term))
+				pq.words = append(pq.words, t.term)
 			}
 			if !slices.Contains(v.terms, i) {
 				v.terms = append(v.terms, i)
