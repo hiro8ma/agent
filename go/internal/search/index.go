@@ -61,7 +61,10 @@ type Index struct {
 	totalLen [numFields]int
 	avgLen   [numFields]float64
 	vocab    map[string]int32
+	words    []string
 	postings [][]posting
+
+	gallopRatio int
 }
 
 type Option func(*Index)
@@ -92,6 +95,8 @@ func New(docs []Doc, opts ...Option) *Index {
 		docs:     docs,
 		lengths:  make([][numFields]int, len(docs)),
 		vocab:    make(map[string]int32),
+
+		gallopRatio: defaultGallopRatio,
 	}
 	for _, o := range opts {
 		o(ix)
@@ -110,6 +115,7 @@ func (ix *Index) termID(term string) int32 {
 	}
 	id := int32(len(ix.postings))
 	ix.vocab[term] = id
+	ix.words = append(ix.words, term)
 	ix.postings = append(ix.postings, nil)
 	return id
 }
@@ -208,13 +214,19 @@ type Result struct {
 	RankTime  time.Duration
 }
 
-// Query の Fields を空にするとすべての項目を検索する。Phrase はクエリの索引語が同じ項目で同じ間隔で並ぶ文書だけを残す。
+// Query の Fields を空にするとすべての項目を検索する。Operator の既定は OperatorOr。
+// Phrase はクエリの索引語が同じ項目で同じ間隔で並ぶ文書だけを残す。すべての語を含むことが前提なので Operator によらない。
 // Synonyms は検索のときだけクエリを広げる辞書で、見出しと置き換え先のどちらかを含むクエリを両方の書き方の OR にする。
+// Typo は英数字の語に打ち間違いを許し、Prefix はクエリの最後の語を接頭辞としても一致させる。Ranking の既定は RankingBM25。
 type Query struct {
 	Text     string
 	Fields   []Field
+	Operator Operator
 	Phrase   bool
 	Synonyms map[string]string
+	Typo     bool
+	Prefix   bool
+	Ranking  Ranking
 }
 
 func (ix *Index) Search(ctx context.Context, query string, limit int) ([]Doc, error) {
@@ -272,9 +284,12 @@ func (ix *Index) rankWith(q Query, limit int, c *corpus) (Result, []int) {
 		candidates []int
 		masks      map[int]uint64
 	)
-	if q.Phrase {
-		candidates, masks = ix.matchPhrase(pq, sel)
-	} else {
+	switch {
+	case q.Phrase:
+		candidates, masks = ix.matchAll(pq, sel, func(id int, v variant) bool { return ix.phraseIn(id, pq, v, sel) })
+	case q.Operator == OperatorAnd:
+		candidates, masks = ix.matchAll(pq, sel, nil)
+	default:
 		candidates = ix.match(pq.terms, sel)
 	}
 	matched := time.Now()
@@ -289,7 +304,13 @@ func (ix *Index) rankWith(q Query, limit int, c *corpus) (Result, []int) {
 		if masks != nil {
 			mask = masks[id]
 		}
-		ranked = append(ranked, scored{id: id, score: ix.score(id, pq, df, sel, mask, contrib, c)})
+		var s float64
+		if q.Ranking == RankingBucket {
+			s = ix.bucketScore(id, pq, sel, mask)
+		} else {
+			s = ix.score(id, pq, df, sel, mask, contrib, c)
+		}
+		ranked = append(ranked, scored{id: id, score: s})
 	}
 	slices.SortStableFunc(ranked, func(a, b scored) int { return cmp.Compare(b.score, a.score) })
 	if limit >= 0 && len(ranked) > limit {
@@ -368,57 +389,50 @@ func (ix *Index) match(terms []int32, sel fieldSet) []int {
 	return ids
 }
 
-// matchPhrase は書き方ごとに、すべての語を含む文書を最も短い postings から絞り、位置が並ぶかを確かめる。
-// 返す mask は文書ごとにフレーズが見つかった書き方の集合。
-func (ix *Index) matchPhrase(pq parsedQuery, sel fieldSet) ([]int, map[int]uint64) {
-	masks := make(map[int]uint64)
-	for vi, v := range pq.variants {
-		if len(v.seq) == 0 {
-			continue
-		}
-		lists := make([][]posting, len(v.terms))
-		for i, ti := range v.terms {
-			lists[i] = ix.postingsOf(pq.terms[ti])
-		}
-		rarest := slices.MinFunc(lists, func(a, b []posting) int { return cmp.Compare(len(a), len(b)) })
-		for _, p := range rarest {
-			if ix.phraseIn(int(p.doc), pq, v, sel) {
-				masks[int(p.doc)] |= 1 << vi
-			}
-		}
-	}
-	ids := make([]int, 0, len(masks))
-	for id := range masks {
-		ids = append(ids, id)
-	}
-	slices.Sort(ids)
-	return ids, masks
-}
-
 func (ix *Index) phraseIn(id int, pq parsedQuery, v variant, sel fieldSet) bool {
-	ps := make([]posting, len(v.seq))
+	ps := make([][]posting, len(v.seq))
 	for i, s := range v.seq {
-		p, ok := ix.lookup(pq.terms[s.term], id)
-		if !ok {
+		ps[i] = ix.present(id, pq, v.slots[s.slot])
+		if len(ps[i]) == 0 {
 			return false
 		}
-		ps[i] = p
 	}
 	for f := range numFields {
 		if !sel[f] {
 			continue
 		}
-		for _, base := range ps[0].positions(f) {
-			ok := true
-			for i := 1; i < len(ps) && ok; i++ {
-				_, ok = slices.BinarySearch(ps[i].positions(f), base+v.seq[i].off)
-			}
-			if ok {
-				return true
+		for _, first := range ps[0] {
+			for _, base := range first.positions(f) {
+				if phraseAt(ps[1:], v.seq[1:], Field(f), base) {
+					return true
+				}
 			}
 		}
 	}
 	return false
+}
+
+func phraseAt(ps [][]posting, seq []queryPos, f Field, base int32) bool {
+	for i, s := range seq {
+		if !slices.ContainsFunc(ps[i], func(p posting) bool {
+			_, ok := slices.BinarySearch(p.positions(f), base+s.off)
+			return ok
+		}) {
+			return false
+		}
+	}
+	return true
+}
+
+// present は slot の索引語のうち文書に現れるものの postings を返す。
+func (ix *Index) present(id int, pq parsedQuery, slot []alt) []posting {
+	var ps []posting
+	for _, a := range slot {
+		if p, ok := ix.lookup(pq.terms[a.term], id); ok {
+			ps = append(ps, p)
+		}
+	}
+	return ps
 }
 
 func (ix *Index) lookup(term int32, id int) (posting, bool) {
@@ -453,8 +467,12 @@ func (ix *Index) score(id int, pq parsedQuery, df []int, sel fieldSet, mask uint
 			continue
 		}
 		s := 0.0
-		for _, ti := range v.terms {
-			s += contrib[ti]
+		for _, slot := range v.slots {
+			m := 0.0
+			for _, a := range slot {
+				m = max(m, contrib[a.term])
+			}
+			s += m
 		}
 		best = max(best, s)
 	}

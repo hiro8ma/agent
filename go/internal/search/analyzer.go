@@ -16,12 +16,14 @@ type Analyzer struct {
 	normalize bool
 	synonyms  *strings.Replacer
 	stop      map[string]struct{}
+	tokenize  func(string) []string
 }
 
 type analyzerConfig struct {
 	normalize bool
 	synonyms  map[string]string
 	stop      []string
+	tokenize  func(string) []string
 }
 
 type AnalyzerOption func(*analyzerConfig)
@@ -68,7 +70,10 @@ func NewAnalyzer(opts ...AnalyzerOption) *Analyzer {
 	for _, o := range opts {
 		o(&c)
 	}
-	a := &Analyzer{normalize: c.normalize}
+	a := &Analyzer{normalize: c.normalize, tokenize: c.tokenize}
+	if a.tokenize == nil {
+		a.tokenize = Tokenize
+	}
 	if len(c.synonyms) > 0 {
 		pairs := make([][2]string, 0, len(c.synonyms))
 		for from, to := range c.synonyms {
@@ -121,7 +126,7 @@ func (a *Analyzer) analyzeNormalized(text string) []token {
 	if a.synonyms != nil {
 		text = a.synonyms.Replace(text)
 	}
-	terms := Tokenize(text)
+	terms := a.tokenize(text)
 	tokens := make([]token, 0, len(terms))
 	for i, t := range terms {
 		if _, ok := a.stop[t]; ok {

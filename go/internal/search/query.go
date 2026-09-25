@@ -9,14 +9,22 @@ import (
 // maxVariants は書き方の集合を uint64 のビットで持つための上限。
 const maxVariants = 64
 
+// queryPos の slot は variant.slots の添字。
 type queryPos struct {
-	term int
+	slot int
 	off  int32
 }
 
-// variant はクエリの 1 つの書き方。terms は重複を除いた語、seq はフレーズの照合に使う語の並びと先頭からの間隔。
+// alt はクエリの 1 語に一致させる索引語の 1 つ。term は parsedQuery.terms の添字。exact はクエリの語そのもので、打ち間違いも接頭辞の補完も無い。
+type alt struct {
+	term  int
+	typos int
+	exact bool
+}
+
+// variant はクエリの 1 つの書き方。slots は重複を除いたクエリの語ごとの一致させる索引語、seq はフレーズの照合に使う語の並びと先頭からの間隔。
 type variant struct {
-	terms []int
+	slots [][]alt
 	seq   []queryPos
 }
 
@@ -29,22 +37,29 @@ type parsedQuery struct {
 
 func (ix *Index) parse(q Query) parsedQuery {
 	var pq parsedQuery
-	slot := make(map[string]int)
+	index := make(map[string]int)
+	termOf := func(word string) int {
+		i, ok := index[word]
+		if !ok {
+			i = len(pq.terms)
+			index[word] = i
+			pq.terms = append(pq.terms, ix.lookupTerm(word))
+			pq.words = append(pq.words, word)
+		}
+		return i
+	}
 	for _, text := range expandSynonyms(ix.analyzer.normalizeText(q.Text), q.Synonyms, ix.analyzer.normalizeText) {
 		tokens := ix.analyzer.analyzeNormalized(text)
 		var v variant
-		for _, t := range tokens {
-			i, ok := slot[t.term]
+		slotOf := make(map[string]int)
+		for k, t := range tokens {
+			si, ok := slotOf[t.term]
 			if !ok {
-				i = len(pq.terms)
-				slot[t.term] = i
-				pq.terms = append(pq.terms, ix.lookupTerm(t.term))
-				pq.words = append(pq.words, t.term)
+				si = len(v.slots)
+				slotOf[t.term] = si
+				v.slots = append(v.slots, ix.alternatives(t.term, q, k == len(tokens)-1, termOf))
 			}
-			if !slices.Contains(v.terms, i) {
-				v.terms = append(v.terms, i)
-			}
-			v.seq = append(v.seq, queryPos{term: i, off: t.pos - tokens[0].pos})
+			v.seq = append(v.seq, queryPos{slot: si, off: t.pos - tokens[0].pos})
 		}
 		pq.variants = append(pq.variants, v)
 	}
