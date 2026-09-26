@@ -218,11 +218,13 @@ type Result struct {
 // Phrase はクエリの索引語が同じ項目で同じ間隔で並ぶ文書だけを残す。すべての語を含むことが前提なので Operator によらない。
 // Synonyms は検索のときだけクエリを広げる辞書で、見出しと置き換え先のどちらかを含むクエリを両方の書き方の OR にする。
 // Typo は英数字の語に打ち間違いを許し、Prefix はクエリの最後の語を接頭辞としても一致させる。Ranking の既定は RankingBM25。
+// Near が正なら、クエリの語がすべて同じ項目で、順番を問わず最初と最後の位置の差が Near 以内に現れる文書だけを残す（NEAR/k）。Phrase を優先する。
 type Query struct {
 	Text     string
 	Fields   []Field
 	Operator Operator
 	Phrase   bool
+	Near     int
 	Synonyms map[string]string
 	Typo     bool
 	Prefix   bool
@@ -287,6 +289,8 @@ func (ix *Index) rankWith(q Query, limit int, c *corpus) (Result, []int) {
 	switch {
 	case q.Phrase:
 		candidates, masks = ix.matchAll(pq, sel, func(id int, v variant) bool { return ix.phraseIn(id, pq, v, sel) })
+	case q.Near > 0:
+		candidates, masks = ix.matchAll(pq, sel, func(id int, v variant) bool { return ix.nearIn(id, pq, v, sel, q.Near) })
 	case q.Operator == OperatorAnd:
 		candidates, masks = ix.matchAll(pq, sel, nil)
 	default:
