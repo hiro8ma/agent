@@ -29,14 +29,7 @@ func (ix *Index) matchAll(pq parsedQuery, sel fieldSet, keep func(id int, v vari
 		for i, slot := range v.slots {
 			lists[i] = ix.slotPostings(pq, slot, sel, all)
 		}
-		slices.SortFunc(lists, func(a, b []posting) int { return cmp.Compare(len(a), len(b)) })
-		ids := docsOf(lists[0], sel, all)
-		for _, ps := range lists[1:] {
-			if len(ids) == 0 {
-				break
-			}
-			ids = intersect(ids, ps, sel, all, ix.gallopRatio)
-		}
+		ids := intersectAll(lists, sel, all, ix.gallopRatio, nil)
 		if keep != nil {
 			ids = slices.DeleteFunc(ids, func(id int32) bool { return !keep(int(id), v) })
 		}
@@ -80,6 +73,25 @@ func (ix *Index) slotPostings(pq parsedQuery, slot []alt, sel fieldSet, all bool
 	return slices.CompactFunc(out, func(a, b posting) bool { return a.doc == b.doc })
 }
 
+// intersectAll は postings を短い順に並べ、短いものから共通部分を取る。step が nil でなければ、1 つ畳み込むたびに使った postings の長さとその時点の結果を渡す。
+func intersectAll(lists [][]posting, sel fieldSet, all bool, ratio int, step func(n int, ids []int32)) []int32 {
+	slices.SortFunc(lists, func(a, b []posting) int { return cmp.Compare(len(a), len(b)) })
+	ids := docsOf(lists[0], sel, all)
+	if step != nil {
+		step(len(lists[0]), ids)
+	}
+	for _, ps := range lists[1:] {
+		if len(ids) == 0 {
+			break
+		}
+		ids = intersect(ids, ps, sel, all, ratio)
+		if step != nil {
+			step(len(ps), ids)
+		}
+	}
+	return ids
+}
+
 func docsOf(ps []posting, sel fieldSet, all bool) []int32 {
 	ids := make([]int32, 0, len(ps))
 	for _, p := range ps {
@@ -103,6 +115,12 @@ func useGallop(short, long, ratio int) bool {
 }
 
 func intersectMerge(ids []int32, ps []posting, sel fieldSet, all bool) []int32 {
+	out, _, _ := intersectMergeStop(ids, ps, sel, all)
+	return out
+}
+
+// intersectMergeStop は共通部分と、止まったときの ids と ps の位置を返す。どちらかは末尾に達している。
+func intersectMergeStop(ids []int32, ps []posting, sel fieldSet, all bool) ([]int32, int, int) {
 	out := ids[:0]
 	i, j := 0, 0
 	for i < len(ids) && j < len(ps) {
@@ -119,7 +137,7 @@ func intersectMerge(ids []int32, ps []posting, sel fieldSet, all bool) []int32 {
 			j++
 		}
 	}
-	return out
+	return out, i, j
 }
 
 // intersectGallop は ids の各要素を、ps の前回の位置から 1, 2, 4, ... と間隔を倍にして越えるまで進め、その区間を二分探索する。

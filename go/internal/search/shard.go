@@ -128,6 +128,7 @@ func (sh *Sharded) RankQuery(q Query, limit int) ShardedResult {
 }
 
 func (sh *Sharded) collect(q Query) *corpus {
+	q = q.scoringText()
 	c := &corpus{df: make(map[string]int)}
 	var total [numFields]int
 	for _, ix := range sh.shards {

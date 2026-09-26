@@ -219,8 +219,10 @@ type Result struct {
 // Synonyms は検索のときだけクエリを広げる辞書で、見出しと置き換え先のどちらかを含むクエリを両方の書き方の OR にする。
 // Typo は英数字の語に打ち間違いを許し、Prefix はクエリの最後の語を接頭辞としても一致させる。Ranking の既定は RankingBM25。
 // Near が正なら、クエリの語がすべて同じ項目で、順番を問わず最初と最後の位置の差が Near 以内に現れる文書だけを残す（NEAR/k）。Phrase を優先する。
+// Expr が nil でなければ候補を論理式で決め、Text / Operator / Phrase / Near を使わない。採点は式の中の語すべてで行う。
 type Query struct {
 	Text     string
+	Expr     *Expr
 	Fields   []Field
 	Operator Operator
 	Phrase   bool
@@ -273,6 +275,7 @@ func averageLength(total [numFields]int, docs int) [numFields]float64 {
 func (ix *Index) rankWith(q Query, limit int, c *corpus) (Result, []int) {
 	start := time.Now()
 	sel := selectFields(q.Fields)
+	q = q.scoringText()
 	pq := ix.parse(q)
 	df := ix.docFreq(pq.terms, sel)
 	if c == nil {
@@ -287,6 +290,8 @@ func (ix *Index) rankWith(q Query, limit int, c *corpus) (Result, []int) {
 		masks      map[int]uint64
 	)
 	switch {
+	case q.Expr != nil:
+		candidates = ix.matchExpr(q.Expr, sel)
 	case q.Phrase:
 		candidates, masks = ix.matchAll(pq, sel, func(id int, v variant) bool { return ix.phraseIn(id, pq, v, sel) })
 	case q.Near > 0:
@@ -374,58 +379,102 @@ func (ix *Index) docFreq(terms []int32, sel fieldSet) []int {
 	return df
 }
 
-// match はクエリ語の postings の和集合を返す。どの語も含まない文書はここで落ち、採点されない。
+// match はクエリ語の postings の和集合を、文書番号の列を前から併合して返す。どの語も含まない文書はここで落ち、採点されない。
+// マップで重複を除いて並べ替えるより、BenchmarkMatchOr で 5 から 25 倍速かった。
 func (ix *Index) match(terms []int32, sel fieldSet) []int {
-	seen := make(map[int]struct{})
-	var ids []int
+	all := sel == selectFields(nil)
+	var ids []int32
 	for _, t := range terms {
-		for _, p := range ix.postingsOf(t) {
-			if sel.tf(p) == 0 {
-				continue
-			}
-			if _, ok := seen[int(p.doc)]; !ok {
-				seen[int(p.doc)] = struct{}{}
-				ids = append(ids, int(p.doc))
-			}
-		}
+		ids = unionIDs(ids, docsOf(ix.postingsOf(t), sel, all))
 	}
-	slices.Sort(ids)
-	return ids
+	out := make([]int, len(ids))
+	for i, id := range ids {
+		out[i] = int(id)
+	}
+	return out
 }
 
 func (ix *Index) phraseIn(id int, pq parsedQuery, v variant, sel fieldSet) bool {
-	ps := make([][]posting, len(v.seq))
-	for i, s := range v.seq {
-		ps[i] = ix.present(id, pq, v.slots[s.slot])
-		if len(ps[i]) == 0 {
+	var (
+		psBuf    [4][]posting
+		listsBuf [4][]int32
+		offsBuf  [4]int32
+	)
+	ps := psBuf[:0]
+	for _, slot := range v.slots {
+		p := ix.present(id, pq, slot)
+		if len(p) == 0 {
 			return false
 		}
+		ps = append(ps, p)
+	}
+	lists, offs := listsBuf[:0], offsBuf[:0]
+	for _, s := range v.seq {
+		lists = append(lists, nil)
+		offs = append(offs, s.off)
 	}
 	for f := range numFields {
 		if !sel[f] {
 			continue
 		}
-		for _, first := range ps[0] {
-			for _, base := range first.positions(f) {
-				if phraseAt(ps[1:], v.seq[1:], Field(f), base) {
-					return true
-				}
-			}
+		for i, s := range v.seq {
+			lists[i] = slotPositions(ps[s.slot], Field(f))
+		}
+		if ok, _ := phraseMatch(lists, offs); ok {
+			return true
 		}
 	}
 	return false
 }
 
-func phraseAt(ps [][]posting, seq []queryPos, f Field, base int32) bool {
-	for i, s := range seq {
-		if !slices.ContainsFunc(ps[i], func(p posting) bool {
-			_, ok := slices.BinarySearch(p.positions(f), base+s.off)
-			return ok
-		}) {
-			return false
-		}
+// slotPositions は slot の索引語のうち文書に現れるものの、項目 f での位置を昇順に並べる。
+func slotPositions(ps []posting, f Field) []int32 {
+	if len(ps) == 1 {
+		return ps[0].positions(f)
 	}
-	return true
+	var out []int32
+	for _, p := range ps {
+		out = append(out, p.positions(f)...)
+	}
+	slices.Sort(out)
+	return out
+}
+
+// phraseMatch は先頭の語の位置を起点の候補にし、語ごとに起点+間隔と位置の列を 2 つのポインタで前から突き合わせて候補を絞る。最後の語で 1 つ一致すれば true。比べた回数も返す。
+func phraseMatch(lists [][]int32, offs []int32) (bool, int) {
+	bases := lists[0]
+	var buf []int32
+	n := 0
+	for k := 1; k < len(lists); k++ {
+		last := k == len(lists)-1
+		if !last && buf == nil {
+			buf = make([]int32, 0, len(bases))
+		}
+		next, off := lists[k], offs[k]
+		out := buf[:0]
+		i, j := 0, 0
+		for i < len(bases) && j < len(next) {
+			n++
+			switch a, b := bases[i]+off, next[j]; {
+			case a < b:
+				i++
+			case a > b:
+				j++
+			default:
+				if last {
+					return true, n
+				}
+				out = append(out, bases[i])
+				i++
+				j++
+			}
+		}
+		if len(out) == 0 {
+			return false, n
+		}
+		bases = out
+	}
+	return len(bases) > 0, n
 }
 
 // present は slot の索引語のうち文書に現れるものの postings を返す。
