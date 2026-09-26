@@ -17,6 +17,7 @@ type Analyzer struct {
 	synonyms  *strings.Replacer
 	stop      map[string]struct{}
 	tokenize  func(string) []string
+	stem      func(string) string
 }
 
 type analyzerConfig struct {
@@ -24,6 +25,9 @@ type analyzerConfig struct {
 	synonyms  map[string]string
 	stop      []string
 	tokenize  func(string) []string
+	english   bool
+	phrases   []string
+	stem      func(string) string
 }
 
 type AnalyzerOption func(*analyzerConfig)
@@ -45,6 +49,27 @@ func WithSynonyms(dict map[string]string) AnalyzerOption {
 
 func WithStopWords(words ...string) AnalyzerOption {
 	return func(c *analyzerConfig) { c.stop = append(c.stop, words...) }
+}
+
+// WithEnglish は英語の語を分ける前処理を有効にする。短縮形を展開し（I'm → i am）、所有格の 's と先頭のエリジオン（l'）を落とし、
+// IPv4 アドレス / ドメイン名 / 略語（U.S.A. → usa）を 1 つの索引語に保つ。
+func WithEnglish() AnalyzerOption {
+	return func(c *analyzerConfig) { c.english = true }
+}
+
+// WithPhrases は New York のような複数語を、空白かハイフンだけで並んだときに 1 つの索引語（new_york）にする。大文字小文字は区別しない。
+func WithPhrases(phrases ...string) AnalyzerOption {
+	return func(c *analyzerConfig) { c.phrases = append(c.phrases, phrases...) }
+}
+
+// WithStemming は英小文字だけの索引語に PorterStem をかける。除去語は語幹化の前の形で照合する。
+func WithStemming() AnalyzerOption {
+	return func(c *analyzerConfig) { c.stem = PorterStem }
+}
+
+// WithLemmatization は英小文字だけの索引語に Lemmatize をかける。WithStemming と一緒に渡すと後に渡した方を使う。
+func WithLemmatization() AnalyzerOption {
+	return func(c *analyzerConfig) { c.stem = Lemmatize }
 }
 
 var (
@@ -70,9 +95,16 @@ func NewAnalyzer(opts ...AnalyzerOption) *Analyzer {
 	for _, o := range opts {
 		o(&c)
 	}
-	a := &Analyzer{normalize: c.normalize, tokenize: c.tokenize}
+	a := &Analyzer{normalize: c.normalize, tokenize: c.tokenize, stem: c.stem}
 	if a.tokenize == nil {
 		a.tokenize = Tokenize
+		if c.english || len(c.phrases) > 0 {
+			phrases := make([]string, len(c.phrases))
+			for i, p := range c.phrases {
+				phrases[i] = a.normalizeText(p)
+			}
+			a.tokenize = newEnglishTokenizer(c.english, phrases).tokenize
+		}
 	}
 	if len(c.synonyms) > 0 {
 		pairs := make([][2]string, 0, len(c.synonyms))
@@ -131,6 +163,9 @@ func (a *Analyzer) analyzeNormalized(text string) []token {
 	for i, t := range terms {
 		if _, ok := a.stop[t]; ok {
 			continue
+		}
+		if a.stem != nil && isASCIILowerWord(t) {
+			t = a.stem(t)
 		}
 		tokens = append(tokens, token{term: t, pos: int32(i)})
 	}
