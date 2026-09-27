@@ -44,12 +44,15 @@ type Lattice struct {
 
 // Analyzer は辞書と遷移のコストで区切りと品詞を同時に決める。
 // 辞書の候補が 1 つも始まらない位置には、UnknownLabel の 1 文字の未知語を置く。
+// GroupUnknown なら、同じ文字種が続く範囲を 1 つの未知語の候補にも足す（MeCab の未知語処理の group）。範囲は辞書の語が始まる位置の手前で止め、辞書の語を未知語に飲み込まない。
+// 未知語のコストは長さによらず UnknownCost。
 type Analyzer struct {
 	Dict         Dictionary
 	Trans        Transitions
 	DefaultTrans float64
 	UnknownLabel string
 	UnknownCost  float64
+	GroupUnknown bool
 }
 
 func (a Analyzer) transCost(from, to string) float64 {
@@ -71,6 +74,16 @@ func (a Analyzer) Lattice(text string) Lattice {
 		l.EndAt[n.End] = append(l.EndAt[n.End], len(l.Nodes))
 		l.Nodes = append(l.Nodes, n)
 	}
+	var (
+		starts []bool
+		types  []CharType
+	)
+	if a.GroupUnknown {
+		starts, types = a.dictStarts(rs, maxLen), runeTypes(rs)
+	}
+	unknown := func(b, e int) {
+		add(Node{Surface: string(rs[b:e]), Label: a.UnknownLabel, Begin: b, End: e, Cost: a.UnknownCost, Unknown: true})
+	}
 	for b := range rs {
 		found := false
 		for e := b + 1; e <= min(len(rs), b+maxLen); e++ {
@@ -80,11 +93,33 @@ func (a Analyzer) Lattice(text string) Lattice {
 				found = true
 			}
 		}
-		if !found {
-			add(Node{Surface: string(rs[b]), Label: a.UnknownLabel, Begin: b, End: b + 1, Cost: a.UnknownCost, Unknown: true})
+		if found {
+			continue
+		}
+		unknown(b, b+1)
+		if !a.GroupUnknown {
+			continue
+		}
+		e := b + 1
+		for e < len(rs) && types[e] == types[b] && !starts[e] {
+			e++
+		}
+		if e > b+1 {
+			unknown(b, e)
 		}
 	}
 	return l
+}
+
+// dictStarts は位置ごとに、辞書の語が 1 つでも始まるかを返す。
+func (a Analyzer) dictStarts(rs []rune, maxLen int) []bool {
+	starts := make([]bool, len(rs)+1)
+	for b := range rs {
+		for e := b + 1; e <= min(len(rs), b+maxLen) && !starts[b]; e++ {
+			starts[b] = len(a.Dict[string(rs[b:e])]) > 0
+		}
+	}
+	return starts
 }
 
 // Best は BOS から EOS までの最小のコストの経路をビタビで求める。

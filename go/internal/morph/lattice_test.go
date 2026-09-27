@@ -49,11 +49,14 @@ func TestAnalyze(t *testing.T) {
 	withoutTokyo["とう"] = []morph.Entry{{Label: "名詞", Cost: 3}}
 	withoutTokyo["きょう"] = []morph.Entry{{Label: "名詞", Cost: 3}}
 
+	withCurry := textbookDict()
+	withCurry["カレー"] = []morph.Entry{{Label: "名詞", Cost: 2}}
 	testCases := map[string]struct {
-		dict morph.Dictionary
-		text string
-		want string
-		cost float64
+		dict  morph.Dictionary
+		text  string
+		group bool
+		want  string
+		cost  float64
 	}{
 		"教材の辞書で区切りと品詞が決まる": {
 			dict: textbookDict(), text: "とうきょうとなら",
@@ -71,11 +74,23 @@ func TestAnalyze(t *testing.T) {
 			dict: textbookDict(), text: "とうきょうとぱりとなら",
 			want: "とうきょう/固有名詞 と/助詞 ぱ/未知語 り/未知語 と/助詞 なら/固有名詞", cost: 42,
 		},
+		"未知語をまとめるとぱりが 1 語になり、辞書のととならは飲み込まない": {
+			dict: textbookDict(), text: "とうきょうとぱりとなら", group: true,
+			want: "とうきょう/固有名詞 と/助詞 ぱり/未知語 と/助詞 なら/固有名詞", cost: 27,
+		},
+		"未知語をまとめてもカタカナの辞書の語の手前で止める": {
+			dict: withCurry, text: "キーマカレー", group: true,
+			want: "キーマ/未知語 カレー/名詞", cost: 22,
+		},
+		"未知語をまとめないとカタカナが 1 文字ずつに分かれる": {
+			dict: withCurry, text: "キーマカレー",
+			want: "キ/未知語 ー/未知語 マ/未知語 カレー/名詞", cost: 52,
+		},
 	}
 	for tn, tc := range testCases {
 		t.Run(tn, func(t *testing.T) {
 			t.Parallel()
-			a := morph.Analyzer{Dict: tc.dict, Trans: textbookTransitions(), DefaultTrans: 5, UnknownLabel: "未知語", UnknownCost: 10}
+			a := morph.Analyzer{Dict: tc.dict, Trans: textbookTransitions(), DefaultTrans: 5, UnknownLabel: "未知語", UnknownCost: 10, GroupUnknown: tc.group}
 			nodes, cost := a.Analyze(tc.text)
 			if got := format(nodes); got != tc.want || cost != tc.cost {
 				t.Fatalf("got %q (%v), want %q (%v)", got, cost, tc.want, tc.cost)

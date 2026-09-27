@@ -61,3 +61,35 @@ func PostingsBytes(ix *Index) (structs, positions int64) {
 	}
 	return structs, positions
 }
+
+// RankTFIDFWithIDF は IDF を語ごとに与えて q を採点する。教材の丸めた IDF をそのまま使うため。
+func RankTFIDFWithIDF(ix *Index, q Query, idf map[string]float64, limit int) Result {
+	res, _ := ix.rankWith(q, limit, &corpus{docs: len(ix.docs), avgLen: ix.avgLen, idf: idf})
+	return res
+}
+
+// TopKOrder は点数の列から上位 limit 件の添字を返す。heap なら大きさ limit のヒープ、そうでなければ全件の安定ソートで選ぶ。
+func TopKOrder(scores []float64, limit int, heap bool) []int {
+	t := newRankTopWith(len(scores), limit, heap)
+	for i, s := range scores {
+		t.push(scored{ord: i, score: s})
+	}
+	r := t.result()
+	out := make([]int, len(r))
+	for i, s := range r {
+		out[i] = s.ord
+	}
+	return out
+}
+
+// WithBM25Of は索引を共有したまま、BM25 の k1 と b だけを変えた写しを返す。
+func WithBM25Of(ix *Index, k1, b float64) *Index {
+	cp := *ix
+	cp.k1, cp.b = k1, b
+	return &cp
+}
+
+// DocLength は文書のタイトルと本文の索引語の数の和を返す。
+func DocLength(ix *Index, doc int) int {
+	return ix.lengths[doc][FieldTitle] + ix.lengths[doc][FieldContent]
+}

@@ -63,6 +63,8 @@ type Index struct {
 	vocab    map[string]int32
 	words    []string
 	postings [][]posting
+	norms    []float64
+	idfLog2  bool
 
 	gallopRatio int
 }
@@ -80,6 +82,9 @@ func WithAnalyzer(a *Analyzer) Option {
 		}
 	}
 }
+
+// WithLog2IDF は BM25 の IDF の対数の底を自然対数から 2 に変える。点数が 1/ln2 倍になるだけで順位は変わらない。
+func WithLog2IDF() Option { return func(ix *Index) { ix.idfLog2 = true } }
 
 // WithFieldWeights は項目ごとに長さを正規化してから重みを掛けて足す（BM25F）。指定しなければ項目をまとめて 1 つの文書として BM25 で採点する。
 func WithFieldWeights(title, content float64) Option {
@@ -105,6 +110,7 @@ func New(docs []Doc, opts ...Option) *Index {
 		ix.add(int32(id), d, &ix.totalLen)
 	}
 	ix.avgLen = averageLength(ix.totalLen, len(docs))
+	ix.norms = ix.docNorms()
 	return ix
 }
 
@@ -217,7 +223,7 @@ type Result struct {
 // Query の Fields を空にするとすべての項目を検索する。Operator の既定は OperatorOr。
 // Phrase はクエリの索引語が同じ項目で同じ間隔で並ぶ文書だけを残す。すべての語を含むことが前提なので Operator によらない。
 // Synonyms は検索のときだけクエリを広げる辞書で、見出しと置き換え先のどちらかを含むクエリを両方の書き方の OR にする。
-// Typo は英数字の語に打ち間違いを許し、Prefix はクエリの最後の語を接頭辞としても一致させる。Ranking の既定は RankingBM25。
+// Typo は英数字の語に打ち間違いを許し、Prefix はクエリの最後の語を接頭辞としても一致させる。Ranking の既定は RankingBM25。TFIDF は RankingTFIDF と RankingTFIDFCosine のときだけ使う。
 // Near が正なら、クエリの語がすべて同じ項目で、順番を問わず最初と最後の位置の差が Near 以内に現れる文書だけを残す（NEAR/k）。Phrase を優先する。
 // Expr が nil でなければ候補を論理式で決め、Text / Operator / Phrase / Near を使わない。採点は式の中の語すべてで行う。
 type Query struct {
@@ -231,6 +237,7 @@ type Query struct {
 	Typo     bool
 	Prefix   bool
 	Ranking  Ranking
+	TFIDF    TFIDF
 }
 
 func (ix *Index) Search(ctx context.Context, query string, limit int) ([]Doc, error) {
@@ -254,11 +261,12 @@ func (ix *Index) RankQuery(q Query, limit int) Result {
 	return res
 }
 
-// corpus は採点に使う文書全体の統計。df は語ごとの文書頻度で、nil なら索引の中で数える。
+// corpus は採点に使う文書全体の統計。df は語ごとの文書頻度で、nil なら索引の中で数える。idf は TF-IDF の IDF を語ごとに与えるときに使う。
 type corpus struct {
 	docs   int
 	avgLen [numFields]float64
 	df     map[string]int
+	idf    map[string]float64
 }
 
 func averageLength(total [numFields]int, docs int) [numFields]float64 {
@@ -303,33 +311,44 @@ func (ix *Index) rankWith(q Query, limit int, c *corpus) (Result, []int) {
 	}
 	matched := time.Now()
 	contrib := make([]float64, len(pq.terms))
-	type scored struct {
-		id    int
-		score float64
+	var idfs []float64
+	tfidf := q.TFIDF
+	if q.Ranking == RankingTFIDFCosine {
+		tfidf = TFIDF{NormalizeQuery: q.TFIDF.NormalizeQuery}
 	}
-	ranked := make([]scored, 0, len(candidates))
-	for _, id := range candidates {
+	if q.Ranking == RankingTFIDF || q.Ranking == RankingTFIDFCosine {
+		idfs = tfidfWeights(tfidf, pq, df, c)
+	}
+	qnorm := 1.0
+	if q.Ranking == RankingTFIDFCosine && tfidf.NormalizeQuery {
+		qnorm = queryNorm(idfs)
+	}
+	top := newRankTop(len(candidates), limit)
+	for i, id := range candidates {
 		mask := ^uint64(0)
 		if masks != nil {
 			mask = masks[id]
 		}
 		var s float64
-		if q.Ranking == RankingBucket {
+		switch q.Ranking {
+		case RankingBucket:
 			s = ix.bucketScore(id, pq, sel, mask)
-		} else {
+		case RankingTFIDF:
+			s = ix.tfidfScore(id, pq, idfs, sel, mask, contrib, tfidf.TF, false)
+		case RankingTFIDFCosine:
+			s = ix.tfidfScore(id, pq, idfs, sel, mask, contrib, tfidf.TF, true) / qnorm
+		default:
 			s = ix.score(id, pq, df, sel, mask, contrib, c)
 		}
-		ranked = append(ranked, scored{id: id, score: s})
+		top.push(scored{ord: i, score: s})
 	}
-	slices.SortStableFunc(ranked, func(a, b scored) int { return cmp.Compare(b.score, a.score) })
-	if limit >= 0 && len(ranked) > limit {
-		ranked = ranked[:limit]
-	}
+	ranked := top.result()
 	hits := make([]Hit, len(ranked))
 	ids := make([]int, len(ranked))
 	for i, r := range ranked {
-		hits[i] = Hit{Doc: ix.docs[r.id], Score: r.score}
-		ids[i] = r.id
+		id := candidates[r.ord]
+		hits[i] = Hit{Doc: ix.docs[id], Score: r.score}
+		ids[i] = id
 	}
 	return Result{Hits: hits, Scored: len(candidates), MatchTime: matched.Sub(start), RankTime: time.Since(matched)}, ids
 }
@@ -512,8 +531,13 @@ func (ix *Index) score(id int, pq parsedQuery, df []int, sel fieldSet, mask uint
 		if tf == 0 {
 			continue
 		}
-		contrib[i] = idf(c.docs, df[i]) * tf * (ix.k1 + 1) / (tf + ix.k1)
+		contrib[i] = ix.idf(c.docs, df[i]) * tf * (ix.k1 + 1) / (tf + ix.k1)
 	}
+	return combine(pq, mask, contrib)
+}
+
+// combine は語ごとの点数から、書き方ごとに語の位置ごとの最大を足し、最も高い書き方の値を返す。
+func combine(pq parsedQuery, mask uint64, contrib []float64) float64 {
 	best := 0.0
 	for vi, v := range pq.variants {
 		if mask&(1<<vi) == 0 {
@@ -558,7 +582,11 @@ func (ix *Index) normalizedTF(id int, p posting, sel fieldSet, avgLen [numFields
 	return s
 }
 
-func idf(docs, df int) float64 {
+func (ix *Index) idf(docs, df int) float64 {
 	n := float64(docs)
-	return math.Log(1 + (n-float64(df)+0.5)/(float64(df)+0.5))
+	v := math.Log(1 + (n-float64(df)+0.5)/(float64(df)+0.5))
+	if ix.idfLog2 {
+		return v / math.Ln2
+	}
+	return v
 }

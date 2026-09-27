@@ -117,26 +117,31 @@ func TestNLLGradCheck(t *testing.T) {
 	testCases := map[string]struct {
 		l2   float64
 		seed uint64
+		data []morph.Sentence
+		opts []morph.CRFOption
 	}{
-		"正則化なしでランダムなコスト": {l2: 0, seed: 1},
-		"L2 つきでランダムなコスト": {l2: 0.1, seed: 2},
+		"正則化なしでランダムなコスト": {l2: 0, seed: 1, data: trainData},
+		"L2 つきでランダムなコスト": {l2: 0.1, seed: 2, data: trainData},
+		"文字種の特徴量つき":      {l2: 0.1, seed: 3, data: katakanaData, opts: []morph.CRFOption{morph.WithCharTypeFeatures()}},
+		"長さの特徴量つき":       {l2: 0, seed: 4, data: katakanaData, opts: []morph.CRFOption{morph.WithLengthFeatures()}},
+		"文字種と長さの特徴量つき":   {l2: 0.1, seed: 5, data: katakanaData, opts: []morph.CRFOption{morph.WithCharTypeFeatures(), morph.WithLengthFeatures()}},
 	}
 	for tn, tc := range testCases {
 		t.Run(tn, func(t *testing.T) {
 			t.Parallel()
-			m := morph.NewCRF(trainData)
+			m := morph.NewCRF(tc.data, tc.opts...)
 			r := rand.New(rand.NewPCG(tc.seed, 3))
 			for i := range m.Params {
 				m.Params[i] = r.NormFloat64()
 			}
-			_, grad := m.NLL(trainData, tc.l2)
+			_, grad := m.NLL(tc.data, tc.l2)
 			const h = 1e-5
 			for i := range m.Params {
 				orig := m.Params[i]
 				m.Params[i] = orig + h
-				plus, _ := m.NLL(trainData, tc.l2)
+				plus, _ := m.NLL(tc.data, tc.l2)
 				m.Params[i] = orig - h
-				minus, _ := m.NLL(trainData, tc.l2)
+				minus, _ := m.NLL(tc.data, tc.l2)
 				m.Params[i] = orig
 				numeric := (plus - minus) / (2 * h)
 				if math.Abs(numeric-grad[i]) > 1e-6*math.Max(1, math.Abs(numeric)) {
@@ -207,4 +212,94 @@ func TestCRFTrain(t *testing.T) {
 		fmt.Fprintf(&sb, "| %s→%s | %.3f |\n", e[0], e[1], m.TransCost(e[0], e[1]))
 	}
 	t.Log(sb.String())
+}
+
+// katakanaData は名詞のカタカナ語（ペン / ナン / カレーライス）と、ひらがなの代名詞 / 助詞 / 動詞を含む。
+// 文頭は代名詞が多いので、遷移だけでは文頭の未知語が代名詞に寄る。
+var katakanaData = []morph.Sentence{
+	sentence("これ/代名詞 は/助詞 ペン/名詞 です/助動詞"),
+	sentence("それ/代名詞 は/助詞 ナン/名詞 です/助動詞"),
+	sentence("あれ/代名詞 は/助詞 カレーライス/名詞 です/助動詞"),
+	sentence("これ/代名詞 を/助詞 たべる/動詞"),
+	sentence("それ/代名詞 を/助詞 かう/動詞"),
+	sentence("わたし/代名詞 は/助詞 ナン/名詞 を/助詞 たべる/動詞"),
+	sentence("かれ/代名詞 は/助詞 ペン/名詞 で/助詞 かく/動詞"),
+	sentence("ねこ/名詞 が/助詞 ねる/動詞"),
+	sentence("いぬ/名詞 が/助詞 はしる/動詞"),
+	sentence("カレーライス/名詞 は/助詞 からい/形容詞"),
+}
+
+func TestCRFUnknownKatakana(t *testing.T) {
+	t.Parallel()
+	sentences := map[string]string{
+		"キーマカレー は からい": "キーマカレー",
+		"キーマカレー を たべる": "キーマカレー",
+		"ノート を かう":     "ノート",
+		"ノート で かく":     "ノート",
+		"これ は ノート です":  "ノート",
+	}
+	testCases := map[string]struct {
+		opts []morph.CRFOption
+		want map[string]string
+	}{
+		"特徴量なしでは文頭の未知のカタカナ語が遷移に引かれて代名詞になる": {
+			want: map[string]string{"キーマカレー は からい": "代名詞", "キーマカレー を たべる": "代名詞", "ノート を かう": "代名詞", "ノート で かく": "代名詞", "これ は ノート です": "名詞"},
+		},
+		"文字種の特徴量で未知のカタカナ語がすべて名詞になる": {
+			opts: []morph.CRFOption{morph.WithCharTypeFeatures()},
+			want: map[string]string{"キーマカレー は からい": "名詞", "キーマカレー を たべる": "名詞", "ノート を かう": "名詞", "ノート で かく": "名詞", "これ は ノート です": "名詞"},
+		},
+		"長さの特徴量だけでは 4 文字以上は名詞になるが 3 文字のノートは代名詞のまま": {
+			opts: []morph.CRFOption{morph.WithLengthFeatures()},
+			want: map[string]string{"キーマカレー は からい": "名詞", "キーマカレー を たべる": "名詞", "ノート を かう": "代名詞", "ノート で かく": "代名詞", "これ は ノート です": "名詞"},
+		},
+		"文字種と長さの特徴量で未知のカタカナ語がすべて名詞になる": {
+			opts: []morph.CRFOption{morph.WithCharTypeFeatures(), morph.WithLengthFeatures()},
+			want: map[string]string{"キーマカレー は からい": "名詞", "キーマカレー を たべる": "名詞", "ノート を かう": "名詞", "ノート で かく": "名詞", "これ は ノート です": "名詞"},
+		},
+	}
+	for tn, tc := range testCases {
+		t.Run(tn, func(t *testing.T) {
+			t.Parallel()
+			m := morph.NewCRF(katakanaData, tc.opts...)
+			m.Train(katakanaData, morph.TrainConfig{Steps: 300, LR: 0.1, L2: 0.01})
+			if _, sent := accuracy(m, katakanaData); sent != 1 {
+				t.Fatalf("training sentence accuracy = %v, want 1", sent)
+			}
+			for text, unknown := range sentences {
+				tokens := strings.Fields(text)
+				tags := m.Tag(tokens)
+				got := tags[slices.Index(tokens, unknown)]
+				if got != tc.want[text] {
+					t.Errorf("%s: %s = %s, want %s (tags %v)", text, unknown, got, tc.want[text], tags)
+				}
+			}
+		})
+	}
+}
+
+func TestCharTypeOf(t *testing.T) {
+	t.Parallel()
+	testCases := map[string]struct {
+		s    string
+		want morph.CharType
+	}{
+		"漢字":         {s: "東京", want: morph.CharKanji},
+		"ひらがな":       {s: "とうきょう", want: morph.CharHiragana},
+		"長音符を含むカタカナ": {s: "カレー", want: morph.CharKatakana},
+		"長音符はひらがなの後ならひらがな": {s: "らーめん", want: morph.CharHiragana},
+		"英字":         {s: "Go", want: morph.CharAlpha},
+		"数字":         {s: "2026", want: morph.CharDigit},
+		"漢字とひらがなの混在": {s: "食べる", want: morph.CharMixed},
+		"カタカナと英字の混在": {s: "Tシャツ", want: morph.CharMixed},
+		"記号":         {s: "!?", want: morph.CharOther},
+	}
+	for tn, tc := range testCases {
+		t.Run(tn, func(t *testing.T) {
+			t.Parallel()
+			if got := morph.CharTypeOf(tc.s); got != tc.want {
+				t.Fatalf("CharTypeOf(%q) = %v, want %v", tc.s, got, tc.want)
+			}
+		})
+	}
 }

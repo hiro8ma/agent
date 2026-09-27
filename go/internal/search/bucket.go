@@ -6,12 +6,15 @@ import (
 )
 
 // Ranking は候補の並べ方。RankingBM25 は BM25 の点数、RankingBucket は規則を順に比べ、前の規則で差がついた順は後の規則で入れ替えない。
+// RankingTFIDF は Query.TFIDF の変種で TF × IDF の和、RankingTFIDFCosine は既定の変種の TF-IDF のベクトルのコサイン類似度で並べる。
 // RankingBucket の規則は Meilisearch の既定から sort と word position を除いた words / typo / proximity / attribute / exactness。
 type Ranking int
 
 const (
 	RankingBM25 Ranking = iota
 	RankingBucket
+	RankingTFIDF
+	RankingTFIDFCosine
 )
 
 // maxProximity は語の組の距離の上限。同じ項目に無い組もこの値にする。

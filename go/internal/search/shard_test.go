@@ -36,7 +36,10 @@ func TestShardedDFSMatchesSingleIndex(t *testing.T) {
 		"本文だけを検索":     {shards: 5, query: search.Query{Text: "doc1 w00050", Fields: []search.Field{search.FieldContent}}},
 		"同義語で広げたクエリ":  {shards: 5, query: search.Query{Text: "w00050", Synonyms: map[string]string{"w00050": "w00051"}}},
 		"フレーズ":        {shards: 5, query: search.Query{Text: "w00001 w00002", Phrase: true}},
-		"どのシャードにも無い語だけのクエリ": {shards: 5, query: search.Query{Text: "zzz"}, wantEmpty: true},
+		"どのシャードにも無い語だけのクエリ":       {shards: 5, query: search.Query{Text: "zzz"}, wantEmpty: true},
+		"TF-IDF の既定の変種":           {shards: 5, query: search.Query{Text: "w00001 w00300 w01234", Ranking: search.RankingTFIDF}},
+		"TF-IDF の生の回数と平滑化なしの IDF": {shards: 5, query: search.Query{Text: "w00001 w00300 w01234", Ranking: search.RankingTFIDF, TFIDF: search.TFIDF{TF: search.TFRaw, IDF: search.IDFPlain}}},
+		"TF-IDF の sqrt と同義語":      {shards: 5, query: search.Query{Text: "w00050", Synonyms: map[string]string{"w00050": "w00051"}, Ranking: search.RankingTFIDF, TFIDF: search.TFIDF{TF: search.TFSqrt}}},
 	}
 	for tn, tc := range testCases {
 		t.Run(tn, func(t *testing.T) {

@@ -101,18 +101,33 @@ type Sentence struct {
 	Labels []string
 }
 
-// CRF は線形連鎖の CRF。Params は割り当て（語彙×品詞）、遷移（品詞×品詞）、文頭、文末のコストを並べたもの。
+// CRF は線形連鎖の CRF。Params は割り当て（語彙×品詞）、遷移（品詞×品詞）、文頭、文末のコストを並べ、
+// 続けて有効にした特徴量の文字種×品詞、長さ×品詞のコストを並べたもの。コストは重みの符号を反転したもので、割り当てのコストは有効な特徴量のコストの和。
 type CRF struct {
 	Labels   []string
 	Tokens   []string
 	Params   []float64
 	labelIdx map[string]int
 	tokenIdx map[string]int
+	charType bool
+	length   bool
 }
 
+// CRFOption はトークンそのもの以外の特徴量を足す。
+type CRFOption func(*CRF)
+
+// WithCharTypeFeatures はトークンの文字種と品詞の組を特徴量に足す。学習データにない語にも効く。
+func WithCharTypeFeatures() CRFOption { return func(m *CRF) { m.charType = true } }
+
+// WithLengthFeatures はトークンの文字数（1 / 2 / 3 / 4 以上）と品詞の組を特徴量に足す。
+func WithLengthFeatures() CRFOption { return func(m *CRF) { m.length = true } }
+
 // NewCRF は学習データに出る語と品詞から、コストがすべて 0 の CRF を作る。
-func NewCRF(data []Sentence) *CRF {
+func NewCRF(data []Sentence, opts ...CRFOption) *CRF {
 	m := &CRF{labelIdx: map[string]int{}, tokenIdx: map[string]int{}}
+	for _, o := range opts {
+		o(m)
+	}
 	for _, s := range data {
 		for i, tok := range s.Tokens {
 			if _, ok := m.tokenIdx[tok]; !ok {
@@ -125,8 +140,7 @@ func NewCRF(data []Sentence) *CRF {
 			}
 		}
 	}
-	k := len(m.Labels)
-	m.Params = make([]float64, len(m.Tokens)*k+k*k+2*k)
+	m.Params = make([]float64, m.lengthIdx(numLengthBuckets, 0))
 	return m
 }
 
@@ -138,13 +152,44 @@ func (m *CRF) transIdx(from, to int) int {
 func (m *CRF) startIdx(label int) int { return m.transIdx(0, 0) + len(m.Labels)*len(m.Labels) + label }
 func (m *CRF) endIdx(label int) int   { return m.startIdx(0) + len(m.Labels) + label }
 
-// EmitCost は割り当てのコスト C(token, label)。学習データにない語は 0。
-func (m *CRF) EmitCost(token, label string) float64 {
-	t, ok := m.tokenIdx[token]
-	if !ok {
-		return 0
+func (m *CRF) charTypeIdx(t CharType, label int) int {
+	return m.endIdx(0) + len(m.Labels) + int(t)*len(m.Labels) + label
+}
+
+func (m *CRF) lengthIdx(bucket, label int) int {
+	base := m.endIdx(0) + len(m.Labels)
+	if m.charType {
+		base = m.charTypeIdx(numCharTypes, 0)
 	}
-	return m.Params[m.emitIdx(t, m.labelIdx[label])]
+	if !m.length {
+		return base
+	}
+	return base + bucket*len(m.Labels) + label
+}
+
+// featureBases は token で有効な特徴量ごとに、品詞 0 のコストの位置を返す。品詞 j のコストはその位置 + j。
+func (m *CRF) featureBases(token string) []int {
+	var bases []int
+	if t, ok := m.tokenIdx[token]; ok {
+		bases = append(bases, m.emitIdx(t, 0))
+	}
+	if m.charType {
+		bases = append(bases, m.charTypeIdx(CharTypeOf(token), 0))
+	}
+	if m.length {
+		bases = append(bases, m.lengthIdx(lengthBucket(token), 0))
+	}
+	return bases
+}
+
+// EmitCost は割り当てのコスト C(token, label)。学習データにない語は、文字種と長さの特徴量を足していなければ 0。
+func (m *CRF) EmitCost(token, label string) float64 {
+	j := m.labelIdx[label]
+	c := 0.0
+	for _, base := range m.featureBases(token) {
+		c += m.Params[base+j]
+	}
+	return c
 }
 
 // TransCost は遷移のコスト C(from, to)。from に BOS、to に EOS を渡すと文頭と文末のコストを返す。
@@ -165,8 +210,10 @@ func (m *CRF) Problem(tokens []string) Problem {
 	p := Problem{Emit: make([][]float64, len(tokens)), Trans: make([][]float64, k), Start: make([]float64, k), End: make([]float64, k)}
 	for t, tok := range tokens {
 		p.Emit[t] = make([]float64, k)
-		if ti, ok := m.tokenIdx[tok]; ok {
-			copy(p.Emit[t], m.Params[m.emitIdx(ti, 0):m.emitIdx(ti, 0)+k])
+		for _, base := range m.featureBases(tok) {
+			for j := range k {
+				p.Emit[t][j] += m.Params[base+j]
+			}
 		}
 	}
 	for i := range k {
@@ -204,16 +251,16 @@ func (m *CRF) NLL(data []Sentence, l2 float64) (float64, []float64) {
 		grad[m.startIdx(gold[0])]++
 		grad[m.endIdx(gold[n-1])]++
 		for t := range n {
-			ti, known := m.tokenIdx[s.Tokens[t]]
-			if known {
-				grad[m.emitIdx(ti, gold[t])]++
+			bases := m.featureBases(s.Tokens[t])
+			for _, base := range bases {
+				grad[base+gold[t]]++
 			}
 			if t > 0 {
 				grad[m.transIdx(gold[t-1], gold[t])]++
 			}
 			for j := range k {
-				if known {
-					grad[m.emitIdx(ti, j)] -= node[t][j]
+				for _, base := range bases {
+					grad[base+j] -= node[t][j]
 				}
 				if t == 0 {
 					grad[m.startIdx(j)] -= node[t][j]
