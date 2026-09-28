@@ -323,3 +323,72 @@ func hitTitles(hits []search.Hit) []string {
 	}
 	return out
 }
+
+// titledDocs は randomDocs の本文の先頭 3 語を隣の文書のタイトルにし、タイトルと本文に同じ語が出るようにする。
+func titledDocs(n int) []search.Doc {
+	ds := withIDs(randomDocs(n))
+	for i := range ds {
+		ds[i].Title = strings.Join(strings.Fields(ds[(i+1)%n].Content)[:3], " ")
+	}
+	return ds
+}
+
+// withoutField は項目 f を空にした文書を返す。
+func withoutField(ds []search.Doc, f search.Field) []search.Doc {
+	out := slices.Clone(ds)
+	for i := range out {
+		if f == search.FieldTitle {
+			out[i].Title = ""
+		} else {
+			out[i].Content = ""
+		}
+	}
+	return out
+}
+
+func TestTFIDFCosineFieldsMatchEmptiedField(t *testing.T) {
+	t.Parallel()
+	small := []search.Doc{
+		{ID: "長いタイトル", Title: strings.Repeat("t1 t2 t3 t4 t5 t6 t7 t8 ", 5), Content: "cat"},
+		{ID: "短いタイトル", Title: "t9", Content: "cat"},
+		{ID: "本文だけ", Content: "cat"},
+		{ID: "o1", Title: "cat", Content: "dog"},
+		{ID: "o2", Title: "cat", Content: "dog"},
+		{ID: "o3", Title: "cat", Content: "dog"},
+	}
+	random := titledDocs(2_000)
+	testCases := map[string]struct {
+		docs  []search.Doc
+		query string
+		field search.Field
+	}{
+		"本文だけの検索でタイトルの長さが点に効かない":     {docs: small, query: "cat", field: search.FieldContent},
+		"タイトルに多く出る語を本文だけで検索しても 1 以下": {docs: small, query: "cat dog", field: search.FieldContent},
+		"本文だけの 3 語":   {docs: random, query: "w00001 w00300 w01234", field: search.FieldContent},
+		"タイトルだけの 2 語": {docs: random, query: "w00001 w00050", field: search.FieldTitle},
+	}
+	for tn, tc := range testCases {
+		t.Run(tn, func(t *testing.T) {
+			t.Parallel()
+			other := search.FieldTitle
+			if tc.field == search.FieldTitle {
+				other = search.FieldContent
+			}
+			tfidf := search.TFIDF{NormalizeQuery: true}
+			got := search.New(tc.docs).RankQuery(search.Query{Text: tc.query, Fields: []search.Field{tc.field}, Ranking: search.RankingTFIDFCosine, TFIDF: tfidf}, -1).Hits
+			want := search.New(withoutField(tc.docs, other)).RankQuery(search.Query{Text: tc.query, Ranking: search.RankingTFIDFCosine, TFIDF: tfidf}, -1).Hits
+			if len(got) == 0 || len(got) != len(want) {
+				t.Fatalf("len = %d, want %d", len(got), len(want))
+			}
+			for i := range want {
+				g, w := got[i], want[i]
+				if g.Doc.ID != w.Doc.ID || math.Abs(g.Score-w.Score) > 1e-9 {
+					t.Fatalf("hit %d = {%s %v}, want {%s %v}", i, g.Doc.ID, g.Score, w.Doc.ID, w.Score)
+				}
+				if g.Score > 1+1e-9 {
+					t.Fatalf("hit %d %s score = %v, want <= 1", i, g.Doc.ID, g.Score)
+				}
+			}
+		})
+	}
+}

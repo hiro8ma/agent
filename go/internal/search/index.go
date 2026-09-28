@@ -63,7 +63,7 @@ type Index struct {
 	vocab    map[string]int32
 	words    []string
 	postings [][]posting
-	norms    []float64
+	norms    fieldNorms
 	idfLog2  bool
 
 	gallopRatio int
@@ -110,7 +110,7 @@ func New(docs []Doc, opts ...Option) *Index {
 		ix.add(int32(id), d, &ix.totalLen)
 	}
 	ix.avgLen = averageLength(ix.totalLen, len(docs))
-	ix.norms = ix.docNorms()
+	ix.norms = ix.docNorms(len(docs), nil)
 	return ix
 }
 
@@ -262,11 +262,13 @@ func (ix *Index) RankQuery(q Query, limit int) Result {
 }
 
 // corpus は採点に使う文書全体の統計。df は語ごとの文書頻度で、nil なら索引の中で数える。idf は TF-IDF の IDF を語ごとに与えるときに使う。
+// norms はコサインの文書ベクトルの長さで、nil なら索引を作ったときの値を使う。
 type corpus struct {
 	docs   int
 	avgLen [numFields]float64
 	df     map[string]int
 	idf    map[string]float64
+	norms  *fieldNorms
 }
 
 func averageLength(total [numFields]int, docs int) [numFields]float64 {
@@ -320,8 +322,15 @@ func (ix *Index) rankWith(q Query, limit int, c *corpus) (Result, []int) {
 		idfs = tfidfWeights(tfidf, pq, df, c)
 	}
 	qnorm := 1.0
-	if q.Ranking == RankingTFIDFCosine && tfidf.NormalizeQuery {
-		qnorm = queryNorm(idfs)
+	var norms []float64
+	if q.Ranking == RankingTFIDFCosine {
+		if tfidf.NormalizeQuery {
+			qnorm = queryNorm(idfs)
+		}
+		norms = ix.norms[sel.bits()]
+		if c.norms != nil {
+			norms = c.norms[sel.bits()]
+		}
 	}
 	top := newRankTop(len(candidates), limit)
 	for i, id := range candidates {
@@ -334,9 +343,9 @@ func (ix *Index) rankWith(q Query, limit int, c *corpus) (Result, []int) {
 		case RankingBucket:
 			s = ix.bucketScore(id, pq, sel, mask)
 		case RankingTFIDF:
-			s = ix.tfidfScore(id, pq, idfs, sel, mask, contrib, tfidf.TF, false)
+			s = ix.tfidfScore(id, pq, idfs, sel, mask, contrib, tfidf.TF, nil)
 		case RankingTFIDFCosine:
-			s = ix.tfidfScore(id, pq, idfs, sel, mask, contrib, tfidf.TF, true) / qnorm
+			s = ix.tfidfScore(id, pq, idfs, sel, mask, contrib, tfidf.TF, norms) / qnorm
 		default:
 			s = ix.score(id, pq, df, sel, mask, contrib, c)
 		}
@@ -369,6 +378,24 @@ func selectFields(fields []Field) fieldSet {
 		}
 	}
 	return s
+}
+
+func fieldSetOf(bits int) fieldSet {
+	var s fieldSet
+	for f := range numFields {
+		s[f] = bits&(1<<f) != 0
+	}
+	return s
+}
+
+func (s fieldSet) bits() int {
+	b := 0
+	for f := range numFields {
+		if s[f] {
+			b |= 1 << f
+		}
+	}
+	return b
 }
 
 func (s fieldSet) tf(p posting) int {

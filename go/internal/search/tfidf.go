@@ -52,19 +52,74 @@ type TFIDF struct {
 	NormalizeQuery bool
 }
 
-// docNorms は既定の TF と IDF の重みで文書のベクトルの長さを求める。IDF は索引を作った時点の N と DF で固定し、シャードでは各シャードの N と DF で決まる。
-func (ix *Index) docNorms() []float64 {
-	norms := make([]float64, len(ix.docs))
-	var def TFIDF
-	for _, ps := range ix.postings {
-		idf := def.IDF.weight(len(ix.docs), len(ps))
-		for _, p := range ps {
-			w := def.TF.weight(float64(len(p.pos))) * idf
-			norms[p.doc] += w * w
+// fieldNorms は文書ベクトルの長さを項目の組ごとに持つ。添字は fieldSet.bits で、0（項目なし）は使わない。
+type fieldNorms [1 << numFields][]float64
+
+// fieldDF は語の postings から、項目の組ごとにその組のどれかに語を含む文書の数を数える。
+func fieldDF(ps []posting) [1 << numFields]int {
+	var n [1 << numFields]int
+	for _, p := range ps {
+		m := presence(p)
+		for set := range n {
+			if set&m != 0 {
+				n[set]++
+			}
 		}
 	}
-	for i, s := range norms {
-		norms[i] = math.Sqrt(s)
+	return n
+}
+
+// presence は語を含む項目をビットで返す。
+func presence(p posting) int {
+	m := 0
+	for f := range numFields {
+		if p.tf(f) > 0 {
+			m |= 1 << f
+		}
+	}
+	return m
+}
+
+// docNorms は既定の TF と IDF の重みで、項目の組ごとに文書ベクトルの長さを求める。TF と DF は組の中の項目だけで数え、クエリの Fields で採点するときの分子とそろえる。
+// docs と df は IDF に使う文書数と語ごとの文書頻度で、df が nil なら索引の中で数える。
+func (ix *Index) docNorms(docs int, df map[string][1 << numFields]int) fieldNorms {
+	var norms fieldNorms
+	for set := 1; set < len(norms); set++ {
+		norms[set] = make([]float64, len(ix.docs))
+	}
+	var (
+		def  TFIDF
+		idf  [1 << numFields]float64
+		sets [1 << numFields]fieldSet
+	)
+	for set := range sets {
+		sets[set] = fieldSetOf(set)
+	}
+	for t, ps := range ix.postings {
+		var n [1 << numFields]int
+		if df == nil {
+			n = fieldDF(ps)
+		} else {
+			n = df[ix.words[t]]
+		}
+		for set := 1; set < len(idf); set++ {
+			idf[set] = def.IDF.weight(docs, n[set])
+		}
+		for _, p := range ps {
+			for set := 1; set < len(norms); set++ {
+				f := sets[set].tf(p)
+				if f == 0 {
+					continue
+				}
+				w := def.TF.weight(float64(f)) * idf[set]
+				norms[set][p.doc] += w * w
+			}
+		}
+	}
+	for set := 1; set < len(norms); set++ {
+		for i, s := range norms[set] {
+			norms[set][i] = math.Sqrt(s)
+		}
 	}
 	return norms
 }
@@ -92,8 +147,9 @@ func queryNorm(idfs []float64) float64 {
 }
 
 // tfidfScore は文書に現れるクエリの語の出現記録だけから TF × IDF を求め、BM25 と同じく書き方ごとの最大を返す。
-// cosine なら内積を文書のベクトルの長さで割る。クエリの重みは TF が 1 なので IDF と同じになる。
-func (ix *Index) tfidfScore(id int, pq parsedQuery, idfs []float64, sel fieldSet, mask uint64, contrib []float64, tf TFWeight, cosine bool) float64 {
+// norms が nil でなければコサインにし、内積を文書のベクトルの長さで割る。クエリの重みは TF が 1 なので IDF と同じになる。
+func (ix *Index) tfidfScore(id int, pq parsedQuery, idfs []float64, sel fieldSet, mask uint64, contrib []float64, tf TFWeight, norms []float64) float64 {
+	cosine := norms != nil
 	for i, t := range pq.terms {
 		contrib[i] = 0
 		if idfs[i] == 0 {
@@ -111,7 +167,7 @@ func (ix *Index) tfidfScore(id int, pq parsedQuery, idfs []float64, sel fieldSet
 	}
 	s := combine(pq, mask, contrib)
 	if cosine && s > 0 {
-		s /= ix.norms[id]
+		s /= norms[id]
 	}
 	return s
 }

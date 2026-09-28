@@ -31,10 +31,12 @@ func HashRouter(shards int) Router {
 }
 
 // Sharded は文書をシャードに分け、シャードごとに Index を持つ。Type の既定は Elasticsearch と同じ QueryThenFetch。
+// dfsNorms はシャードごとの、全シャードの文書数と文書頻度で求めたコサインの文書ベクトルの長さ。
 type Sharded struct {
-	Type   SearchType
-	shards []*Index
-	global [][]int
+	Type     SearchType
+	shards   []*Index
+	global   [][]int
+	dfsNorms []fieldNorms
 }
 
 // NewSharded は router で文書を shards 個に分けて索引する。router が nil なら HashRouter を使う。opts はすべてのシャードに同じものを渡す。
@@ -50,9 +52,23 @@ func NewSharded(docs []Doc, shards int, router Router, opts ...Option) *Sharded 
 		parts[s] = append(parts[s], d)
 		global[s] = append(global[s], i)
 	}
-	sh := &Sharded{shards: make([]*Index, shards), global: global}
+	sh := &Sharded{shards: make([]*Index, shards), global: global, dfsNorms: make([]fieldNorms, shards)}
 	for s, p := range parts {
 		sh.shards[s] = New(p, opts...)
+	}
+	// 語彙の ID はシャードごとに違うので、文書頻度は語の文字列で突き合わせる。
+	df := make(map[string][1 << numFields]int)
+	for _, ix := range sh.shards {
+		for t, ps := range ix.postings {
+			n, local := df[ix.words[t]], fieldDF(ps)
+			for set := range n {
+				n[set] += local[set]
+			}
+			df[ix.words[t]] = n
+		}
+	}
+	for s, ix := range sh.shards {
+		sh.dfsNorms[s] = ix.docNorms(len(docs), df)
 	}
 	return sh
 }
@@ -104,7 +120,13 @@ func (sh *Sharded) RankQuery(q Query, limit int) ShardedResult {
 	}
 	var all []ranked
 	for s, ix := range sh.shards {
-		r, ids := ix.rankWith(q, limit, c)
+		sc := c
+		if c != nil {
+			cc := *c
+			cc.norms = &sh.dfsNorms[s]
+			sc = &cc
+		}
+		r, ids := ix.rankWith(q, limit, sc)
 		res.Scored += r.Scored
 		res.MatchTime += r.MatchTime
 		res.RankTime += r.RankTime
