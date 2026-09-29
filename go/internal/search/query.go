@@ -23,16 +23,34 @@ type alt struct {
 }
 
 // variant はクエリの 1 つの書き方。slots は重複を除いたクエリの語ごとの一致させる索引語、seq はフレーズの照合に使う語の並びと先頭からの間隔。
+// groups は類語辞書で広げた語の並びで、grouped は slot がどれかの groups に入るか。辞書で広げていなければ grouped は nil。
 type variant struct {
-	slots [][]alt
-	seq   []queryPos
+	slots   [][]alt
+	seq     []queryPos
+	groups  []termGroup
+	grouped []bool
 }
 
 // parsedQuery の terms は語彙の ID。索引に無い語は -1 にする。words は同じ並びの索引語で、シャードをまたいで統計を突き合わせるのに使う。
+// extra は Query.Extra の語、expanded と dropped は類語辞書で足した語と上限で捨てた語の数。
 type parsedQuery struct {
 	terms    []int32
 	words    []string
 	variants []variant
+	extra    []weightedTerm
+	expanded int
+	dropped  int
+}
+
+type weightedTerm struct {
+	term   int
+	weight float64
+}
+
+// WeightedTerm は採点に足す索引語と重み。Term は Analyzer を通した後の索引語で、検索のときにもう一度 Analyzer を通さない。
+type WeightedTerm struct {
+	Term   string
+	Weight float64
 }
 
 func (ix *Index) parse(q Query) parsedQuery {
@@ -48,7 +66,7 @@ func (ix *Index) parse(q Query) parsedQuery {
 		}
 		return i
 	}
-	for _, text := range expandSynonyms(ix.analyzer.normalizeText(q.Text), q.Synonyms, ix.analyzer.normalizeText) {
+	for vi, text := range expandSynonyms(ix.analyzer.normalizeText(q.Text), q.Synonyms, ix.analyzer.normalizeText) {
 		tokens := ix.analyzer.analyzeNormalized(text)
 		var v variant
 		slotOf := make(map[string]int)
@@ -61,7 +79,16 @@ func (ix *Index) parse(q Query) parsedQuery {
 			}
 			v.seq = append(v.seq, queryPos{slot: si, off: t.pos - tokens[0].pos})
 		}
+		if q.Thesaurus != nil {
+			added, dropped := ix.expandVariant(&v, tokens, q.Thesaurus, termOf)
+			if vi == 0 {
+				pq.expanded, pq.dropped = added, dropped
+			}
+		}
 		pq.variants = append(pq.variants, v)
+	}
+	for _, e := range q.Extra {
+		pq.extra = append(pq.extra, weightedTerm{term: termOf(e.Term), weight: e.Weight})
 	}
 	return pq
 }

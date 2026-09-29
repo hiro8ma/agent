@@ -93,3 +93,21 @@ func WithBM25Of(ix *Index, k1, b float64) *Index {
 func DocLength(ix *Index, doc int) int {
 	return ix.lengths[doc][FieldTitle] + ix.lengths[doc][FieldContent]
 }
+
+// ExpandWord は word を類語辞書で広げた語を、索引語を空白でつないで返す。indexTime なら文書拡張の向きで広げる。上限で捨てた数も返す。
+func ExpandWord(th *Thesaurus, a *Analyzer, word string, indexTime bool) ([]string, int) {
+	words := a.Analyze(word)
+	if len(words) == 0 {
+		return nil, 0
+	}
+	e := th.compile(a, indexTime).match(words, 0)
+	if e == nil || len(e.key) != len(words) {
+		return nil, 0
+	}
+	adds, dropped := th.capped(e.adds)
+	out := make([]string, len(adds))
+	for i, seq := range adds {
+		out[i] = strings.Join(seq, " ")
+	}
+	return out, dropped
+}

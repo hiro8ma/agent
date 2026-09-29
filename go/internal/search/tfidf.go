@@ -21,6 +21,10 @@ func (w TFWeight) weight(f float64) float64 {
 	case TFSqrt:
 		return math.Sqrt(f)
 	default:
+		// 重みを下げて足した語の 1 未満の回数で負にならないように、1 未満は回数のまま使う。1 で 1 + log10(1) とつながる。
+		if f < 1 {
+			return f
+		}
 		return 1 + math.Log10(f)
 	}
 }
@@ -107,11 +111,10 @@ func (ix *Index) docNorms(docs int, df map[string][1 << numFields]int) fieldNorm
 		}
 		for _, p := range ps {
 			for set := 1; set < len(norms); set++ {
-				f := sets[set].tf(p)
-				if f == 0 {
+				if sets[set].tf(p) == 0 {
 					continue
 				}
-				w := def.TF.weight(float64(f)) * idf[set]
+				w := def.TF.weight(ix.effectiveTF(int32(t), p, sets[set])) * idf[set]
 				norms[set][p.doc] += w * w
 			}
 		}
@@ -159,7 +162,7 @@ func (ix *Index) tfidfScore(id int, pq parsedQuery, idfs []float64, sel fieldSet
 		if !ok {
 			continue
 		}
-		w := tf.weight(float64(sel.tf(p))) * idfs[i]
+		w := tf.weight(ix.effectiveTF(t, p, sel)) * idfs[i]
 		if cosine {
 			w *= idfs[i]
 		}

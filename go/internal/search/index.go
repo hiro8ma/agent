@@ -66,6 +66,14 @@ type Index struct {
 	norms    fieldNorms
 	idfLog2  bool
 
+	docExpansion     *Thesaurus
+	expansionDropped int
+	d2q              *Doc2Query
+	d2qFiltered      int
+	// reduce は足した語の出現回数から引く値を、語と文書の組ごとに項目別に持つ。重みが 1 の語だけなら nil のままにする。
+	reduce         map[uint64]*[numFields]float64
+	addedPositions int
+
 	gallopRatio int
 }
 
@@ -106,8 +114,16 @@ func New(docs []Doc, opts ...Option) *Index {
 	for _, o := range opts {
 		o(ix)
 	}
+	var generated [][]string
+	if ix.d2q != nil {
+		generated = ix.generateQueries(docs, opts)
+	}
 	for id, d := range docs {
-		ix.add(int32(id), d, &ix.totalLen)
+		var queries []string
+		if generated != nil {
+			queries = generated[id]
+		}
+		ix.add(int32(id), d, queries, &ix.totalLen)
 	}
 	ix.avgLen = averageLength(ix.totalLen, len(docs))
 	ix.norms = ix.docNorms(len(docs), nil)
@@ -134,7 +150,7 @@ func (ix *Index) postingsOf(term int32) []posting {
 	return ix.postings[term]
 }
 
-func (ix *Index) add(id int32, d Doc, total *[numFields]int) {
+func (ix *Index) add(id int32, d Doc, queries []string, total *[numFields]int) {
 	type entry struct {
 		term int32
 		n    [numFields]int32
@@ -151,6 +167,15 @@ func (ix *Index) add(id int32, d Doc, total *[numFields]int) {
 		tokens[f] = ix.analyzer.analyze(d.field(f))
 		ix.lengths[id][f] = len(tokens[f])
 		total[f] += len(tokens[f])
+		if extra := ix.extraTokens(tokens[f], Field(f), queries); len(extra) > 0 {
+			tokens[f] = mergeTokens(tokens[f], extra)
+			ix.addedPositions += len(extra)
+			for _, e := range extra {
+				if e.weight != 1 {
+					ix.reduceTF(ix.termID(e.tok.term), id, Field(f), 1-e.weight)
+				}
+			}
+		}
 		size += len(tokens[f])
 		ids[f] = make([]int32, len(tokens[f]))
 		for j, t := range tokens[f] {
@@ -189,15 +214,23 @@ func (ix *Index) add(id int32, d Doc, total *[numFields]int) {
 	}
 }
 
+// Stats の Positions は足した語の位置も含み、AddedPositions はそのうち文書拡張と doc2query で足した数。
+// ExpansionDropped は文書拡張で 1 語あたりの上限を超えて捨てた語の数、Doc2QueryFiltered は doc2query の点数の下限で捨てたクエリの数。
 type Stats struct {
-	Docs      int
-	Terms     int
-	Postings  int
-	Positions int
+	Docs              int
+	Terms             int
+	Postings          int
+	Positions         int
+	AddedPositions    int
+	ExpansionDropped  int
+	Doc2QueryFiltered int
 }
 
 func (ix *Index) Stats() Stats {
-	s := Stats{Docs: len(ix.docs), Terms: len(ix.vocab)}
+	s := Stats{
+		Docs: len(ix.docs), Terms: len(ix.vocab),
+		AddedPositions: ix.addedPositions, ExpansionDropped: ix.expansionDropped, Doc2QueryFiltered: ix.d2qFiltered,
+	}
 	for _, ps := range ix.postings {
 		s.Postings += len(ps)
 		for _, p := range ps {
@@ -213,11 +246,14 @@ type Hit struct {
 }
 
 // Result の Scored はマッチングで残った候補の数。MatchTime は候補を絞るまで、RankTime は採点と並べ替えにかかった時間。
+// Expanded は Query.Thesaurus で足した語の数、ExpansionDropped は 1 語あたりの上限を超えて捨てた語の数。どちらも元のクエリの書き方で数える。
 type Result struct {
-	Hits      []Hit
-	Scored    int
-	MatchTime time.Duration
-	RankTime  time.Duration
+	Hits             []Hit
+	Scored           int
+	Expanded         int
+	ExpansionDropped int
+	MatchTime        time.Duration
+	RankTime         time.Duration
 }
 
 // Query の Fields を空にするとすべての項目を検索する。Operator の既定は OperatorOr。
@@ -226,6 +262,9 @@ type Result struct {
 // Typo は英数字の語に打ち間違いを許し、Prefix はクエリの最後の語を接頭辞としても一致させる。Ranking の既定は RankingBM25。TFIDF は RankingTFIDF と RankingTFIDFCosine のときだけ使う。
 // Near が正なら、クエリの語がすべて同じ項目で、順番を問わず最初と最後の位置の差が Near 以内に現れる文書だけを残す（NEAR/k）。Phrase を優先する。
 // Expr が nil でなければ候補を論理式で決め、Text / Operator / Phrase / Near を使わない。採点は式の中の語すべてで行う。
+// Thesaurus はクエリの語に類語辞書のグループの語と狭い語を足す。足した語ごとに点数を求め、元の語と足した語のうち最も高いものを取る。
+// Extra は採点に足す索引語と重みで、適合フィードバックの展開語に使う。語の点数に重みを掛けて足す。
+// Thesaurus と Extra の語は OperatorOr の候補を広げるが、OperatorAnd / Phrase / Near / Expr の候補は元の語だけで決め、採点にだけ使う。RankingBucket では使わない。
 type Query struct {
 	Text     string
 	Expr     *Expr
@@ -238,6 +277,9 @@ type Query struct {
 	Prefix   bool
 	Ranking  Ranking
 	TFIDF    TFIDF
+
+	Thesaurus *Thesaurus
+	Extra     []WeightedTerm
 }
 
 func (ix *Index) Search(ctx context.Context, query string, limit int) ([]Doc, error) {
@@ -359,7 +401,10 @@ func (ix *Index) rankWith(q Query, limit int, c *corpus) (Result, []int) {
 		hits[i] = Hit{Doc: ix.docs[id], Score: r.score}
 		ids[i] = id
 	}
-	return Result{Hits: hits, Scored: len(candidates), MatchTime: matched.Sub(start), RankTime: time.Since(matched)}, ids
+	return Result{
+		Hits: hits, Scored: len(candidates), Expanded: pq.expanded, ExpansionDropped: pq.dropped,
+		MatchTime: matched.Sub(start), RankTime: time.Since(matched),
+	}, ids
 }
 
 type fieldSet [numFields]bool
@@ -554,7 +599,7 @@ func (ix *Index) score(id int, pq parsedQuery, df []int, sel fieldSet, mask uint
 		if !ok {
 			continue
 		}
-		tf := ix.normalizedTF(id, p, sel, c.avgLen)
+		tf := ix.normalizedTF(t, id, p, sel, c.avgLen)
 		if tf == 0 {
 			continue
 		}
@@ -563,39 +608,46 @@ func (ix *Index) score(id int, pq parsedQuery, df []int, sel fieldSet, mask uint
 	return combine(pq, mask, contrib)
 }
 
-// combine は語ごとの点数から、書き方ごとに語の位置ごとの最大を足し、最も高い書き方の値を返す。
+// combine は語ごとの点数から、書き方ごとに語の位置ごとの最大を足し、最も高い書き方の値に Extra の語の点数を重みを掛けて足す。
 func combine(pq parsedQuery, mask uint64, contrib []float64) float64 {
 	best := 0.0
 	for vi, v := range pq.variants {
 		if mask&(1<<vi) == 0 {
 			continue
 		}
+		if v.grouped != nil {
+			best = max(best, v.groupedScore(contrib))
+			continue
+		}
 		s := 0.0
 		for _, slot := range v.slots {
-			m := 0.0
-			for _, a := range slot {
-				m = max(m, contrib[a.term])
-			}
-			s += m
+			s += slotScore(slot, contrib)
 		}
 		best = max(best, s)
+	}
+	for _, e := range pq.extra {
+		best += e.weight * contrib[e.term]
 	}
 	return best
 }
 
 // normalizedTF は出現回数を文書の長さで割る。tf/norm で置けば BM25 の tf*(k1+1)/(tf+k1*norm) と同じ値になる。
-func (ix *Index) normalizedTF(id int, p posting, sel fieldSet, avgLen [numFields]float64) float64 {
+func (ix *Index) normalizedTF(term int32, id int, p posting, sel fieldSet, avgLen [numFields]float64) float64 {
+	red := ix.reduction(term, p.doc)
 	if ix.weights == nil {
 		var tf, length int
-		var avg float64
+		var avg, r float64
 		for f := range numFields {
 			if sel[f] {
 				tf += p.tf(f)
 				length += ix.lengths[id][f]
 				avg += avgLen[f]
+				if red != nil {
+					r += red[f]
+				}
 			}
 		}
-		return float64(tf) / (1 - ix.b + ix.b*float64(length)/avg)
+		return (float64(tf) - r) / (1 - ix.b + ix.b*float64(length)/avg)
 	}
 	s := 0.0
 	for f := range numFields {
@@ -603,10 +655,69 @@ func (ix *Index) normalizedTF(id int, p posting, sel fieldSet, avgLen [numFields
 		if !sel[f] || tf == 0 {
 			continue
 		}
+		x := float64(tf)
+		if red != nil {
+			x -= red[f]
+		}
 		norm := 1 - ix.b + ix.b*float64(ix.lengths[id][f])/avgLen[f]
-		s += ix.weights[f] * float64(tf) / norm
+		s += ix.weights[f] * x / norm
 	}
 	return s
+}
+
+func reduceKey(term, doc int32) uint64 { return uint64(uint32(term))<<32 | uint64(uint32(doc)) }
+
+func (ix *Index) reduceTF(term, doc int32, f Field, by float64) {
+	if ix.reduce == nil {
+		ix.reduce = make(map[uint64]*[numFields]float64)
+	}
+	k := reduceKey(term, doc)
+	r, ok := ix.reduce[k]
+	if !ok {
+		r = new([numFields]float64)
+		ix.reduce[k] = r
+	}
+	r[f] += by
+}
+
+// reduction は足した語の出現回数から引く値を返す。足した語が無ければ nil。
+func (ix *Index) reduction(term, doc int32) *[numFields]float64 {
+	if ix.reduce == nil {
+		return nil
+	}
+	return ix.reduce[reduceKey(term, doc)]
+}
+
+// effectiveTF は選んだ項目の出現回数から、足した語の重みの分を引いた値を返す。
+func (ix *Index) effectiveTF(term int32, p posting, sel fieldSet) float64 {
+	x := float64(sel.tf(p))
+	if red := ix.reduction(term, p.doc); red != nil {
+		for f := range numFields {
+			if sel[f] {
+				x -= red[f]
+			}
+		}
+	}
+	return x
+}
+
+// extraTokens は索引を作るときに項目 f に足す語を返す。文書拡張の語は項目ごとに、生成したクエリの語は本文の後ろに足す。
+func (ix *Index) extraTokens(tokens []token, f Field, queries []string) []weightedToken {
+	var extra []weightedToken
+	if ix.docExpansion != nil {
+		extra = ix.expandTokens(tokens)
+	}
+	if f == FieldContent && len(queries) > 0 {
+		last := int32(-d2qGap)
+		for _, t := range tokens {
+			last = max(last, t.pos)
+		}
+		for _, e := range extra {
+			last = max(last, e.tok.pos)
+		}
+		extra = append(extra, ix.queryTokens(queries, last+d2qGap)...)
+	}
+	return extra
 }
 
 func (ix *Index) idf(docs, df int) float64 {

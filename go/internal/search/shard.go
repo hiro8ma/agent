@@ -128,6 +128,7 @@ func (sh *Sharded) RankQuery(q Query, limit int) ShardedResult {
 		}
 		r, ids := ix.rankWith(q, limit, sc)
 		res.Scored += r.Scored
+		res.Expanded, res.ExpansionDropped = r.Expanded, r.ExpansionDropped
 		res.MatchTime += r.MatchTime
 		res.RankTime += r.RankTime
 		for i, h := range r.Hits {
