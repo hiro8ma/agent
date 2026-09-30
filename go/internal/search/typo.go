@@ -23,6 +23,7 @@ func maxTypos(runes int) int {
 
 // alternatives はクエリの 1 語に一致させる索引語を返す。先頭は語そのもので、索引に無くても入れる。
 // 打ち間違いの許容と接頭辞の一致は英数字の語にだけ使う。日本語の bigram は 2 文字なので許容の対象にならない。
+// 接頭辞も、bigram では 2 文字以上の入力が完全一致のまま語の途中まで拾い、1 文字を広げても語の最後にあるその字を拾わないので、語の接頭辞にならない。
 func (ix *Index) alternatives(word string, q Query, last bool, termOf func(string) int) []alt {
 	alts := []alt{{term: termOf(word), exact: true}}
 	prefix := q.Prefix && last
@@ -33,13 +34,20 @@ func (ix *Index) alternatives(word string, q Query, last bool, termOf func(strin
 	if q.Typo {
 		limit = maxTypos(utf8.RuneCountInString(word))
 	}
-	qr := []rune(word)
-	for _, w := range ix.words {
-		if w == word {
-			continue
+	if limit == 0 {
+		if !prefix {
+			return alts
 		}
-		if d, ok := typoDistance(qr, w, limit, prefix); ok {
-			alts = append(alts, alt{term: termOf(w), typos: d})
+		for _, id := range ix.trie.prefixTerms(ix.words, word) {
+			if w := ix.words[id]; w != word {
+				alts = append(alts, alt{term: termOf(w)})
+			}
+		}
+		return alts
+	}
+	for _, m := range ix.trie.typoTerms(ix.words, []rune(word), limit, prefix) {
+		if w := ix.words[m.term]; w != word {
+			alts = append(alts, alt{term: termOf(w), typos: m.typos})
 		}
 	}
 	return alts

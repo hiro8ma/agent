@@ -84,7 +84,7 @@ func randomWordIndex(n int) *Index {
 	return New(ds)
 }
 
-// BenchmarkTypoExpansion は語彙目録を全件なめて、1 語に一致させる索引語を探す時間と見つかった数を出す。
+// BenchmarkTypoExpansion は alternatives が語彙の trie から 1 語に一致させる索引語を探す時間と見つかった数を出す。全件をなめる版との比較は BenchmarkVocabTypo と BenchmarkVocabPrefix にある。
 // クエリの語は語彙にある語の 1 文字を置き換えたもの。
 //
 //	go test -run '^$' -bench TypoExpansion ./internal/search/

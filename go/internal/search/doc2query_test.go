@@ -94,3 +94,51 @@ func TestDoc2QueryWeight(t *testing.T) {
 		t.Fatalf("weight 0.3: gen %v, orig %v, want 0 < gen < orig", low["gen"], low["orig"])
 	}
 }
+
+// TestDoc2QueryField は生成したクエリを本文の後ろに足す既定と、別の項目にして BM25F で重み 0.5 を掛ける版を比べる。
+// 候補の集合は変わらず、順位だけが変わる。生成の誤りで付いた refund policy では、別の項目の版だけが適合する rf2 を file4 より上に置く。
+func TestDoc2QueryField(t *testing.T) {
+	t.Parallel()
+	a := evalAnalyzer()
+	ds := doc2queryDocs()
+	build := func(field bool, minScore float64) *search.Index {
+		return search.New(ds, search.WithAnalyzer(a), search.WithDoc2Query(search.Doc2Query{
+			Generate: handWrittenQueries, Weight: 0.5, MinScore: minScore, Field: field,
+		}))
+	}
+	ids := func(ix *search.Index, q string, limit int) []string {
+		var out []string
+		for _, h := range ix.RankQuery(search.Query{Text: q}, limit).Hits {
+			out = append(out, h.Doc.ID)
+		}
+		return out
+	}
+	queries := map[string][]string{
+		"refund":          {"rf1", "rf2"},
+		"refund policy":   {"rf1", "rf2"},
+		"delete":          {"del1", "del2", "del3", "del4", "del5", "del6"},
+		"delete document": {"del1", "del2", "del3", "del4", "del5", "del6"},
+		"rename file":     {"file4"},
+	}
+	for _, minScore := range []float64{0, 1} {
+		same, field := build(false, minScore), build(true, minScore)
+		for q, rel := range queries {
+			s, f := ids(same, q, -1), ids(field, q, -1)
+			if ss, fs := slices.Sorted(slices.Values(s)), slices.Sorted(slices.Values(f)); !slices.Equal(ss, fs) {
+				t.Fatalf("MinScore %v %q: same field %v, separate field %v", minScore, q, s, f)
+			}
+			t.Logf("MinScore %v %-16q nDCG@10 same %.3f separate %.3f | same %v | separate %v", minScore, q,
+				measure(same.RankQuery(search.Query{Text: q}, evalK).Hits, rel).ndcg,
+				measure(field.RankQuery(search.Query{Text: q}, evalK).Hits, rel).ndcg, s, f)
+		}
+		if minScore > 0 {
+			continue
+		}
+		if got := ids(same, "refund policy", 3); !slices.Equal(got, []string{"rf1", "file4", "rf2"}) {
+			t.Fatalf("same field: %v", got)
+		}
+		if got := ids(field, "refund policy", 3); !slices.Equal(got, []string{"rf1", "rf2", "file4"}) {
+			t.Fatalf("separate field: %v", got)
+		}
+	}
+}

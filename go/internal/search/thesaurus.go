@@ -312,10 +312,11 @@ func WithDocExpansion(th *Thesaurus) Option {
 	return func(ix *Index) { ix.docExpansion = th }
 }
 
-// weightedToken は索引を作るときに足す語。weight は出現 1 回に掛ける重み。
+// weightedToken は索引を作るときに足す語。weight は出現 1 回に掛ける重み。generated は doc2query で生成したクエリの語。
 type weightedToken struct {
-	tok    token
-	weight float64
+	tok       token
+	weight    float64
+	generated bool
 }
 
 // expandTokens は文書の 1 項目の索引語の並びから辞書の見出しを長い順に探し、足す語を返す。同じ語を同じ位置に 2 回は足さない。

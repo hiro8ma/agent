@@ -62,6 +62,8 @@ type Index struct {
 	avgLen   [numFields]float64
 	vocab    map[string]int32
 	words    []string
+	// trie は語彙を文字単位で持ち、接頭辞の一致と打ち間違いの許容で語彙を全件なめずに済ませる。完全一致は vocab で引く。
+	trie     *vocabTrie
 	postings [][]posting
 	norms    fieldNorms
 	idfLog2  bool
@@ -73,6 +75,10 @@ type Index struct {
 	// reduce は足した語の出現回数から引く値を、語と文書の組ごとに項目別に持つ。重みが 1 の語だけなら nil のままにする。
 	reduce         map[uint64]*[numFields]float64
 	addedPositions int
+	// gen は Doc2Query.Field のときの、生成したクエリの項目での語と文書の組ごとの出現回数。genLen はその項目の文書ごとの長さで、Field でなければ nil。
+	gen    map[uint64]int32
+	genLen []int32
+	genAvg float64
 
 	gallopRatio int
 }
@@ -117,6 +123,9 @@ func New(docs []Doc, opts ...Option) *Index {
 	var generated [][]string
 	if ix.d2q != nil {
 		generated = ix.generateQueries(docs, opts)
+		if ix.d2q.Field {
+			ix.genLen = make([]int32, len(docs))
+		}
 	}
 	for id, d := range docs {
 		var queries []string
@@ -126,7 +135,11 @@ func New(docs []Doc, opts ...Option) *Index {
 		ix.add(int32(id), d, queries, &ix.totalLen)
 	}
 	ix.avgLen = averageLength(ix.totalLen, len(docs))
+	if ix.d2qField() {
+		ix.genAvg = generatedAverage(ix.genLen)
+	}
 	ix.norms = ix.docNorms(len(docs), nil)
+	ix.trie = newVocabTrie(ix.words)
 	return ix
 }
 
@@ -171,6 +184,10 @@ func (ix *Index) add(id int32, d Doc, queries []string, total *[numFields]int) {
 			tokens[f] = mergeTokens(tokens[f], extra)
 			ix.addedPositions += len(extra)
 			for _, e := range extra {
+				if e.generated && ix.d2qField() {
+					ix.addGenerated(ix.termID(e.tok.term), id)
+					continue
+				}
 				if e.weight != 1 {
 					ix.reduceTF(ix.termID(e.tok.term), id, Field(f), 1-e.weight)
 				}
@@ -634,7 +651,8 @@ func combine(pq parsedQuery, mask uint64, contrib []float64) float64 {
 // normalizedTF は出現回数を文書の長さで割る。tf/norm で置けば BM25 の tf*(k1+1)/(tf+k1*norm) と同じ値になる。
 func (ix *Index) normalizedTF(term int32, id int, p posting, sel fieldSet, avgLen [numFields]float64) float64 {
 	red := ix.reduction(term, p.doc)
-	if ix.weights == nil {
+	field := ix.d2qField()
+	if ix.weights == nil && !field {
 		var tf, length int
 		var avg, r float64
 		for f := range numFields {
@@ -649,6 +667,14 @@ func (ix *Index) normalizedTF(term int32, id int, p posting, sel fieldSet, avgLe
 		}
 		return (float64(tf) - r) / (1 - ix.b + ix.b*float64(length)/avg)
 	}
+	weights := [numFields]float64{1, 1}
+	if ix.weights != nil {
+		weights = *ix.weights
+	}
+	var g float64
+	if field && sel[FieldContent] {
+		g = ix.generatedTF(term, p.doc)
+	}
 	s := 0.0
 	for f := range numFields {
 		tf := p.tf(f)
@@ -659,8 +685,14 @@ func (ix *Index) normalizedTF(term int32, id int, p posting, sel fieldSet, avgLe
 		if red != nil {
 			x -= red[f]
 		}
+		if Field(f) == FieldContent {
+			x -= g
+		}
 		norm := 1 - ix.b + ix.b*float64(ix.lengths[id][f])/avgLen[f]
-		s += ix.weights[f] * x / norm
+		s += weights[f] * x / norm
+	}
+	if g > 0 {
+		s += ix.d2q.Weight * g / (1 - ix.b + ix.b*float64(ix.genLen[id])/ix.genAvg)
 	}
 	return s
 }
@@ -691,6 +723,9 @@ func (ix *Index) reduction(term, doc int32) *[numFields]float64 {
 // effectiveTF は選んだ項目の出現回数から、足した語の重みの分を引いた値を返す。
 func (ix *Index) effectiveTF(term int32, p posting, sel fieldSet) float64 {
 	x := float64(sel.tf(p))
+	if ix.d2qField() && sel[FieldContent] {
+		x -= ix.generatedTF(term, p.doc) * (1 - ix.d2q.Weight)
+	}
 	if red := ix.reduction(term, p.doc); red != nil {
 		for f := range numFields {
 			if sel[f] {
