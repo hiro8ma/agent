@@ -45,7 +45,10 @@ func TestRankPhrase(t *testing.T) {
 	for tn, tc := range testCases {
 		t.Run(tn, func(t *testing.T) {
 			t.Parallel()
-			res := search.New(ds, tc.opts...).RankQuery(tc.query, 1)
+			// 候補の数を確かめるので、上位に入りえない文書も採点する。
+			q := tc.query
+			q.Pruning = search.PruningNone
+			res := search.New(ds, tc.opts...).RankQuery(q, 1)
 			if res.Scored != tc.wantScored {
 				t.Fatalf("Scored = %d, want %d", res.Scored, tc.wantScored)
 			}

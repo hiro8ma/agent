@@ -108,6 +108,7 @@ func TestPruningScoresFewerDocs(t *testing.T) {
 	var exhaustive, wand, bmw int
 	for _, text := range mixedQueries(5, 40) {
 		q := search.Query{Text: text}
+		q.Pruning = search.PruningNone
 		exhaustive += ix.RankQuery(q, 10).Scored
 		q.Pruning = search.PruningWAND
 		wand += ix.RankQuery(q, 10).Scored

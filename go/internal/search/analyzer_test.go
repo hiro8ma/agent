@@ -123,7 +123,8 @@ func TestRankWithAnalyzer(t *testing.T) {
 		t.Run(tn, func(t *testing.T) {
 			t.Parallel()
 			ix := search.New(tc.docs, search.WithAnalyzer(search.NewAnalyzer(tc.opts...)))
-			res := ix.Rank(tc.query, 1)
+			// 候補の数を確かめるので、上位に入りえない文書も採点する。
+			res := ix.RankQuery(search.Query{Text: tc.query, Pruning: search.PruningNone}, 1)
 			if res.Scored != tc.wantScored {
 				t.Fatalf("Scored = %d, want %d", res.Scored, tc.wantScored)
 			}

@@ -8,15 +8,15 @@ import (
 )
 
 // Pruning は OperatorOr の上位 K 件を求めるときに、上位に入りえない文書の採点を省く方法。結果は PruningNone と同じになる。
-// PruningWAND は語ごとの点数の上限の和がしきい値（K 件目の点数）を超える文書だけを採点する。
+// 既定（ゼロ値）の PruningWAND は語ごとの点数の上限の和がしきい値（K 件目の点数）を超える文書だけを採点する。PruningNone は全候補を採点する。
 // PruningBlockMaxWAND は postings を BlockSize 件ごとの区間に分け、区間ごとの上限でさらに区間をまとめて飛ばす。
 // 使えるのは RankingBM25 と RankingTFIDF で、書き方が 1 つ、各語の一致させる索引語が 1 つ（Synonyms / Typo / Prefix / Thesaurus / Extra を使わない）、limit が正のときだけ。
 // それ以外は PruningNone と同じく全候補を採点する。Result.Scored は実際に採点した文書の数になる。
 type Pruning int
 
 const (
-	PruningNone Pruning = iota
-	PruningWAND
+	PruningWAND Pruning = iota
+	PruningNone
 	PruningBlockMaxWAND
 )
 
