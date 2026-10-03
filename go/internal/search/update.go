@@ -69,6 +69,7 @@ func mergeIndex(main, aux *Index, opts []Option) *Index {
 	}
 	ix.norms = ix.docNorms(len(ix.docs), nil)
 	ix.trie = newVocabTrie(ix.words)
+	ix.bounds = newBoundCache()
 	return &ix
 }
 

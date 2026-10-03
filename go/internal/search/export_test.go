@@ -142,3 +142,12 @@ func TruncateAdded(u *Updatable, n int) { u.added = u.added[:n] }
 
 // UpdatableOf は作った索引を主の索引にして Updatable を返す。
 func UpdatableOf(ix *Index) *Updatable { return &Updatable{main: ix} }
+
+// BlockMaxBytes は区間の大きさ block で、すべての語に区間ごとの上限を float64 で持たせたときの大きさを返す。
+func BlockMaxBytes(ix *Index, block int) int64 {
+	var n int64
+	for _, ps := range ix.postings {
+		n += int64((len(ps) + block - 1) / block)
+	}
+	return n * 8
+}

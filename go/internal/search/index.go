@@ -81,6 +81,7 @@ type Index struct {
 	genAvg float64
 
 	gallopRatio int
+	bounds      *boundCache
 }
 
 type Option func(*Index)
@@ -116,6 +117,7 @@ func New(docs []Doc, opts ...Option) *Index {
 		vocab:    make(map[string]int32),
 
 		gallopRatio: defaultGallopRatio,
+		bounds:      newBoundCache(),
 	}
 	for _, o := range opts {
 		o(ix)
@@ -281,6 +283,7 @@ type Result struct {
 // Expr が nil でなければ候補を論理式で決め、Text / Operator / Phrase / Near を使わない。採点は式の中の語すべてで行う。
 // Thesaurus はクエリの語に類語辞書のグループの語と狭い語を足す。足した語ごとに点数を求め、元の語と足した語のうち最も高いものを取る。
 // Extra は採点に足す索引語と重みで、適合フィードバックの展開語に使う。語の点数に重みを掛けて足す。
+// Pruning は上位 limit 件に入りえない文書の採点を省く。BlockSize は PruningBlockMaxWAND の区間の件数で、0 なら DefaultBlockSize。
 // Thesaurus と Extra の語は OperatorOr の候補を広げるが、OperatorAnd / Phrase / Near / Expr の候補は元の語だけで決め、採点にだけ使う。RankingBucket では使わない。
 type Query struct {
 	Text     string
@@ -297,6 +300,9 @@ type Query struct {
 
 	Thesaurus *Thesaurus
 	Extra     []WeightedTerm
+
+	Pruning   Pruning
+	BlockSize int
 }
 
 func (ix *Index) Search(ctx context.Context, query string, limit int) ([]Doc, error) {
@@ -353,6 +359,9 @@ func (ix *Index) rankWith(q Query, limit int, c *corpus) (Result, []int) {
 		for i, w := range pq.words {
 			df[i] = c.df[w]
 		}
+	}
+	if eligibleForPruning(q, pq, limit) {
+		return ix.rankPruned(q, pq, df, sel, limit, c, start)
 	}
 	var (
 		candidates []int

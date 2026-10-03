@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"unsafe"
 )
 
 // FilePosting はファイルに書いた出現記録の 1 件。位置は書かず、TF はタイトルと本文を合わせた出現回数。
@@ -28,27 +29,33 @@ type PostingsFile struct {
 	f     *os.File
 	size  int64
 	table map[string]postingsSpan
+	// skips は語の開始位置ごとの飛び先。BuildSkipIndex を呼ぶまで nil。
+	skips map[int64]*skipList
 }
 
 // WritePostingsFile は ix の postings を path に書き出し、読むために開いた PostingsFile を返す。使い終えたら Close する。
 func WritePostingsFile(ix *Index, path string) (*PostingsFile, error) {
+	return writePostings(ix.words, ix.postings, path)
+}
+
+func writePostings(words []string, postings [][]posting, path string) (*PostingsFile, error) {
 	path = filepath.Clean(path)
 	out, err := os.Create(path)
 	if err != nil {
 		return nil, err
 	}
 	w := bufio.NewWriter(out)
-	table := make(map[string]postingsSpan, len(ix.words))
+	table := make(map[string]postingsSpan, len(words))
 	var (
 		off int64
 		buf []byte
 	)
-	for id, word := range ix.words {
-		buf = encodePostings(buf[:0], ix.postings[id])
+	for id, word := range words {
+		buf = encodePostings(buf[:0], postings[id])
 		if _, err := w.Write(buf); err != nil {
 			return nil, errors.Join(err, out.Close())
 		}
-		table[word] = postingsSpan{off: off, size: int64(len(buf)), count: len(ix.postings[id])}
+		table[word] = postingsSpan{off: off, size: int64(len(buf)), count: len(postings[id])}
 		off += int64(len(buf))
 	}
 	if err := w.Flush(); err != nil {
@@ -99,16 +106,78 @@ func (pf *PostingsFile) Postings(term string) ([]FilePosting, error) {
 	}
 }
 
-// postingsCursor は 1 語の出現記録をファイルの先頭から順に 1 件ずつ読む。
+// postingsCursor は 1 語の出現記録をファイルの先頭から順に 1 件ずつ読む。skips があれば seek で飛び先に移ってから順に読む。
+// 読んだ件数とバイト数は 1 件ごとには数えず、飛ぶときと stats を呼んだときに、区間の始まりからの位置の差で足す。
 type postingsCursor struct {
-	r    *bufio.Reader
-	left int
-	doc  int32
-	tf   int
+	pf    *PostingsFile
+	span  postingsSpan
+	r     *bufio.Reader
+	src   countingReader
+	left  int
+	doc   int32
+	tf    int
+	skips *skipList
+	sk    int
+	// base は今の区間を読み始めた語の先頭からのバイト位置、baseIdx はその位置の出現記録の番号。
+	base    int64
+	baseIdx int
+	done    cursorStats
+}
+
+// cursorStats は読んだ出現記録の件数とバイト数、ファイルから読んだバイト数、飛び先の文書番号を比べた回数。
+type cursorStats struct {
+	entries, decoded, fileBytes int64
+	skipCompares                int64
+}
+
+func (st *cursorStats) add(o cursorStats) {
+	st.entries += o.entries
+	st.decoded += o.decoded
+	st.fileBytes += o.fileBytes
+	st.skipCompares += o.skipCompares
+}
+
+// countingReader はファイルから読んだバイト数を、今の区間の分（n）と全体の分（total）で数える。
+type countingReader struct {
+	r        io.Reader
+	n, total int64
+}
+
+func (c *countingReader) Read(p []byte) (int, error) {
+	n, err := c.r.Read(p)
+	c.n += int64(n)
+	c.total += int64(n)
+	return n, err
 }
 
 func (pf *PostingsFile) cursor(s postingsSpan) *postingsCursor {
-	return &postingsCursor{r: bufio.NewReader(io.NewSectionReader(pf.f, s.off, s.size)), left: s.count}
+	return pf.cursorWith(s, nil)
+}
+
+func (pf *PostingsFile) cursorWith(s postingsSpan, skips *skipList) *postingsCursor {
+	c := &postingsCursor{pf: pf, span: s, left: s.count, skips: skips}
+	c.src.r = io.NewSectionReader(pf.f, s.off, s.size)
+	c.r = bufio.NewReader(&c.src)
+	return c
+}
+
+// pos は語の先頭から読み終えたバイト位置。
+func (c *postingsCursor) pos() int64 { return c.base + c.src.n - int64(c.r.Buffered()) }
+
+func (c *postingsCursor) read() int { return c.span.count - c.left }
+
+// closeSpan は今の区間で読んだ件数とバイト数を足す。
+func (c *postingsCursor) closeSpan() {
+	c.done.entries += int64(c.read() - c.baseIdx)
+	c.done.decoded += c.pos() - c.base
+}
+
+func (c *postingsCursor) stats() cursorStats {
+	st := c.done
+	st.entries += int64(c.read() - c.baseIdx)
+	st.decoded += c.pos() - c.base
+	st.fileBytes = c.src.total
+	return st
 }
 
 func (c *postingsCursor) next() (bool, error) {
@@ -131,6 +200,9 @@ func (c *postingsCursor) next() (bool, error) {
 
 // seek は文書番号が doc 以上の出現記録まで読み進める。読み切ったら false。
 func (c *postingsCursor) seek(doc int32) (bool, error) {
+	if c.doc < doc && c.skips != nil {
+		c.jump(doc)
+	}
 	for c.doc < doc {
 		ok, err := c.next()
 		if err != nil || !ok {
@@ -140,16 +212,146 @@ func (c *postingsCursor) seek(doc int32) (bool, error) {
 	return true, nil
 }
 
+// jump は文書番号が doc より小さい最後の飛び先が今の位置より先にあれば、そこへ移って読み直す。飛び先の文書番号から次の差分を足すので、飛んだ後も順に読める。
+func (c *postingsCursor) jump(doc int32) {
+	sl := c.skips
+	k := sl.find(c.sk, doc, &c.done.skipCompares)
+	c.sk = max(c.sk, k)
+	if k < 0 || int(sl.entries[k].idx) <= c.read() {
+		return
+	}
+	e := sl.entries[k]
+	c.closeSpan()
+	// 飛び先が読み込み済みの範囲にあれば、ファイルを読み直さずに読み捨てる。
+	if gap := e.off - c.pos(); gap <= int64(c.r.Buffered()) {
+		_, _ = c.r.Discard(int(gap))
+		c.src.n = int64(c.r.Buffered())
+	} else {
+		c.src.r = io.NewSectionReader(c.pf.f, c.span.off+e.off, c.span.size-e.off)
+		c.src.n = 0
+		c.r.Reset(&c.src)
+	}
+	c.base, c.baseIdx = e.off, int(e.idx)
+	c.doc = e.doc
+	c.left = c.span.count - int(e.idx)
+}
+
+// skipEntry は interval 件目ごとの飛び先。idx 件目の出現記録が語の先頭から off バイト目に始まり、doc はその 1 つ前の出現記録の文書番号。
+type skipEntry struct {
+	doc int32
+	idx int32
+	off int64
+}
+
+// skipList は 1 語の飛び先。long が正なら long 個おきの飛び先を上の段に持ち、上の段を先にたどってから下の段をたどる。
+// linear なら飛び先を今の位置から 1 つずつたどる。そうでなければ二分探索で引く。
+type skipList struct {
+	entries []skipEntry
+	long    int
+	linear  bool
+}
+
+// find は start 番目以降で、文書番号が doc より小さい最後の飛び先の番号を返す。無ければ start-1 以下を返す。比べた回数を n に足す。
+func (sl *skipList) find(start int, doc int32, n *int64) int {
+	es := sl.entries
+	start = max(start, 0)
+	if !sl.linear && sl.long <= 0 {
+		k, _ := slices.BinarySearchFunc(es[start:], doc, func(e skipEntry, d int32) int {
+			*n++
+			return cmp.Compare(e.doc, d)
+		})
+		return start + k - 1
+	}
+	k := start
+	if sl.long > 0 {
+		for k+sl.long < len(es) {
+			*n++
+			if es[k+sl.long].doc >= doc {
+				break
+			}
+			k += sl.long
+		}
+	}
+	for k < len(es) {
+		*n++
+		if es[k].doc >= doc {
+			break
+		}
+		k++
+	}
+	return k - 1
+}
+
+// SkipConfig は出現記録のファイルに持たせる飛び先の作り方。Interval は飛び先の間隔の件数で、0 以下なら語ごとに √n。
+// Long が正なら Long 個おきの飛び先を上の段に持つ 2 段にし、Linear なら飛び先を 1 つずつたどる。どちらも無ければ飛び先を二分探索で引く。
+type SkipConfig struct {
+	Interval int
+	Long     int
+	Linear   bool
+}
+
+// BuildSkipIndex は語ごとに、Interval 件おきの文書番号とファイルの中の位置をメモリ上の表に作る。以後の And は飛び先を使って読み進める。
+// 間隔が 2 未満になる短い語には作らない。作った表の大きさ（バイト）を返す。
+func (pf *PostingsFile) BuildSkipIndex(cfg SkipConfig) (int64, error) {
+	pf.skips = make(map[int64]*skipList)
+	var size int64
+	for _, s := range pf.table {
+		iv := cfg.Interval
+		if iv <= 0 {
+			iv = sqrtInterval(s.count)
+		}
+		if iv < 2 || s.count <= iv {
+			continue
+		}
+		raw := make([]byte, s.size)
+		if _, err := pf.f.ReadAt(raw, s.off); err != nil {
+			return 0, err
+		}
+		sl := &skipList{long: cfg.Long, linear: cfg.Linear}
+		var (
+			doc int32
+			off int64
+		)
+		for i := range s.count {
+			if i > 0 && i%iv == 0 {
+				sl.entries = append(sl.entries, skipEntry{doc: doc, idx: int32(i), off: off})
+			}
+			delta, n := binary.Uvarint(raw[off:])
+			if n <= 0 {
+				return 0, errors.New("decode doc")
+			}
+			_, m := binary.Uvarint(raw[off+int64(n):])
+			if m <= 0 {
+				return 0, errors.New("decode tf")
+			}
+			off += int64(n + m)
+			doc += int32(delta)
+		}
+		pf.skips[s.off] = sl
+		size += int64(len(sl.entries)) * int64(unsafe.Sizeof(skipEntry{}))
+	}
+	return size, nil
+}
+
 // And はすべての語を含む文書の番号を昇順で返す。短い語の出現記録を 1 件ずつ読み、そのたびに他の語をその文書番号まで読み進めるので、出現記録をまとめてメモリに載せない。
 func (pf *PostingsFile) And(terms ...string) ([]int, error) {
+	return pf.and(terms, &cursorStats{})
+}
+
+func (pf *PostingsFile) and(terms []string, stats *cursorStats) ([]int, error) {
 	spans, ok := pf.spans(terms)
 	if !ok {
 		return []int{}, nil
 	}
 	cs := make([]*postingsCursor, len(spans))
 	for i, s := range spans {
-		cs[i] = pf.cursor(s)
+		cs[i] = pf.cursorWith(s, pf.skips[s.off])
 	}
+	defer func() {
+		for _, c := range cs {
+			stats.add(c.stats())
+		}
+	}()
 	for _, c := range cs[1:] {
 		if ok, err := c.next(); err != nil || !ok {
 			return []int{}, err
