@@ -96,23 +96,28 @@ func (l *Levenshtein) step(d *dstate, c rune) *dstate {
 	} else if d.other != nil {
 		return d.other
 	}
-	var set []nstate
-	for _, s := range d.set {
-		if s.i < len(l.q) && l.q[s.i] == c {
-			set = append(set, nstate{s.i + 1, s.e})
-		}
-		set = append(set, nstate{s.i, s.e + 1}) // 挿入
-		if s.i < len(l.q) {
-			set = append(set, nstate{s.i + 1, s.e + 1}) // 置換
-		}
-	}
-	n := l.intern(l.closure(set))
+	n := l.intern(l.successor(d.set, c))
 	if inQuery {
 		d.next[c] = n
 	} else {
 		d.other = n
 	}
 	return n
+}
+
+// successor は状態の集合 set で c を読んだ後の集合を、削除をたどって同じ位置の多い編集を落とした形で返す。
+func (l *Levenshtein) successor(set []nstate, c rune) []nstate {
+	var next []nstate
+	for _, s := range set {
+		if s.i < len(l.q) && l.q[s.i] == c {
+			next = append(next, nstate{s.i + 1, s.e})
+		}
+		next = append(next, nstate{s.i, s.e + 1}) // 挿入
+		if s.i < len(l.q) {
+			next = append(next, nstate{s.i + 1, s.e + 1}) // 置換
+		}
+	}
+	return l.closure(next)
 }
 
 // States は今までに作った DFA の状態の数を返す。

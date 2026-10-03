@@ -1,6 +1,8 @@
 package search
 
 import (
+	"bytes"
+	"fmt"
 	"strings"
 	"unsafe"
 )
@@ -111,3 +113,32 @@ func ExpandWord(th *Thesaurus, a *Analyzer, word string, indexTime bool) ([]stri
 	}
 	return out, dropped
 }
+
+// SamePostingsFile は 2 つの PostingsFile の語の表とファイルの中身が一致しなければ、違いを説明する文字列を返す。
+func SamePostingsFile(a, b *PostingsFile) string {
+	if len(a.table) != len(b.table) {
+		return fmt.Sprintf("語の数 %d と %d", len(a.table), len(b.table))
+	}
+	for w, s := range a.table {
+		if b.table[w] != s {
+			return fmt.Sprintf("語 %q の表 %+v と %+v", w, s, b.table[w])
+		}
+	}
+	ra, rb := make([]byte, a.size), make([]byte, b.size)
+	if _, err := a.f.ReadAt(ra, 0); err != nil {
+		return err.Error()
+	}
+	if _, err := b.f.ReadAt(rb, 0); err != nil {
+		return err.Error()
+	}
+	if !bytes.Equal(ra, rb) {
+		return "ファイルの中身"
+	}
+	return ""
+}
+
+// TruncateAdded は補助の索引に足した文書を先頭の n 件に戻す。補助の索引は次の Add で作り直す。
+func TruncateAdded(u *Updatable, n int) { u.added = u.added[:n] }
+
+// UpdatableOf は作った索引を主の索引にして Updatable を返す。
+func UpdatableOf(ix *Index) *Updatable { return &Updatable{main: ix} }

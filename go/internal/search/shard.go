@@ -150,11 +150,14 @@ func (sh *Sharded) RankQuery(q Query, limit int) ShardedResult {
 	return res
 }
 
-func (sh *Sharded) collect(q Query) *corpus {
+func (sh *Sharded) collect(q Query) *corpus { return collectCorpus(sh.shards, q) }
+
+// collectCorpus は複数の索引の文書数と項目ごとの長さの和、クエリの語の文書頻度の和から、全体を 1 つの索引にしたときの統計を求める。
+func collectCorpus(ixs []*Index, q Query) *corpus {
 	q = q.scoringText()
 	c := &corpus{df: make(map[string]int)}
 	var total [numFields]int
-	for _, ix := range sh.shards {
+	for _, ix := range ixs {
 		c.docs += len(ix.docs)
 		for f := range numFields {
 			total[f] += ix.totalLen[f]
