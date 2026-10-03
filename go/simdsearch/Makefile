@@ -2,7 +2,7 @@ GO ?= go
 export GOEXPERIMENT = simd
 BENCH = $(GO) test -run '^$$' -benchtime 2s -count 5
 
-.PHONY: test ceiling dot search batch quant recall spill
+.PHONY: test ceiling dot search batch quant recall spill knn
 
 ## test: arm64 で SIMD の経路を通し、amd64 と simd なしでもビルドが通ることを確かめる
 test:
@@ -29,6 +29,10 @@ batch:
 ## quant: int8 と 1bit の量子化、1bit + rerank
 quant:
 	$(BENCH) -bench 'BenchmarkSearch(Int8|Binary)' ./index
+
+## knn: 教材の NumPy の実験と同じ 100 万件 x 128 次元、K=20 の L2 全探索（ノルムの展開）と、256 ビット符号のハミング全走査
+knn:
+	$(BENCH) -bench 'BenchmarkKNN1M|BenchmarkHamming256Scan' ./index
 
 recall:
 	$(GO) test -run 'TestRecall' -v ./index
