@@ -44,6 +44,10 @@ linters:
         text: G404 # k-means の初期値と標本を種で固定し、同じ入力から同じ索引を作るため
         linters:
           - gosec
+      - path: internal/clickbias/
+        text: G404 # クリックのログを種で固定して作り、同じ入力から同じ推定を得るため
+        linters:
+          - gosec
       - path: internal/ann/
         text: G404 # k-means の初期値 / 超平面 / HNSW の層を種で固定し、同じ入力から同じ索引を作るため
         linters:
