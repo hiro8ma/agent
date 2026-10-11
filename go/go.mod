@@ -34,7 +34,7 @@ require (
 	google.golang.org/adk/v2 v2.2.0
 	google.golang.org/api v0.291.0
 	google.golang.org/genai v1.73.0
-	google.golang.org/protobuf v1.36.11
+	google.golang.org/protobuf v1.36.12
 	gorm.io/gorm v1.31.2
 	pgregory.net/rapid v1.3.0
 )
