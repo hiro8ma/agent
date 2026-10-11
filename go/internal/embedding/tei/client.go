@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"strings"
 	"time"
@@ -35,7 +36,11 @@ type Client struct {
 	documentPrefix string
 }
 
-var _ search.Embedder = (*Client)(nil)
+var (
+	_ search.Embedder      = (*Client)(nil)
+	_ search.Reranker      = (*Client)(nil)
+	_ search.TokenEmbedder = (*Client)(nil)
+)
 
 type Option func(*Client)
 
@@ -112,6 +117,98 @@ func (c *Client) EmbedTexts(ctx context.Context, texts []string) ([][]float32, e
 		out = append(out, vecs...)
 	}
 	return out, nil
+}
+
+type rerankRequest struct {
+	Query     string   `json:"query"`
+	Texts     []string `json:"texts"`
+	RawScores bool     `json:"raw_scores"`
+	Truncate  bool     `json:"truncate"`
+}
+
+type rerankResult struct {
+	Index int     `json:"index"`
+	Score float32 `json:"score"`
+}
+
+// Rerank は交差エンコーダを読み込んだ TEI の /rerank で、texts をクエリとの関連度で採点し、texts と同じ順で返す。点数はシグモイドを通した0から1の値。
+// 接頭辞は付けない。TEI は点数の高い順に返すので、index で入力の順に戻す。
+func (c *Client) Rerank(ctx context.Context, query string, texts []string) ([]float32, error) {
+	out := make([]float32, len(texts))
+	for start := 0; start < len(texts); start += c.batchSize {
+		batch := texts[start:min(start+c.batchSize, len(texts))]
+		var res []rerankResult
+		if err := c.do(ctx, http.MethodPost, "/rerank", rerankRequest{Query: query, Texts: batch, Truncate: true}, &res); err != nil {
+			return nil, err
+		}
+		if len(res) != len(batch) {
+			return nil, fmt.Errorf("tei: got %d scores for %d texts", len(res), len(batch))
+		}
+		seen := make([]bool, len(batch))
+		for _, r := range res {
+			if r.Index < 0 || r.Index >= len(batch) || seen[r.Index] {
+				return nil, fmt.Errorf("tei: rerank returned index %d for %d texts", r.Index, len(batch))
+			}
+			seen[r.Index] = true
+			out[start+r.Index] = r.Score
+		}
+	}
+	return out, nil
+}
+
+type embedAllRequest struct {
+	Inputs   []string `json:"inputs"`
+	Truncate bool     `json:"truncate"`
+}
+
+// EmbedTokens はクエリの接頭辞を付けた text のトークンごとのベクトルを /embed_all で求める。特殊トークン（Ruri v3 なら先頭の <s> と末尾の </s>）と接頭辞のトークンも含む。
+func (c *Client) EmbedTokens(ctx context.Context, text string) ([][]float32, error) {
+	vecs, err := c.embedAll(ctx, []string{c.queryPrefix + text})
+	if err != nil {
+		return nil, err
+	}
+	return vecs[0], nil
+}
+
+// EmbedDocumentTokens は文書の接頭辞を付けた texts のトークンごとのベクトルを、texts と同じ順で返す。
+func (c *Client) EmbedDocumentTokens(ctx context.Context, texts []string) ([][][]float32, error) {
+	return c.embedAll(ctx, withPrefix(c.documentPrefix, texts))
+}
+
+// embedAll はプーリング前のベクトルを返す /embed_all を呼ぶ。TEI はこの経路では正規化しないので、ここで長さ1にする。
+func (c *Client) embedAll(ctx context.Context, texts []string) ([][][]float32, error) {
+	out := make([][][]float32, 0, len(texts))
+	for start := 0; start < len(texts); start += c.batchSize {
+		batch := texts[start:min(start+c.batchSize, len(texts))]
+		var vecs [][][]float32
+		if err := c.do(ctx, http.MethodPost, "/embed_all", embedAllRequest{Inputs: batch, Truncate: true}, &vecs); err != nil {
+			return nil, err
+		}
+		if len(vecs) != len(batch) {
+			return nil, fmt.Errorf("tei: got %d token embeddings for %d inputs", len(vecs), len(batch))
+		}
+		for _, tokens := range vecs {
+			for _, v := range tokens {
+				normalize(v)
+			}
+		}
+		out = append(out, vecs...)
+	}
+	return out, nil
+}
+
+func normalize(v []float32) {
+	var sum float64
+	for _, x := range v {
+		sum += float64(x) * float64(x)
+	}
+	if sum == 0 {
+		return
+	}
+	inv := float32(1 / math.Sqrt(sum))
+	for i := range v {
+		v[i] *= inv
+	}
 }
 
 // Info は /info の一部。読み込んだモデルと、要求の大きさの上限を返す。
