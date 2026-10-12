@@ -43,24 +43,24 @@ Ruri v3 は用途ごとに入力の前に接頭辞を付ける
 
 ## 再ランカー
 
-交差エンコーダ `hotchpotch/japanese-reranker-xsmall-v2`（ModernBERT 系、約37M パラメータ、MIT）を、埋め込みとは別の TEI で8081番に立てる
+交差エンコーダ `hotchpotch/japanese-reranker-cross-encoder-xsmall-v1`（BERT 系、MIT）を、埋め込みとは別の TEI で8081番に立てる
 
 ```sh
 docker run --rm -p 8081:80 -v tei-rerank-data:/data \
   ghcr.io/huggingface/text-embeddings-inference:cpu-arm64-1.9.4 \
-  --model-id hotchpotch/japanese-reranker-xsmall-v2 --max-client-batch-size 128 --auto-truncate
+  --model-id hotchpotch/japanese-reranker-cross-encoder-xsmall-v1 --max-batch-tokens 2048 --auto-truncate
 ```
 
 - 別のモデルを使うときは `--model-id` と `TEI_RERANK_MODEL` を揃える
 - 精度の上限を見るなら `cl-nagoya/ruri-v3-reranker-310m`（Apache-2.0、315M パラメータ）を使う。このリポではまだ測っていない
-- 旧世代の `hotchpotch/japanese-reranker-cross-encoder-xsmall-v1`（BERT 系）は `--max-batch-tokens 2048` を付けて立てた
+- 後継の `hotchpotch/japanese-reranker-xsmall-v2`（ModernBERT 系、約37M パラメータ、MIT）は約3倍速いが、下の表のとおりこのデータでは言い換えのクエリで順位を落とすので既定にしていない。`--max-client-batch-size 128 --auto-truncate` を付けて立てた
 - `Rerank` は `/rerank` に `raw_scores: false` で送るので、出力が1つのモデルの点数はシグモイドを通した0から1の値になる
 - TEI は点数の高い順に返す。`Rerank` は `index` で入力の順に戻す
 - `texts` が `--max-client-batch-size`（既定32）を超えると TEI は断る。`Rerank` は `WithBatchSize`（既定32）件ずつ分けて送る
 - 接頭辞は付けない。交差エンコーダには Ruri の接頭辞の約束が無い
 - 文書ごとに1回推論するので、`search.CrossRerank` の第1段で候補を絞ってから使う
 
-日本国憲法の103条と10個のクエリで比べた。v2 の結果は `testdata/rerank_kenpou.json` にある（Apple Silicon の CPU、Docker の上限 11.6 GiB）
+日本国憲法の103条と10個のクエリで比べた。v1 の順位は `testdata/rerank_kenpou.json` にある。v2 の行は `TEI_RERANK_MODEL` を差し替えて測った値で、ファイルには残していない（Apple Silicon の CPU、Docker の上限 11.6 GiB）
 
 | 方式 | hit@1 | hit@3 | MRR@10 | 1クエリの時間（中央値） | p95 |
 |---|---|---|---|---|---|
@@ -92,7 +92,7 @@ TEI_LIVE=1 TEI_UPDATE_EMBEDDINGS=1 go test -run LiveRerankKenpou ./internal/embe
 ```
 
 - `TEI_URL` で TEI の URL を変える（既定 `http://localhost:8080`）
-- `TEI_RERANK_URL` で再ランカーの TEI の URL を変える（既定 `http://localhost:8081`）。`TEI_RERANK_MODEL` は `/info` で確かめるモデル（既定 `hotchpotch/japanese-reranker-xsmall-v2`）
+- `TEI_RERANK_URL` で再ランカーの TEI の URL を変える（既定 `http://localhost:8081`）。`TEI_RERANK_MODEL` は `/info` で確かめるモデル（既定 `hotchpotch/japanese-reranker-cross-encoder-xsmall-v1`）
 - `-run Live` だけで流すと再ランカーの TEI も待つ。埋め込みだけを確かめるときは `-run 'Live[^R]'` のように絞る
 - `TEI_ES_URL` を渡すと、`testdata/ruri_kenpou.json` に Elasticsearch（kuromoji）の上位 10 件も記録する
 - `testdata/ruri_kenpou.json` は日本国憲法 103 条（接頭辞あり / なし）、検索のクエリ、例文の埋め込みで、成分を小数 4 桁に丸めてある

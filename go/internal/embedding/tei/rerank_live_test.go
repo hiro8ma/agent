@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	defaultRerankModel = "hotchpotch/japanese-reranker-xsmall-v2"
+	defaultRerankModel = "hotchpotch/japanese-reranker-cross-encoder-xsmall-v1"
 	rerankFixturePath  = "testdata/rerank_kenpou.json"
 )
 
