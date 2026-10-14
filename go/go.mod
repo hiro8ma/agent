@@ -4,7 +4,7 @@ go 1.27.0
 
 require (
 	cloud.google.com/go/firestore v1.26.0
-	connectrpc.com/connect v1.20.0
+	connectrpc.com/connect v1.21.1
 	connectrpc.com/otelconnect v0.9.0
 	github.com/MicahParks/keyfunc/v3 v3.8.2
 	github.com/a2aproject/a2a-go/v2 v2.4.0
