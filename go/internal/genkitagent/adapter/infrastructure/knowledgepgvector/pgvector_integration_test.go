@@ -368,13 +368,14 @@ func TestIntegrationShortfallIsDetected(t *testing.T) {
 	cfg.FilterColumn = "tenant_id"
 	cfg.FilterValue = "tenant-00"
 	cfg.Selectivity = 0
-	cfg.EfSearchCap = 40 // 既定に固定して取りこぼす状況を作る
+	cfg.EfSearchCap = 1000 // 起動時は十分な探索幅で品質を確認する
 
 	s, err := NewPgVector(ctx, pool, fakeEmbedder{}, cfg)
 	if err != nil {
 		t.Fatalf("Verify に失敗: %v", err)
 	}
 
+	s.cfg.EfSearchCap = 40 // 起動後に探索幅を狭め、検索時の取りこぼし検出を試す
 	docs, err := s.Search(ctx, "問い合わせ", 10)
 	if err == nil {
 		t.Fatalf("取りこぼしたのにエラーにならなかった（%d 件返った）", len(docs))
@@ -452,4 +453,72 @@ type shortEmbedder struct{}
 
 func (shortEmbedder) Embed(_ context.Context, _ string) ([]float32, error) {
 	return make([]float32, dim/2), nil
+}
+
+// 末尾の 1% のテナントを別領域に置き、標本と正解・近似が同じ対象を測るか確認する。
+func TestIntegrationRecallUsesFilteredPopulation(t *testing.T) {
+	pool := testPool(t)
+	ctx := context.Background()
+	const table = "kb_filtered_recall"
+	setup(t, pool, table, 1000, 1)
+	const target = "tenant-target"
+	for i := 990; i < 1000; i++ {
+		v := make([]float32, dim)
+		v[0], v[1] = 1, float32(i-990)*0.01
+		if _, err := pool.Exec(ctx, "UPDATE "+table+" SET tenant_id=$1, embedding=$2 WHERE id=$3", target, toVector(v), i); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := pool.Exec(ctx, "CREATE INDEX ON "+table+" USING hnsw (embedding vector_cosine_ops)"); err != nil {
+		t.Fatal(err)
+	}
+	cfg := baseCfg(table)
+	cfg.FilterColumn, cfg.FilterValue, cfg.MinRecall = "tenant_id", target, 0.9
+	s, err := NewPgVector(ctx, pool, fakeEmbedder{}, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if math.Abs(s.cfg.Selectivity-0.01) > 1e-9 || s.MeasuredRecall < 0.9 {
+		t.Fatalf("selectivity=%g recall=%g", s.cfg.Selectivity, s.MeasuredRecall)
+	}
+	conn, err := pool.Acquire(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Release()
+	queries, err := s.sampleQueries(ctx, conn, 1)
+	if err != nil || len(queries) != 1 {
+		t.Fatalf("queries=%v error=%v", queries, err)
+	}
+	got := queries[0].Slice()
+	if got[0] != 1 || math.Abs(float64(got[1])-0.005) > 1e-6 {
+		t.Fatalf("sample is outside target population: %v", got[:2])
+	}
+	for _, indexed := range []bool{false, true} {
+		ids, err := s.topIDs(ctx, conn, queries[0], 5, indexed)
+		if err != nil || len(ids) != 5 {
+			t.Fatalf("indexed=%v ids=%v error=%v", indexed, ids, err)
+		}
+		for _, id := range ids {
+			var tenant string
+			if err := conn.QueryRow(ctx, "SELECT tenant_id FROM "+table+" WHERE ctid=$1::tid", id).Scan(&tenant); err != nil {
+				t.Fatal(err)
+			}
+			if tenant != target {
+				t.Fatalf("indexed=%v returned tenant %q", indexed, tenant)
+			}
+		}
+	}
+	for _, value := range []string{"missing", "singleton"} {
+		if value == "singleton" {
+			if _, err := conn.Exec(ctx, "UPDATE "+table+" SET tenant_id=$1 WHERE id=999", value); err != nil {
+				t.Fatal(err)
+			}
+		}
+		s.cfg.FilterValue = value
+		queries, err := s.sampleQueries(ctx, conn, 3)
+		if err != nil || len(queries) != 0 {
+			t.Fatalf("tenant=%s queries=%v error=%v", value, queries, err)
+		}
+	}
 }

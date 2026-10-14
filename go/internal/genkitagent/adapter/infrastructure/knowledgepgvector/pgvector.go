@@ -6,12 +6,12 @@
 //	フィルタ付き検索       HNSW は ef_search 件の候補を集めてから WHERE を適用する。
 //	                      対象が全体の一部だと候補がほぼ削られ、LIMIT 10 に対して
 //	                      2 件しか返らない。実測で選択率 6.2% のとき再現率 0.20
-//	ef_search の天井       LIMIT を大きく書いても ef_search 件を超えては返らない。
+//	ef_search の探索幅     LIMIT を大きく書くだけでは候補が不足し得る。
 //	                      実測で ef_search=40 のとき LIMIT 320 に対して 43 件
 //	opclass の不一致       コサイン索引に <#> を投げると Seq Scan に落ちる。
 //	                      正しい結果は返るため、遅くなったことに気づけない
-//	空テーブルへの IVFFlat  作成は成功するが k-means の重心が学習されず、
-//	                      実測で再現率 0.000
+//	IVFFlat の探索幅       再現率はリスト数・probes・データ分布に依存する。
+//	                      空テーブルでの作成自体は可能で、代表データ投入後の構築を推奨する
 //
 // いずれも本番で顕在化するのは「検索の精度が出ない」という形になり、
 // 原因の切り分けに時間がかかる。起動時に検証し、検索時に取りこぼしを検出する。
@@ -70,8 +70,7 @@ type PgVectorConfig struct {
 	// ef_search をここから決める。0 なら起動時に実測する。
 	//
 	// HNSW は ef_search 件の候補を集めてから WHERE を適用するため、
-	// limit 件を返すには ef_search >= limit / Selectivity が要る。
-	// 実測でこの関係が成り立つことを確かめてある。
+	// limit / Selectivity は探索幅を決める目安で、件数や Recall の保証ではない。
 	Selectivity float64
 
 	// EfSearchCap は ef_search の上限。選択率が極端に低いと際限なく大きくなり、
@@ -149,12 +148,12 @@ func NewPgVector(ctx context.Context, pool *pgxpool.Pool, embedder Embedder, cfg
 	return s, nil
 }
 
-// EfSearch は limit 件を返すのに要る ef_search を返す。
+// EfSearch は limit と選択率から探索幅の目安を返す。
 //
 // HNSW は ef_search 件の候補を集めてから WHERE を適用する。
 // 選択率 s なら候補のうち残るのは期待値で ef_search * s 件になるため、
-// limit 件を返すには ef_search >= limit / s が要る。
-// 期待値ちょうどでは半分の確率で足りないので倍の余裕を持たせる。
+// limit / s を目安に倍の余裕を持たせる。実際の分布は一様とは限らず、
+// この値で件数や Recall が保証されるわけではない。
 func (s *PgVector) EfSearch(limit int) int {
 	const hnswDefaultEfSearch = 40
 

@@ -22,8 +22,8 @@ func (s *PgVector) Verify(ctx context.Context) error {
 		s.verifyVectorTypeRegistered,
 		s.verifyEmbedderDimension,
 		s.verifyIndexUsed,
-		s.verifyIndexRecall,
 		s.verifySelectivity,
+		s.verifyIndexRecall,
 	} {
 		if err := check(ctx); err != nil {
 			return err
@@ -188,14 +188,13 @@ func (s *PgVector) verifyIndexRecall(ctx context.Context) error {
 
 // sampleQueries は表に存在しないクエリベクトルを作る。
 //
-// 2 行の平均を取る。実際の分布の内側にありながら、どの行とも一致しない点になる。
+// 本番と同じフィルタに一致する種と最近傍の平均を取る。対象の分布の内側に置く。
 // 乱数で作ると分布から外れ、索引の善し悪しと関係なく再現率が下がる。
 func (s *PgVector) sampleQueries(ctx context.Context, conn *pgxpool.Conn, n int) ([]pgvector.Vector, error) {
 	// 物理順で固定する。ORDER BY を省くと synchronize_seqscans で走査の
 	// 開始位置が変わり、起動ごとに別の点を測って再現率がばらつく。
-	rows, err := conn.Query(ctx, fmt.Sprintf(
-		"SELECT %s FROM %s ORDER BY ctid LIMIT $1",
-		s.cfg.EmbeddingColumn, s.cfg.Table), n)
+	sql, args := s.verificationQuery(s.cfg.EmbeddingColumn, nil, n)
+	rows, err := conn.Query(ctx, sql, args...)
 	if err != nil {
 		return nil, fmt.Errorf("pgvector: verify: 標本の取得: %w", err)
 	}
@@ -236,15 +235,16 @@ func (s *PgVector) sampleQueries(ctx context.Context, conn *pgxpool.Conn, n int)
 func (s *PgVector) midpointWithNeighbor(ctx context.Context, conn *pgxpool.Conn,
 	seed pgvector.Vector,
 ) (*pgvector.Vector, error) {
-	if _, err := conn.Exec(ctx, "SET enable_indexscan = off"); err != nil {
+	if _, err := conn.Exec(ctx, "SET enable_seqscan = on; SET enable_indexscan = off; SET enable_bitmapscan = off"); err != nil {
 		return nil, fmt.Errorf("pgvector: verify: 標本の厳密検索: %w", err)
 	}
 	defer resetOrClose(ctx, conn, "enable_indexscan")
+	defer resetOrClose(ctx, conn, "enable_seqscan")
+	defer resetOrClose(ctx, conn, "enable_bitmapscan")
 
-	rows, err := conn.Query(ctx, fmt.Sprintf(
-		"SELECT %s FROM %s ORDER BY %s <=> $1 LIMIT 2",
-		s.cfg.EmbeddingColumn, s.cfg.Table, s.cfg.EmbeddingColumn),
-		pgx.QueryExecModeSimpleProtocol, seed)
+	sql, args := s.verificationQuery(s.cfg.EmbeddingColumn, &seed, 2)
+	args = append([]any{pgx.QueryExecModeSimpleProtocol}, args...)
+	rows, err := conn.Query(ctx, sql, args...)
 	if err != nil {
 		return nil, fmt.Errorf("pgvector: verify: 最近傍の取得: %w", err)
 	}
@@ -276,9 +276,9 @@ func (s *PgVector) midpointWithNeighbor(ctx context.Context, conn *pgxpool.Conn,
 func (s *PgVector) topIDs(ctx context.Context, conn *pgxpool.Conn, q pgvector.Vector,
 	topK int, useIndex bool,
 ) ([]string, error) {
-	setting := "SET enable_indexscan = off"
+	setting := "SET enable_seqscan = on; SET enable_indexscan = off; SET enable_bitmapscan = off"
 	if useIndex {
-		setting = "SET enable_seqscan = off"
+		setting = "SET enable_indexscan = on; SET enable_seqscan = off"
 		// 本番と同じ探索設定で測る。設定が違えば、起動時に測った再現率は
 		// 実際のリクエストで得られる値と関係の無い数字になる。
 		if err := s.applySessionSettings(ctx, conn.Conn(), s.EfSearch(topK)); err != nil {
@@ -290,14 +290,14 @@ func (s *PgVector) topIDs(ctx context.Context, conn *pgxpool.Conn, q pgvector.Ve
 	}
 	defer resetOrClose(ctx, conn, "enable_indexscan")
 	defer resetOrClose(ctx, conn, "enable_seqscan")
+	defer resetOrClose(ctx, conn, "enable_bitmapscan")
 
 	// プリペアドステートメントにするとプランがキャッシュされ、5 回目以降は
 	// ジェネリックプランに切り替わって enable_seqscan / enable_indexscan が効かなくなる。
 	// exact と索引で同じ SQL 文を使うため、両者が同じプランを引く。
-	rows, err := conn.Query(ctx, fmt.Sprintf(
-		"SELECT ctid::text FROM %s ORDER BY %s <=> $1 LIMIT $2",
-		s.cfg.Table, s.cfg.EmbeddingColumn),
-		pgx.QueryExecModeSimpleProtocol, q, topK)
+	sql, args := s.verificationQuery("ctid::text", &q, topK)
+	args = append([]any{pgx.QueryExecModeSimpleProtocol}, args...)
+	rows, err := conn.Query(ctx, sql, args...)
 	if err != nil {
 		return nil, fmt.Errorf("pgvector: verify: 再現率の測定: %w", err)
 	}
@@ -312,6 +312,26 @@ func (s *PgVector) topIDs(ctx context.Context, conn *pgxpool.Conn, q pgvector.Ve
 		ids = append(ids, id)
 	}
 	return ids, rows.Err()
+}
+
+// verificationQuery は標本と正解・近似の両方を本番と同じ検索対象に限定する。
+// フィルタ値は検索時と同じくプレースホルダで渡す。
+func (s *PgVector) verificationQuery(columns string, q *pgvector.Vector, limit int) (string, []any) {
+	sql := fmt.Sprintf("SELECT %s FROM %s", columns, s.cfg.Table)
+	args := []any{}
+	if s.cfg.FilterColumn != "" {
+		args = append(args, s.cfg.FilterValue)
+		sql += fmt.Sprintf(" WHERE %s = $%d", s.cfg.FilterColumn, len(args))
+	}
+	if q == nil {
+		sql += " ORDER BY ctid"
+	} else {
+		args = append(args, *q)
+		sql += fmt.Sprintf(" ORDER BY %s <=> $%d", s.cfg.EmbeddingColumn, len(args))
+	}
+	args = append(args, limit)
+	sql += fmt.Sprintf(" LIMIT $%d", len(args))
+	return sql, args
 }
 
 // verifySelectivity は設定された選択率が実測と合っているかを確かめる。

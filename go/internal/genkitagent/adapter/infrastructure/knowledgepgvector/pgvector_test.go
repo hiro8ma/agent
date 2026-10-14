@@ -137,3 +137,21 @@ func TestApplyDefaults(t *testing.T) {
 		t.Errorf("明示した設定が上書きされた: %+v", c2)
 	}
 }
+
+func TestVerificationQueryUsesSearchFilter(t *testing.T) {
+	s := &PgVector{cfg: PgVectorConfig{Table: "docs", EmbeddingColumn: "emb", FilterColumn: "tenant_id", FilterValue: "'; DROP TABLE docs; --"}}
+	q := toVector([]float32{1, 2})
+	sql, args := s.verificationQuery("emb", nil, 5)
+	if sql != "SELECT emb FROM docs WHERE tenant_id = $1 ORDER BY ctid LIMIT $2" || len(args) != 2 || args[0] != s.cfg.FilterValue || args[1] != 5 {
+		t.Fatalf("query=%q args=%v", sql, args)
+	}
+	sql, args = s.verificationQuery("ctid::text", &q, 5)
+	if sql != "SELECT ctid::text FROM docs WHERE tenant_id = $1 ORDER BY emb <=> $2 LIMIT $3" || len(args) != 3 || args[0] != s.cfg.FilterValue || args[2] != 5 {
+		t.Fatalf("query=%q args=%v", sql, args)
+	}
+	s.cfg.FilterColumn = ""
+	sql, args = s.verificationQuery("ctid::text", &q, 5)
+	if sql != "SELECT ctid::text FROM docs ORDER BY emb <=> $1 LIMIT $2" || len(args) != 2 {
+		t.Fatalf("unfiltered query=%q args=%v", sql, args)
+	}
+}
