@@ -124,21 +124,28 @@ func setup(t *testing.T, pool *pgxpool.Pool, table string, rows, tenants int) {
 func insertRows(t *testing.T, pool *pgxpool.Pool, table string, from, to, tenants int) {
 	t.Helper()
 
-	src := make([][]any, 0, to-from)
-	for i := from; i < to; i++ {
-		src = append(src, []any{
+	// COPY の送信時に 1 行ずつ生成する。全ベクトルを事前に保持しない。
+	i := from
+	src := pgx.CopyFromFunc(func() ([]any, error) {
+		if i >= to {
+			return nil, nil
+		}
+		id := i
+		i++
+		return []any{
 			// テナントはクラスタと独立に割り当てる。i%tenants にすると
-			// クラスタ数との公約数でテナントが特定のクラスタに偏り、
-			// 絞り込んだ先に近傍が 1 つも無い状況が生まれる。
-			i, fmt.Sprintf("tenant-%02d", (i/clusters)%tenants),
-			fmt.Sprintf("題名 %d", i), fmt.Sprintf("本文 %d", i), toVector(vectorFor(i)),
-		})
-	}
-	_, err := pool.CopyFrom(context.Background(), pgx.Identifier{table},
-		[]string{"id", "tenant_id", "title", "content", "embedding"},
-		pgx.CopyFromRows(src))
+			// クラスタ数との公約数でテナントが特定のクラスタに偏る。
+			id, fmt.Sprintf("tenant-%02d", (id/clusters)%tenants),
+			fmt.Sprintf("題名 %d", id), fmt.Sprintf("本文 %d", id), toVector(vectorFor(id)),
+		}, nil
+	})
+	copied, err := pool.CopyFrom(context.Background(), pgx.Identifier{table},
+		[]string{"id", "tenant_id", "title", "content", "embedding"}, src)
 	if err != nil {
 		t.Fatalf("投入に失敗: %v", err)
+	}
+	if copied != int64(to-from) {
+		t.Fatalf("投入件数 %d, 期待 %d", copied, to-from)
 	}
 }
 
