@@ -8,6 +8,7 @@ Python での AI エージェント実装を、フレームワーク / アプロ
 |---|---|---|
 | [`langchain/`](./langchain) | LangChain + LangGraph 流。`ChatPromptTemplate` / `MessagesPlaceholder` / `OutputParser` / `Document` 等のプリミティブをフル活用 | py-phase1 完了（doc_reader） |
 | [`contrastive_negatives/`](./contrastive_negatives) | 対照学習（InfoNCE）の負例の扱い（バッチ内 / 一様 / logQ 補正 / 偽の負例の除外）を、合成した商品推薦の候補検索で比べる実験。numpy + torch | 実験と結果を README に掲載 |
+| [`knowledge_extraction/`](./knowledge_extraction) | 架空の人物の伝記で小さな GPT を訓練し、伝記を覚えることと QA で取り出せることの差を、伝記の増強 / 線形プローブ / 逆転の呪いで測る実験。Physics of Language Models Part 3.1 の小さな再現。numpy + torch | 実験と結果を README に掲載 |
 
 ## 今後追加候補
 

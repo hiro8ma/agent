@@ -1,0 +1,33 @@
+[project]
+name = "agent-knowledge-extraction"
+version = "0.0.1"
+description = "架空の伝記で小さな GPT を訓練し、知識の貯蔵と抽出（QA、線形プローブ、逆転の呪い）を測る実験"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=2.0.0",
+    "torch>=2.5.0",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.6.0",
+    "mypy>=1.10.0",
+    "pytest>=8.0.0",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "C4", "SIM"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+ignore_missing_imports = true
