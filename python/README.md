@@ -10,6 +10,7 @@ Python での AI エージェント実装を、フレームワーク / アプロ
 | [`contrastive_negatives/`](./contrastive_negatives) | 対照学習（InfoNCE）の負例の扱い（バッチ内 / 一様 / logQ 補正 / 偽の負例の除外）を、合成した商品推薦の候補検索で比べる実験。numpy + torch | 実験と結果を README に掲載 |
 | [`knowledge_extraction/`](./knowledge_extraction) | 架空の人物の伝記で小さな GPT を訓練し、伝記を覚えることと QA で取り出せることの差を、伝記の増強 / 線形プローブ / 逆転の呪いで測る実験。Physics of Language Models Part 3.1 の小さな再現。numpy + torch | 実験と結果を README に掲載 |
 | [`japanese_tokenization/`](./japanese_tokenization) | 日本語の文章が tiktoken / Qwen3 / llm-jp-3 のトークナイザで1文字あたり何トークンになるかを測り、同じコーパスと同じ語彙数で学習した BPE とユニグラム言語モデルの分割を比べる実験。tiktoken + tokenizers + sentencepiece | 実験と結果を README に掲載 |
+| [`react_search/`](./react_search) | ReAct 形式のエージェント型の検索（search / lookup / finish、停止文字列、反復の上限）を日本国憲法の条文で動かし、1回の検索の RAG と比べ、停止文字列が無いと観測を作文するかを数える実験。mlx-lm + Gemma 3 4B | 実験と結果を README に掲載 |
 
 ## 今後追加候補
 
