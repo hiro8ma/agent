@@ -1,0 +1,35 @@
+[project]
+name = "agent-japanese-tokenization"
+version = "0.0.1"
+description = "日本語の文章が LLM のトークナイザで何トークンになるかを測り、BPE とユニグラム言語モデルの分割を比べる実験"
+requires-python = ">=3.11"
+dependencies = [
+    "regex>=2024.5.15",
+    "sentencepiece>=0.2.0",
+    "tiktoken>=0.8.0",
+    "tokenizers>=0.20.0",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.6.0",
+    "mypy>=1.10.0",
+    "pytest>=8.0.0",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "C4", "SIM"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+ignore_missing_imports = true
