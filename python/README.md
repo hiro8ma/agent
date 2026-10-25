@@ -7,6 +7,7 @@ Python での AI エージェント実装を、フレームワーク / アプロ
 | ディレクトリ | アプローチ | 状態 |
 |---|---|---|
 | [`langchain/`](./langchain) | LangChain + LangGraph 流。`ChatPromptTemplate` / `MessagesPlaceholder` / `OutputParser` / `Document` 等のプリミティブをフル活用 | py-phase1 完了（doc_reader） |
+| [`contrastive_negatives/`](./contrastive_negatives) | 対照学習（InfoNCE）の負例の扱い（バッチ内 / 一様 / logQ 補正 / 偽の負例の除外）を、合成した商品推薦の候補検索で比べる実験。numpy + torch | 実験と結果を README に掲載 |
 
 ## 今後追加候補
 
