@@ -573,3 +573,247 @@ func TestReportMemory(t *testing.T) {
 	tb.row("HNSW のグラフ（M=16、ベクトル本体を除く）", hn, fmt.Sprintf("%.1f MB", float64(d)/1e6), fmt.Sprintf("%.1f", float64(d)/hn), fmt.Sprintf("%.1f", float64(v.(*HNSW).Bytes())/hn))
 	runtime.KeepAlive(data)
 }
+
+// TestReportFilter は条件で絞った HNSW の検索で、efSearch 件を集めてから絞る場合と探索中に絞る場合を、許可する点の選び方 3 通りで比べる。
+func TestReportFilter(t *testing.T) {
+	evalEnabled(t)
+	const n, nq, k = 100_000, 200, 10
+	data, labels := gaussianMixture(n, evalDim, evalClusters, evalNoise, 1, 2)
+	qm, qlabels := gaussianMixture(nq, evalDim, evalClusters, evalNoise, 1, 3)
+	qs := rows(qm)
+	e := NewExact(data)
+	start := time.Now()
+	h := NewHNSW(data, HNSWConfig{M: 16, EfConstruction: 200, Seed: 1})
+	t.Logf("HNSW M=16 efC=200 N=%d d=%d: built in %v", n, evalDim, time.Since(start).Round(time.Second))
+	members := make([][]int32, evalClusters)
+	for id, c := range labels {
+		members[c] = append(members[c], int32(id))
+	}
+	tb := newTable(t, "許可する点", "選択率", "efSearch", "min(K, ef×s)", "二項分布の期待値", "後で絞る 件数", "recall@10", "1 クエリ", "距離計算", "探索中に絞る 件数", "recall@10", "1 クエリ", "距離計算", "絞った集合の全探索")
+	allow := make([]bool, n)
+	var ids []int32
+	for _, mode := range []struct {
+		name               string
+		byCluster, withOwn bool
+	}{
+		{name: "一様"},
+		{name: "塊（クエリの塊を含む）", byCluster: true, withOwn: true},
+		{name: "塊（クエリの塊を含まない）", byCluster: true},
+	} {
+		for _, sel := range []float64{0.5, 0.1, 0.01, 0.001} {
+			r := newRand(7)
+			uniform := r.Perm(n)[:int(math.Round(sel*n))]
+			picks := make([][]int, nq)
+			want := int(math.Round(sel * evalClusters))
+			for i := range picks {
+				if !mode.byCluster {
+					continue
+				}
+				own := int(qlabels[i])
+				if mode.withOwn {
+					picks[i] = append(picks[i], own)
+				}
+				for _, c := range r.Perm(evalClusters) {
+					if len(picks[i]) == want {
+						break
+					}
+					if c != own {
+						picks[i] = append(picks[i], c)
+					}
+				}
+			}
+			setAllow := func(i int) {
+				clear(allow)
+				ids = ids[:0]
+				if mode.byCluster {
+					for _, c := range picks[i] {
+						ids = append(ids, members[c]...)
+					}
+				} else {
+					for _, id := range uniform {
+						ids = append(ids, int32(id))
+					}
+				}
+				for _, id := range ids {
+					allow[id] = true
+				}
+			}
+			truth := make([][]Neighbor, nq)
+			var exactDur time.Duration
+			allowed := 0
+			for i, q := range qs {
+				setAllow(i)
+				allowed += len(ids)
+				start := time.Now()
+				truth[i] = e.Refine(q, ids, k)
+				exactDur += time.Since(start)
+			}
+			t.Logf("%s 選択率 %g%%: 許可した点の平均 %.0f 件", mode.name, sel*100, float64(allowed)/nq)
+			// 方式ごとに全クエリを流す。同じクエリを続けて投げると、後の方式が前の方式で読んだベクトルをキャッシュから読めて速く見える。
+			pass := func(ix *HNSW, search func(*HNSW, []float32, int, []bool) ([]Neighbor, HNSWStats)) []any {
+				var count, recall float64
+				var dur time.Duration
+				evals := 0
+				for i, q := range qs {
+					setAllow(i)
+					start := time.Now()
+					ns, st := search(ix, q, k, allow)
+					dur += time.Since(start)
+					count += float64(len(ns))
+					recall += Recall(ns, truth[i])
+					evals += st.Evals
+				}
+				return []any{fmt.Sprintf("%.2f", count/nq), recall / nq, dur / nq, evals / nq}
+			}
+			for _, ef := range []int{40, 100, 400, 1000} {
+				ix := h.WithEfSearch(ef)
+				cells := []any{mode.name, fmt.Sprintf("%g%%", sel*100), ef, fmt.Sprintf("%.1f", min(k, float64(ef)*sel)), fmt.Sprintf("%.2f", expectedKept(ef, k, sel))}
+				cells = append(cells, pass(ix, (*HNSW).SearchPostFilter)...)
+				cells = append(cells, pass(ix, (*HNSW).SearchFiltered)...)
+				tb.row(append(cells, exactDur/nq)...)
+			}
+		}
+	}
+}
+
+// expectedKept は ef 件の候補がそれぞれ確率 s で許可されるときに残る min(k, X) の期待値。X は二項分布 B(ef, s) に従う。
+func expectedKept(ef, k int, s float64) float64 {
+	lgEf, _ := math.Lgamma(float64(ef + 1))
+	var sum, below float64
+	for x := range min(k, ef+1) {
+		lgX, _ := math.Lgamma(float64(x + 1))
+		lgRest, _ := math.Lgamma(float64(ef - x + 1))
+		p := math.Exp(lgEf - lgX - lgRest + float64(x)*math.Log(s) + float64(ef-x)*math.Log1p(-s))
+		sum += float64(x) * p
+		below += p
+	}
+	return sum + float64(k)*(1-below)
+}
+
+// TestReportMultiVector は ColBERT 型の多ベクトル文書で、全文書の MaxSim と、トークンの近傍から候補の文書を集めて MaxSim で並べ直す近似を比べる。
+func TestReportMultiVector(t *testing.T) {
+	evalEnabled(t)
+	const k, nq = 10, 200
+	cfg := TopicConfig{Docs: 10_000, Dim: 64, NumTopics: 100, MinTokens: 20, MaxTokens: 60, MinTopics: 2, MaxTopics: 4, Noise: 1, Seed: 1, SampleSeed: 2}
+	docs := TopicMultiVector(cfg)
+	cfg.Docs, cfg.MinTokens, cfg.MaxTokens, cfg.MinTopics, cfg.MaxTopics, cfg.SampleSeed = nq, 4, 8, 1, 3, 3
+	queries := TopicMultiVector(cfg)
+	t.Logf("文書 %d 件、トークン %d 個（平均 %.1f 個/文書）、d=%d、話題 %d、クエリ %d 件（トークン %d 個）",
+		docs.Docs(), docs.Tokens.N, float64(docs.Tokens.N)/float64(docs.Docs()), docs.Tokens.Dim, cfg.NumTopics, nq, queries.Tokens.N)
+
+	start := time.Now()
+	truth := make([][]Neighbor, nq)
+	for i := range nq {
+		truth[i] = docs.SearchMaxSim(queries.Doc(i), k)
+	}
+	exactPer := time.Since(start) / nq
+
+	kToks := []int{10, 50, 200, 1000}
+	// ranks[i][r][j] は真の上位 r+1 番目の文書について、クエリのトークン j に最も近いその文書のトークンが、全トークンの中で何位か。
+	ranks := make([][][]int, nq)
+	parallelRange(nq, func(qlo, qhi int) {
+		sims := make([]float32, docs.Tokens.N)
+		for i := qlo; i < qhi; i++ {
+			q := queries.Doc(i)
+			ranks[i] = make([][]int, len(truth[i]))
+			for j := range q.N {
+				for tok := range docs.Tokens.N {
+					sims[tok] = dot(q.Row(j), docs.Tokens.Row(tok))
+				}
+				for r, nb := range truth[i] {
+					best := slices.Max(sims[docs.Start[nb.ID]:docs.Start[nb.ID+1]])
+					rank := 1
+					for _, s := range sims {
+						if s > best {
+							rank++
+						}
+					}
+					ranks[i][r] = append(ranks[i][r], rank)
+				}
+			}
+		}
+	})
+	bestRank := func(i, r int) int { return slices.Min(ranks[i][r]) }
+	median := func(xs []int) int {
+		s := slices.Clone(xs)
+		slices.Sort(s)
+		return s[len(s)/2]
+	}
+
+	start = time.Now()
+	hn := NewHNSW(docs.Tokens, HNSWConfig{M: 16, EfConstruction: 100, Seed: 1})
+	t.Logf("トークンの HNSW M=16 efC=100: built in %v", time.Since(start).Round(time.Second))
+	tb := newTable(t, "方式", "K'", "recall@10", "候補の文書数", "1 クエリ", "取りこぼし/クエリ", "うち全クエリトークンで K' 位より下", "取りこぼした文書の最良順位（中央値）")
+	tb.row("全文書の MaxSim", "-", 1.0, docs.Docs(), exactPer, "-", "-", "-")
+	for _, ix := range []struct {
+		name string
+		s    TokenSearcher
+	}{
+		{name: "トークンを全探索", s: NewExact(docs.Tokens)},
+		{name: "トークンを HNSW（ef=max(64, K')）", s: hn},
+	} {
+		for _, kTok := range kToks {
+			res := make([][]Neighbor, nq)
+			cands := 0
+			start := time.Now()
+			for i := range nq {
+				var c int
+				res[i], c = docs.SearchCandidates(queries.Doc(i), k, kTok, ix.s)
+				cands += c
+			}
+			per := time.Since(start) / nq
+			var recall float64
+			missed, below := 0, 0
+			var missedRanks []int
+			for i := range nq {
+				recall += Recall(res[i], truth[i])
+				for r, nb := range truth[i] {
+					if slices.ContainsFunc(res[i], func(g Neighbor) bool { return g.ID == nb.ID }) {
+						continue
+					}
+					missed++
+					b := bestRank(i, r)
+					missedRanks = append(missedRanks, b)
+					if b > kTok {
+						below++
+					}
+				}
+			}
+			share, med := "-", "-"
+			if missed > 0 {
+				share, med = fmt.Sprintf("%.2f", float64(below)/float64(missed)), fmt.Sprint(median(missedRanks))
+			}
+			tb.row(ix.name, kTok, recall/nq, fmt.Sprintf("%.0f", float64(cands)/nq), per, fmt.Sprintf("%.2f", float64(missed)/nq), share, med)
+		}
+	}
+
+	tb = newTable(t, "K'", "真の上位 10 件のうち全クエリトークンで K' 位より下", "その文書の真の順位（平均）", "トークンごとの順位 最良 / 中央値 / 最悪", "K' 位以内に入る文書の真の順位（平均）", "トークンごとの順位 最良 / 中央値 / 最悪")
+	for _, kTok := range kToks {
+		type group struct {
+			pos              float64
+			best, mid, worst []int
+		}
+		var in, out group
+		for i := range nq {
+			for r, rs := range ranks[i] {
+				g := &in
+				if bestRank(i, r) > kTok {
+					g = &out
+				}
+				g.pos += float64(r + 1)
+				g.best = append(g.best, bestRank(i, r))
+				g.mid = append(g.mid, median(rs))
+				g.worst = append(g.worst, slices.Max(rs))
+			}
+		}
+		cells := func(g group) []any {
+			if len(g.best) == 0 {
+				return []any{"-", "-"}
+			}
+			return []any{fmt.Sprintf("%.1f", g.pos/float64(len(g.best))), fmt.Sprintf("%d / %d / %d", median(g.best), median(g.mid), median(g.worst))}
+		}
+		row := []any{kTok, fmt.Sprintf("%.3f", float64(len(out.best))/float64(len(in.best)+len(out.best)))}
+		row = append(row, cells(out)...)
+		tb.row(append(row, cells(in)...)...)
+	}
+}

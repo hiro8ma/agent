@@ -725,3 +725,169 @@ func TestKNNGraphLinksExactNeighbors(t *testing.T) {
 		}
 	}
 }
+
+func randomAllow(n int, frac float64, seed uint64) ([]bool, []int32) {
+	allow := make([]bool, n)
+	ids := make([]int32, 0, int(frac*float64(n)))
+	for _, id := range newRand(seed).Perm(n)[:int(frac*float64(n))] {
+		allow[id] = true
+		ids = append(ids, int32(id))
+	}
+	return allow, ids
+}
+
+func TestHNSWFilteredSearch(t *testing.T) {
+	t.Parallel()
+	data, qs, e := hnswSet()
+	h := NewHNSW(data, HNSWConfig{M: 12, EfConstruction: 80, EfSearch: 40, Seed: 1})
+	const k = 10
+	post := func(q []float32, allow []bool) []Neighbor { ns, _ := h.SearchPostFilter(q, k, allow); return ns }
+	during := func(q []float32, allow []bool) []Neighbor { ns, _ := h.SearchFiltered(q, k, allow); return ns }
+	testCases := map[string]struct {
+		frac                     float64
+		search                   func(q []float32, allow []bool) []Neighbor
+		minAvgCount, maxAvgCount float64
+		minRecall                float64
+	}{
+		"後で絞ると選択率 1% では ef=40 の候補に許可された点がほとんど残らない": {frac: 0.01, search: post, minAvgCount: 0, maxAvgCount: 2, minRecall: 0},
+		"後で絞っても選択率 50% なら k 件そろう":                  {frac: 0.5, search: post, minAvgCount: 9.9, maxAvgCount: 10, minRecall: 0.9},
+		"探索中に絞ると選択率 1% でも k 件そろい全探索と一致する":          {frac: 0.01, search: during, minAvgCount: 10, maxAvgCount: 10, minRecall: 1},
+		"探索中に絞ると選択率 10% で k 件そろう":                  {frac: 0.1, search: during, minAvgCount: 10, maxAvgCount: 10, minRecall: 0.9},
+	}
+	for tn, tc := range testCases {
+		t.Run(tn, func(t *testing.T) {
+			t.Parallel()
+			allow, ids := randomAllow(data.N, tc.frac, 5)
+			var count, recall float64
+			for i := range qs.N {
+				got := tc.search(qs.Row(i), allow)
+				for j, n := range got {
+					if !allow[n.ID] {
+						t.Fatalf("query %d returned id %d which is not allowed", i, n.ID)
+					}
+					if j > 0 && !closer(got[j-1], n) {
+						t.Fatalf("query %d results are not in ascending distance: %v", i, got)
+					}
+				}
+				count += float64(len(got))
+				recall += Recall(got, e.Refine(qs.Row(i), ids, k))
+			}
+			count /= float64(qs.N)
+			recall /= float64(qs.N)
+			if count < tc.minAvgCount || count > tc.maxAvgCount {
+				t.Errorf("average returned %.2f, want between %.1f and %.1f", count, tc.minAvgCount, tc.maxAvgCount)
+			}
+			if recall < tc.minRecall {
+				t.Errorf("recall@%d within allowed = %.3f, want at least %.2f", k, recall, tc.minRecall)
+			}
+		})
+	}
+}
+
+func TestHNSWFilterAgreesWithUnfiltered(t *testing.T) {
+	t.Parallel()
+	data, qs, _ := hnswSet()
+	h := NewHNSW(data, HNSWConfig{M: 12, EfConstruction: 80, EfSearch: 40, Seed: 1})
+	all := make([]bool, data.N)
+	for i := range all {
+		all[i] = true
+	}
+	some, _ := randomAllow(data.N, 0.3, 6)
+	for i := range qs.N {
+		q := qs.Row(i)
+		want, wantSt := h.SearchStats(q, 10)
+		if got, st := h.SearchFiltered(q, 10, all); !slices.Equal(got, want) || st != wantSt {
+			t.Fatalf("query %d: allowing every point gave %v %+v, unfiltered search %v %+v", i, got, st, want, wantSt)
+		}
+		pool, _ := h.SearchStats(q, 40)
+		var kept []Neighbor
+		for _, n := range pool {
+			if some[n.ID] && len(kept) < 10 {
+				kept = append(kept, n)
+			}
+		}
+		if got, _ := h.SearchPostFilter(q, 10, some); !slices.Equal(got, kept) {
+			t.Fatalf("query %d: post filter gave %v, want the allowed points among the unfiltered 40 %v", i, got, kept)
+		}
+	}
+}
+
+func TestMaxSimHandExample(t *testing.T) {
+	t.Parallel()
+	q := Matrix{N: 2, Dim: 2, Data: []float32{1, 0, 0, 1}}
+	doc := Matrix{N: 3, Dim: 2, Data: []float32{1, 0, 0.6, 0.8, 0, -1}}
+	if got := MaxSim(q, doc); math.Abs(float64(got)-1.8) > 1e-6 {
+		t.Errorf("MaxSim = %g, want 1 (first query token) + 0.8 (second) = 1.8", got)
+	}
+}
+
+// 文書 2 はどのクエリのトークンとも cos 0.6 で、最も近いトークンにはならないが、合計 1.2 で 1 位になる。
+func TestSearchCandidatesMissesDocSimilarToEveryTokenButNearestToNone(t *testing.T) {
+	t.Parallel()
+	mv, err := NewMultiVector([]Matrix{
+		{N: 2, Dim: 3, Data: []float32{1, 0, 0, 0, 0, 1}},
+		{N: 2, Dim: 3, Data: []float32{0, 1, 0, 0, 0, 1}},
+		{N: 2, Dim: 3, Data: []float32{0.6, 0, 0.8, 0, 0.6, 0.8}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	q := Matrix{N: 2, Dim: 3, Data: []float32{1, 0, 0, 0, 1, 0}}
+	ix := NewExact(mv.Tokens)
+	if top := mv.SearchMaxSim(q, 1)[0].ID; top != 2 {
+		t.Fatalf("exact MaxSim top is document %d, want 2", top)
+	}
+	testCases := map[string]struct {
+		kTok      int
+		wantTop   int32
+		wantCands int
+	}{
+		"各トークンで 1 件だけ取ると文書 2 が候補に入らない":    {kTok: 1, wantTop: 0, wantCands: 2},
+		"各トークンで 2 件取ると文書 2 が候補に入り 1 位になる": {kTok: 2, wantTop: 2, wantCands: 3},
+	}
+	for tn, tc := range testCases {
+		t.Run(tn, func(t *testing.T) {
+			t.Parallel()
+			got, cands := mv.SearchCandidates(q, 1, tc.kTok, ix)
+			if got[0].ID != tc.wantTop || cands != tc.wantCands {
+				t.Errorf("top %d with %d candidates, want %d with %d", got[0].ID, cands, tc.wantTop, tc.wantCands)
+			}
+		})
+	}
+}
+
+func TestSearchCandidatesWithEveryTokenMatchesMaxSim(t *testing.T) {
+	t.Parallel()
+	cfg := TopicConfig{Docs: 200, Dim: 16, NumTopics: 10, MinTokens: 3, MaxTokens: 8, MinTopics: 1, MaxTopics: 3, Noise: 1, Seed: 1, SampleSeed: 2}
+	mv := TopicMultiVector(cfg)
+	cfg.Docs, cfg.MinTokens, cfg.MaxTokens, cfg.SampleSeed = 10, 2, 4, 3
+	qs := TopicMultiVector(cfg)
+	ix := NewExact(mv.Tokens)
+	for i := range qs.Docs() {
+		q := qs.Doc(i)
+		want := mv.SearchMaxSim(q, 10)
+		got, cands := mv.SearchCandidates(q, 10, mv.Tokens.N, ix)
+		if cands != mv.Docs() || !slices.Equal(got, want) {
+			t.Fatalf("query %d: %d candidates %v, want all %d documents and %v", i, cands, got, mv.Docs(), want)
+		}
+	}
+}
+
+func TestTopicMultiVectorShape(t *testing.T) {
+	t.Parallel()
+	mv := TopicMultiVector(TopicConfig{Docs: 300, Dim: 16, NumTopics: 10, MinTokens: 20, MaxTokens: 60, MinTopics: 2, MaxTopics: 4, Noise: 1, Seed: 1, SampleSeed: 2})
+	if mv.Docs() != 300 || int(mv.Start[300]) != mv.Tokens.N || len(mv.DocOf) != mv.Tokens.N {
+		t.Fatalf("docs %d, last start %d, DocOf %d, tokens %d", mv.Docs(), mv.Start[300], len(mv.DocOf), mv.Tokens.N)
+	}
+	for d := range mv.Docs() {
+		doc := mv.Doc(d)
+		if doc.N < 20 || doc.N > 60 {
+			t.Fatalf("document %d has %d tokens, want 20 to 60", d, doc.N)
+		}
+		for j := range doc.N {
+			if n := dot(doc.Row(j), doc.Row(j)); math.Abs(float64(n)-1) > 1e-5 || mv.DocOf[int(mv.Start[d])+j] != int32(d) {
+				t.Fatalf("document %d token %d has squared length %g and owner %d", d, j, n, mv.DocOf[int(mv.Start[d])+j])
+			}
+		}
+	}
+}

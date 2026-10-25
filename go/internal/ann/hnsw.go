@@ -151,13 +151,16 @@ func (h *HNSW) setNeighbors(id int32, lc int, ns []Neighbor) {
 func (h *HNSW) dist(q []float32, id int32) float32 { return l2sq(q, h.data.Row(int(id))) }
 
 // searchLayer は層 lc で、入口から近い ef 件を貪欲に広げて探す。最も近い未展開の候補が持っている ef 件の最遠より遠くなったら止める。
-func (h *HNSW) searchLayer(q []float32, eps []Neighbor, ef, lc int, v *visited, st *HNSWStats) []Neighbor {
+// allow が nil でなければ、allow[id] が偽の点は辺をたどる経由には使うが、持っている ef 件には入れない。
+func (h *HNSW) searchLayer(q []float32, eps []Neighbor, ef, lc int, allow []bool, v *visited, st *HNSWStats) []Neighbor {
 	cand := make(minQueue, 0, ef)
 	res := newKBest(ef)
 	for _, ep := range eps {
 		if v.visit(ep.ID) {
 			cand.push(ep)
-			res.push(ep)
+			if allow == nil || allow[ep.ID] {
+				res.push(ep)
+			}
 		}
 	}
 	for len(cand) > 0 {
@@ -174,7 +177,9 @@ func (h *HNSW) searchLayer(q []float32, eps []Neighbor, ef, lc int, v *visited, 
 			n := Neighbor{ID: e, Dist: h.dist(q, e)}
 			if w, ok := res.worst(); !ok || closer(n, w) {
 				cand.push(n)
-				res.push(n)
+				if allow == nil || allow[e] {
+					res.push(n)
+				}
 			}
 		}
 	}
@@ -250,7 +255,7 @@ func (h *HNSW) insert(id int32, v *visited) {
 	eps := []Neighbor{ep}
 	for lc := min(level, h.maxLevel); lc >= 0; lc-- {
 		v.reset()
-		w := h.searchLayer(q, eps, h.efC, lc, v, &st)
+		w := h.searchLayer(q, eps, h.efC, lc, nil, v, &st)
 		chosen := h.selectNeighbors(w, h.m)
 		h.setNeighbors(id, lc, chosen)
 		maxConn := h.m
@@ -292,6 +297,30 @@ func (h *HNSW) Search(q []float32, k int) []Neighbor {
 
 // SearchStats は上の層を貪欲に降り、層 0 で max(EfSearch, k) 件の候補を持って探す。
 func (h *HNSW) SearchStats(q []float32, k int) ([]Neighbor, HNSWStats) {
+	return h.search(q, k, nil)
+}
+
+// SearchPostFilter は層 0 で max(EfSearch, k) 件を集めてから allow[id] が真の点だけを残すので、候補に許可された点が k 件無ければ k 件より少なく返す（pgvector の既定の動き）。
+func (h *HNSW) SearchPostFilter(q []float32, k int, allow []bool) ([]Neighbor, HNSWStats) {
+	res, st := h.search(q, max(h.efSearch, k), nil)
+	out := res[:0]
+	for _, n := range res {
+		if allow[n.ID] {
+			out = append(out, n)
+			if len(out) == k {
+				break
+			}
+		}
+	}
+	return out, st
+}
+
+// SearchFiltered は許可されない点も層 0 で辺をたどる経由に使い、許可された点が max(EfSearch, k) 件そろうまで探すので、それより少なければたどれる点をすべて調べる。
+func (h *HNSW) SearchFiltered(q []float32, k int, allow []bool) ([]Neighbor, HNSWStats) {
+	return h.search(q, k, allow)
+}
+
+func (h *HNSW) search(q []float32, k int, allow []bool) ([]Neighbor, HNSWStats) {
 	var st HNSWStats
 	if h.data.N == 0 {
 		return nil, st
@@ -300,7 +329,7 @@ func (h *HNSW) SearchStats(q []float32, k int) ([]Neighbor, HNSWStats) {
 	v := h.pool.Get().(*visited)
 	defer h.pool.Put(v)
 	v.reset()
-	res := h.searchLayer(q, []Neighbor{ep}, max(h.efSearch, k), 0, v, &st)
+	res := h.searchLayer(q, []Neighbor{ep}, max(h.efSearch, k), 0, allow, v, &st)
 	return res[:min(k, len(res))], st
 }
 

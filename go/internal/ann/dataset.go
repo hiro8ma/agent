@@ -45,28 +45,48 @@ func RandomNormal(n, dim int, seed uint64) Matrix {
 // noise は中心の長さ（約 1）に対する散らばりの大きさで、文の埋め込みのように塊がありつつ塊同士が重なる分布を作る。
 // 同じ seed なら同じ中心を使うので、seed を共有して n だけ変えれば同じ分布からクエリを取り出せる。
 func GaussianMixture(n, dim, clusters int, noise float64, seed, sampleSeed uint64) Matrix {
+	m, _ := gaussianMixture(n, dim, clusters, noise, seed, sampleSeed)
+	return m
+}
+
+// gaussianMixture は GaussianMixture と同じ点に加え、各点を散らした中心の番号を返す。
+func gaussianMixture(n, dim, clusters int, noise float64, seed, sampleSeed uint64) (Matrix, []int32) {
+	cents := randomCenters(clusters, dim, seed)
+	scale := 1 / math.Sqrt(float64(dim))
+	s := newRand(sampleSeed)
+	data := make([]float32, n*dim)
+	labels := make([]int32, n)
+	row := make([]float64, dim)
+	for i := range n {
+		c := s.IntN(clusters)
+		labels[i] = int32(c)
+		scatter(data[i*dim:(i+1)*dim], cents[c*dim:], noise, scale, s, row)
+	}
+	return Matrix{N: n, Dim: dim, Data: data}, labels
+}
+
+// randomCenters は各成分を N(0, 1/dim) から取り、長さが約 1 の中心を k 個返す。
+func randomCenters(k, dim int, seed uint64) []float64 {
 	r := newRand(seed)
 	scale := 1 / math.Sqrt(float64(dim))
-	cents := make([]float64, clusters*dim)
+	cents := make([]float64, k*dim)
 	for i := range cents {
 		cents[i] = r.NormFloat64() * scale
 	}
-	s := newRand(sampleSeed)
-	data := make([]float32, n*dim)
-	row := make([]float64, dim)
-	for i := range n {
-		c := cents[s.IntN(clusters)*dim:]
-		var norm float64
-		for j := range dim {
-			row[j] = c[j] + noise*s.NormFloat64()*scale
-			norm += row[j] * row[j]
-		}
-		inv := 1 / math.Sqrt(norm)
-		for j := range dim {
-			data[i*dim+j] = float32(row[j] * inv)
-		}
+	return cents
+}
+
+// scatter は中心 c の各成分に noise*scale の幅の正規乱数を足し、長さ 1 にして dst に書く。row は作業用。
+func scatter(dst []float32, c []float64, noise, scale float64, s *rand.Rand, row []float64) {
+	var norm float64
+	for j := range dst {
+		row[j] = c[j] + noise*s.NormFloat64()*scale
+		norm += row[j] * row[j]
 	}
-	return Matrix{N: n, Dim: dim, Data: data}
+	inv := 1 / math.Sqrt(norm)
+	for j := range dst {
+		dst[j] = float32(row[j] * inv)
+	}
 }
 
 func dot(a, b []float32) float32 {
