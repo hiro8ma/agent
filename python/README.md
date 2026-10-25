@@ -12,6 +12,7 @@ Python での AI エージェント実装を、フレームワーク / アプロ
 | [`japanese_tokenization/`](./japanese_tokenization) | 日本語の文章が tiktoken / Qwen3 / llm-jp-3 のトークナイザで1文字あたり何トークンになるかを測り、同じコーパスと同じ語彙数で学習した BPE とユニグラム言語モデルの分割を比べる実験。tiktoken + tokenizers + sentencepiece | 実験と結果を README に掲載 |
 | [`react_search/`](./react_search) | ReAct 形式のエージェント型の検索（search / lookup / finish、停止文字列、反復の上限）を日本国憲法の条文で動かし、1回の検索の RAG と比べ、停止文字列が無いと観測を作文するかを数える実験。mlx-lm + Gemma 3 4B | 実験と結果を README に掲載 |
 | [`query_expansion_drift/`](./query_expansion_drift) | LLM によるクエリ拡張（Query2doc / HyDE / 性質の列挙）で元のクエリを残す重み（BM25 の繰り返し回数、密ベクトルの補間の α）を変え、BEIR SciFact で精度とクエリドリフト、temperature による振れを測る実験。mlx-lm + Gemma 3 4B + all-MiniLM-L6-v2 | 実験と結果を README に掲載 |
+| [`lost_in_the_middle/`](./lost_in_the_middle) | LLM が複数の文書の中央にある情報を使いにくい現象（lost-in-the-middle）を、Liu et al.（2023）の公開データ（NaturalQuestions の複数文書 QA）で再現し、正解文書の位置 / 質問の位置 / 文書数 / 上位を両端に寄せる並べ替えで正答率を比べる実験。mlx-lm + Gemma 3 4B / Gemma 2 2B | 実験と結果を README に掲載 |
 
 ## 今後追加候補
 
