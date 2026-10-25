@@ -1,0 +1,35 @@
+[project]
+name = "agent-query-expansion-drift"
+version = "0.0.1"
+description = "LLM によるクエリ拡張（Query2doc / HyDE）で元のクエリを残す重みとクエリドリフトを、BM25 と密ベクトルの検索で測る実験"
+requires-python = ">=3.11"
+dependencies = [
+    "mlx-lm>=0.28.0",
+    "numpy>=2.0.0",
+    "scipy>=1.13.0",
+    "sentence-transformers>=3.0.0",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.6.0",
+    "mypy>=1.10.0",
+    "pytest>=8.0.0",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "C4", "SIM"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+ignore_missing_imports = true
