@@ -1,4 +1,4 @@
-.PHONY: help setup build fmt vet lint lint-fix lint-tools vuln test test-live proto proto-check tidy clean demo-genai demo-genkit demo-adk demo-all adk-web adk-api genkit-web travel-api crawlfresh compose-up compose-down up down load open
+.PHONY: help setup build fmt vet lint lint-fix lint-tools vuln test test-live proto proto-check tidy clean demo-genai demo-genkit demo-adk demo-all adk-web adk-api genkit-web travel-api crawlfresh dedupbench compose-up compose-down up down load open
 
 BIN_DIR := $(abspath ./bin)
 GOLANGCI_LINT_VERSION := v2.13.2
@@ -77,6 +77,9 @@ travel-api: ## 旅行プランナーを ConnectRPC で公開（TRAVEL_IMPL=adk|g
 
 crawlfresh: ## 配慮のあるクローラーの費用、取り直しの方針ごとの鮮度、掲載の終了の追い方を模擬で測る（ネットワークは使わない）
 	go run ./cmd/crawlfresh
+
+dedupbench: ## ブルームフィルタ、既読の除外の大きさ、MinHash と LSH、2回目からのキャッシュを合成のデータで測る（ネットワークは使わない）
+	go run ./cmd/dedupbench
 
 # 配布バイナリは古い Go でビルドされていることがあり、go.mod の go より古いと設定を読めない。手元の Go でビルドする。
 lint-tools: ## golangci-lint を手元の Go でビルドして bin/ に置く
