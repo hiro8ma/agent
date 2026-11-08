@@ -1,4 +1,4 @@
-.PHONY: help setup build fmt vet lint lint-fix lint-tools vuln test test-live proto proto-check tidy clean demo-genai demo-genkit demo-adk demo-all adk-web adk-api genkit-web travel-api compose-up compose-down up down load open
+.PHONY: help setup build fmt vet lint lint-fix lint-tools vuln test test-live proto proto-check tidy clean demo-genai demo-genkit demo-adk demo-all adk-web adk-api genkit-web travel-api crawlfresh compose-up compose-down up down load open
 
 BIN_DIR := $(abspath ./bin)
 GOLANGCI_LINT_VERSION := v2.13.2
@@ -74,6 +74,9 @@ genkit-web: ## Genkit の Developer UI から旅行プランナーのフロー�
 travel-api: ## 旅行プランナーを ConnectRPC で公開（TRAVEL_IMPL=adk|genkit TRAVEL_PORT=19950）
 	@echo "API: POST http://localhost:$(TRAVEL_PORT)/travel.v1.TravelPlannerService/Plan"
 	go run ./cmd/travelplanner-server -impl $(TRAVEL_IMPL) -port $(TRAVEL_PORT)
+
+crawlfresh: ## 配慮のあるクローラーの費用、取り直しの方針ごとの鮮度、掲載の終了の追い方を模擬で測る（ネットワークは使わない）
+	go run ./cmd/crawlfresh
 
 # 配布バイナリは古い Go でビルドされていることがあり、go.mod の go より古いと設定を読めない。手元の Go でビルドする。
 lint-tools: ## golangci-lint を手元の Go でビルドして bin/ に置く
