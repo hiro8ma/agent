@@ -48,6 +48,10 @@ linters:
         text: G404 # クリックのログを種で固定して作り、同じ入力から同じ推定を得るため
         linters:
           - gosec
+      - path: (internal/crawl|cmd/crawlfresh)/
+        text: G404 # 変化の時刻と取得の時間を種で固定して引き、同じ設定から同じ表を得るため
+        linters:
+          - gosec
       - path: internal/ann/
         text: G404 # k-means の初期値 / 超平面 / HNSW の層を種で固定し、同じ入力から同じ索引を作るため
         linters:
