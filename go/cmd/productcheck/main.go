@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/hiro8ma/agent/go/internal/productld"
@@ -57,11 +58,11 @@ func conditions(maxPrice float64, currency string, maxDays float64, inStock bool
 	var all productld.Condition
 	if maxPrice >= 0 {
 		all.MaxPrice, all.Currency = new(maxPrice), currency
-		out = append(out, named{fmt.Sprintf("予算%g %s 以下", maxPrice, currency), productld.Condition{MaxPrice: all.MaxPrice, Currency: currency}})
+		out = append(out, named{"予算" + num(maxPrice) + " " + currency + " 以下", productld.Condition{MaxPrice: all.MaxPrice, Currency: currency}})
 	}
 	if maxDays >= 0 {
 		all.MaxDays = new(maxDays)
-		out = append(out, named{fmt.Sprintf("届くまで%g日以内", maxDays), productld.Condition{MaxDays: all.MaxDays}})
+		out = append(out, named{"届くまで" + num(maxDays) + "日以内", productld.Condition{MaxDays: all.MaxDays}})
 	}
 	if inStock {
 		all.InStock = true
@@ -71,6 +72,10 @@ func conditions(maxPrice float64, currency string, maxDays float64, inStock bool
 		out = append(out, named{"すべて", all})
 	}
 	return out
+}
+
+func num(v float64) string {
+	return strconv.FormatFloat(v, 'f', -1, 64)
 }
 
 func label(p productld.Product) string {

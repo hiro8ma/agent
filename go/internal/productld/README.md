@@ -39,6 +39,7 @@ go run ./cmd/productcheck -max-price 5000 -max-days 3 -in-stock 商品ページ�
 ## 読まないもの
 
 - `@id` だけで別のノードを指す参照（ProductGroup の `isVariantOf` や、共有の `shippingDetails`）
+- 別の型の下に置いた Product（WebPage の `mainEntity`、ItemList の要素など）。script は数えるが、Product は0件になる
 - AggregateOffer の lowPrice と priceSpecification の価格。どの Offer の在庫と配送かが分からないため
 - shippingDestination での宛先の絞り込み
 - URL の取得と、JavaScript を実行した後の HTML

@@ -119,7 +119,13 @@ func TestLoadFixtures(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := map[string]struct {
+	byFile := map[string]productld.Result{}
+	var files []string
+	for _, r := range results {
+		byFile[r.File] = r
+		files = append(files, r.File)
+	}
+	testCases := map[string]struct {
 		scripts, broken int
 		products        []string
 	}{
@@ -133,24 +139,24 @@ func TestLoadFixtures(t *testing.T) {
 		"no-shipping.html": {scripts: 1, products: []string{"ステンレスの水筒: shippingRate, handlingTime, transitTime, hasMerchantReturnPolicy, aggregateRating"}},
 		"stock-only.html":  {scripts: 1, products: []string{"木のトレイ: sku / gtin, price, priceCurrency, shippingRate, handlingTime, transitTime, hasMerchantReturnPolicy, aggregateRating"}},
 	}
-	var files []string
-	for _, r := range results {
-		files = append(files, r.File)
-		w, ok := want[r.File]
-		if !ok {
-			t.Errorf("想定していないファイル %s", r.File)
-			continue
-		}
-		var got []string
-		for _, p := range r.Products {
-			got = append(got, missing(p))
-		}
-		if r.Scripts != w.scripts || r.Broken != w.broken || !slices.Equal(got, w.products) {
-			t.Errorf("%s: script %d、壊れた %d、無い項目 %q, want %d、%d、%q", r.File, r.Scripts, r.Broken, got, w.scripts, w.broken, w.products)
-		}
+	if !slices.IsSorted(files) || len(files) != len(testCases) {
+		t.Errorf("読んだファイル %q は、名前の順の %d件でない", files, len(testCases))
 	}
-	if !slices.IsSorted(files) || len(files) != len(want) {
-		t.Errorf("読んだファイル %q は、名前の順の %d件でない", files, len(want))
+	for tn, tc := range testCases {
+		t.Run(tn, func(t *testing.T) {
+			t.Parallel()
+			r, ok := byFile[tn]
+			if !ok {
+				t.Fatalf("%s を読んでいない", tn)
+			}
+			var got []string
+			for _, p := range r.Products {
+				got = append(got, missing(p))
+			}
+			if r.Scripts != tc.scripts || r.Broken != tc.broken || !slices.Equal(got, tc.products) {
+				t.Errorf("script %d、壊れた %d、無い項目 %q, want %d、%d、%q", r.Scripts, r.Broken, got, tc.scripts, tc.broken, tc.products)
+			}
+		})
 	}
 }
 
