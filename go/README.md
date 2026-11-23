@@ -93,6 +93,11 @@ make compose-up                 # build + 3 サービス起動
 
 3 実装の差異は `internal/{genai,genkit,adk}/` の adapter コードのみに閉じ込めている
 
+## 商品の構造化データの点検
+
+`make productcheck` は、商品ページの HTML の JSON-LD に、エージェントが比較に使う項目（価格 / 在庫 / 届くまでの日数など）が揃っているかと、条件で判定できる商品の数を出す（ネットワークは使わない）
+判定の決め方と合成のページは [`internal/productld/README.md`](./internal/productld/README.md)
+
 ## Tech Stack
 
 - **Language** Go 1.27
