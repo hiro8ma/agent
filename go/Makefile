@@ -1,4 +1,4 @@
-.PHONY: help setup build fmt vet lint lint-fix lint-tools vuln test test-live proto proto-check tidy clean demo-genai demo-genkit demo-adk demo-all adk-web adk-api genkit-web travel-api crawlfresh dedupbench productcheck compose-up compose-down up down load open
+.PHONY: help setup build fmt vet lint lint-fix lint-tools vuln test test-live proto proto-check tidy clean demo-genai demo-genkit demo-adk demo-all adk-web adk-api genkit-web travel-api crawlfresh dedupbench productcheck pairwisecheck compose-up compose-down up down load open
 
 BIN_DIR := $(abspath ./bin)
 GOLANGCI_LINT_VERSION := v2.13.2
@@ -83,6 +83,9 @@ dedupbench: ## ブルームフィルタ、既読の除外の大きさ、MinHash 
 
 productcheck: ## 合成の商品ページの JSON-LD に比較の項目が揃っているかと、予算 / 届く日数 / 在庫で判定できる商品の数を出す（ネットワークは使わない）
 	go run ./cmd/productcheck -max-price 5000 -max-days 3 -in-stock internal/productld/testdata
+
+pairwisecheck: ## 合成のペア比較の勝ち / 負け / 引き分けから、勝率の区間と判定 / 符号検定の p 値と Holm の補正 / 50%と見分けるのに要る件数を出す（ネットワークは使わない）
+	go run ./cmd/pairwisecheck internal/pairwise/testdata/comparisons.json
 
 # 配布バイナリは古い Go でビルドされていることがあり、go.mod の go より古いと設定を読めない。手元の Go でビルドする。
 lint-tools: ## golangci-lint を手元の Go でビルドして bin/ に置く

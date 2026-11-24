@@ -1,0 +1,8 @@
+[
+  {"name": "model-a vs model-b", "wins": 11, "losses": 9, "ties": 0},
+  {"name": "model-a vs model-c", "wins": 15, "losses": 5, "ties": 0},
+  {"name": "model-a vs model-d", "wins": 18, "losses": 2, "ties": 0},
+  {"name": "model-b vs model-c", "wins": 10, "losses": 6, "ties": 8},
+  {"name": "model-b vs model-d", "wins": 4, "losses": 0, "ties": 0},
+  {"name": "model-c vs model-d", "wins": 3, "losses": 17, "ties": 0}
+]

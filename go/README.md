@@ -98,6 +98,11 @@ make compose-up                 # build + 3 サービス起動
 `make productcheck` は、商品ページの HTML の JSON-LD に、エージェントが比較に使う項目（価格 / 在庫 / 届くまでの日数など）が揃っているかと、条件で判定できる商品の数を出す（ネットワークは使わない）
 判定の決め方と合成のページは [`internal/productld/README.md`](./internal/productld/README.md)
 
+## ペア比較の評価の読み方
+
+`make pairwisecheck` は、2つのモデルの出力を比べた勝ち / 負け / 引き分けの数から、勝率の Wilson の95%区間と50%と区別できるかの判定、符号検定の p 値と Holm の補正、50%と見分けるのに要る件数を出す（ネットワークは使わない）
+計算の決め方と合成の比較は [`internal/pairwise/README.md`](./internal/pairwise/README.md)
+
 ## Tech Stack
 
 - **Language** Go 1.27

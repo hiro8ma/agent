@@ -1,0 +1,7 @@
+name,wins,losses,ties
+model-a vs model-b,11,9,0
+model-a vs model-c,15,5,0
+model-a vs model-d,18,2,0
+model-b vs model-c,10,6,8
+model-b vs model-d,4,0,0
+model-c vs model-d,3,17,0
